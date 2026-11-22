@@ -43,7 +43,7 @@ def _records(spec: dict[int, str]) -> list[ExtractedRecord]:
 
 def test_first_cycle_is_marked_baseline_and_not_notifiable(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    config.workspace.mkdir()
+    config.workspace.mkdir(parents=True, exist_ok=True)
     request = CrawlRequest(_URL)
     with StateStore(config.workspace / "state.sqlite3") as state:
         first = state.start_run("baseline", str(config.path))
@@ -62,7 +62,7 @@ def test_first_cycle_is_marked_baseline_and_not_notifiable(tmp_path: Path) -> No
 
 def test_later_cycle_is_not_baseline_and_is_notifiable(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    config.workspace.mkdir()
+    config.workspace.mkdir(parents=True, exist_ok=True)
     request = CrawlRequest(_URL)
     with StateStore(config.workspace / "state.sqlite3") as state:
         first = state.start_run("baseline", str(config.path))

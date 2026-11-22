@@ -676,11 +676,11 @@ class MainWindow(QMainWindow):
             from ..services import document_facade
 
             reason = document_facade.document_capability()["reason"]
-            QMessageBox.information(
-                self,
-                _("PDF 工作台未安装"),
-                f"{reason}\n\n" + _("是否现在去 OmniCrawler 市场查看？"),
-            )
+            # 非阻塞 Toast（QMessageBox 是模态框，无头环境没人点确定
+            # ⇒ 永久卡住；CI 三平台曾因此各卡 90 分钟被 cancelled）。
+            from .widgets.toast import ToastManager
+
+            ToastManager.instance().info(f"{reason}\n" + _("可在「OmniCrawler 市场」中安装后使用。"))
             navigation_host.goto_nav(self, NavKey.PLUGIN_MARKET)
             return
         navigation_host.goto_nav(self, NavKey.PDF_WORKBENCH)

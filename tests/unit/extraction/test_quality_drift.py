@@ -28,7 +28,7 @@ def _config(tmp_path: Path) -> AppConfig:
 
 def test_semantic_versions_quality_report_and_package(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    config.workspace.mkdir()
+    config.workspace.mkdir(parents=True, exist_ok=True)
     state_path = config.workspace / "state.sqlite3"
     request = CrawlRequest("https://example.com/item")
     with StateStore(state_path) as state:

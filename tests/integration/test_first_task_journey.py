@@ -35,8 +35,10 @@ from omnicrawler.gui.core.config_model import CrawlConfig  # noqa: E402
 from omnicrawler.gui.core.config_serializer import save_yaml  # noqa: E402
 from omnicrawler.pipeline import Pipeline  # noqa: E402
 from omnicrawler.pipeline_ops.preflight import run_sample  # noqa: E402
+from tests.unit.env_markers import requires_writable_data_dir
 
 _PAGE = b"<html><head><title>Journey</title></head><body><h1>Item A</h1><p>body</p></body></html>"
+
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -96,6 +98,7 @@ def _offline_core_config(yaml_path: Path):
     return core
 
 
+@requires_writable_data_dir
 def test_first_task_journey_is_connected_end_to_end(qt_app, tmp_path: Path, local_site: str) -> None:
     """五个环节串起来：每一步的产物都能被下一步消费。"""
     from omnicrawler.gui.views.result_table import CsvStreamModel
@@ -153,6 +156,7 @@ def test_first_task_journey_is_connected_end_to_end(qt_app, tmp_path: Path, loca
     assert "url" in text, "records.md 未包含字段名（导出内容不完整）"
 
 
+@requires_writable_data_dir
 def test_run_gate_blocks_after_trial_and_field_change(qt_app, tmp_path: Path, local_site: str) -> None:
     """旅途边界：试跑通过后若改动采集范围/字段，全量运行的放行必须失效。
 

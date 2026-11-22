@@ -291,6 +291,8 @@ jobs:
       - run: python tools/gates/check_extras_exist.py
       # 文档滞后：说「未做」但代码已实现的项（工作区根不可达时自动跳过）
       - run: python tools/gates/check_doc_impl_drift.py
+      # 测试的 .workspace.mkdir 必须带 exist_ok（load_config 已创建该目录）
+      - run: python tools/gates/check_workspace_mkdir.py
       - run: python -m mypy src/omnicrawler
       # 走 tools/builders/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
       # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）

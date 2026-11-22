@@ -16,6 +16,8 @@ from PySide6.QtWidgets import QApplication, QMainWindow
 
 from omnicrawler.gui import i18n
 from omnicrawler.gui.main import MainWindow, NavIndex
+from omnicrawler.gui.navigation import NavKey
+from tests.unit.env_markers import requires_document_workbench
 
 
 @pytest.fixture(scope="module")
@@ -102,11 +104,13 @@ def test_workspace_sync_flag_is_true_during_sync_only(window: MainWindow) -> Non
 
 def test_toggle_workspace_editor_keeps_sidebar_in_sync(window: MainWindow) -> None:
     window._nav.setCurrentRow(NavIndex.WORKSPACE)
-    assert window._stack.currentIndex() == window._nav_pages[NavIndex.WORKSPACE]
+    assert window._stack.currentIndex() == window._nav_pages[
+        _nav_row(NavKey.WORKSPACE)
+    ]
 
     window._toggle_workspace_editor()
-    assert window._nav.currentRow() == NavIndex.YAML_EDITOR, "侧栏选中态没有跟着切换"
-    assert window._stack.currentIndex() == window._nav_pages[NavIndex.YAML_EDITOR]
+    assert window._nav.currentRow() == _nav_row(NavKey.YAML_EDITOR), "侧栏选中态没有跟着切换"
+    assert window._stack.currentIndex() == window._nav_pages[_nav_row(NavKey.YAML_EDITOR)]
 
     window._toggle_workspace_editor()
     assert window._nav.currentRow() == NavIndex.WORKSPACE
@@ -156,6 +160,23 @@ def test_views_expose_public_current_path(window: MainWindow) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _nav_row(nav_key: str) -> int:
+    """按 **NavKey** 取运行时行号（`NavIndex.X` 是静态值，能力过滤后会错位）。
+
+    `NavIndex` 由 `NAV_LAYOUT` 派生，含 `requires` 条件过滤掉的项
+    （如未装 document-workbench 时的 pdf_workbench / convert_tool）。
+    运行时行号因此比静态值小，直接比较会得到 `12 == 14` 这类失败。
+    """
+    from omnicrawler.core.capabilities import navigation_capabilities
+    from omnicrawler.gui.navigation import visible_entries
+
+    keys = [entry.key for entry in visible_entries(navigation_capabilities())]
+    if nav_key not in keys:
+        raise AssertionError(f"导航项 {nav_key!r} 不可见（可见：{keys}）")
+    return keys.index(nav_key)
+
+
+@requires_document_workbench
 def test_pdf_request_is_consumed_by_pdf_workbench(window: MainWindow) -> None:
     """★ 原实现只写 `setProperty("last_nl_request", …)`，全仓无人读取。"""
     window._home.setProperty("last_nl_request", "把这几份 PDF 里的表格抽出来")
@@ -164,6 +185,7 @@ def test_pdf_request_is_consumed_by_pdf_workbench(window: MainWindow) -> None:
     assert window._pdf_workbench._pending_request == "把这几份 PDF 里的表格抽出来"
 
 
+@requires_document_workbench
 def test_pdf_button_navigates_and_passes_request(window: MainWindow) -> None:
     window._home.setProperty("last_nl_request", "处理这批 PDF")
     window._home.open_pdf_workbench.emit("处理这批 PDF")

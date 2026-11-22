@@ -178,6 +178,31 @@ requires_bash = pytest.mark.skipif(
     reason="bash 不可执行（受限沙箱或未安装）：脚本类测试无法验证",
 )
 
+#: 需要可用的 Qt 字体（像素级快照测试的前提）。
+#:
+#: 本机实测：`QFontDatabase: Cannot find font directory .../PySide6/lib/fonts`，
+#: Qt 渲染出来的字形与基准快照不同，`diff_pct` 必然非零。
+#: 这不是代码缺陷 —— 换一台装了字体的机器就能过。
+#: CI 的视觉回归走**独立 job**（`tools/gates/check_visual_regression.py`），
+#: 不依赖这批单元测试。
+def qt_fonts_available() -> bool:
+    """QFontDatabase 是否至少有一个可用字体族。"""
+    try:
+        from PySide6.QtGui import QFontDatabase
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+        del app  # 只需构造一次以初始化字体库
+        return len(QFontDatabase.families()) > 0
+    except Exception:  # noqa: BLE001 - 无 Qt/无显示都视为不可用
+        return False
+
+
+requires_qt_fonts = pytest.mark.skipif(
+    not qt_fonts_available(),
+    reason="本机没有可用 Qt 字体：像素快照必然与基准不同（环境问题，非缺陷）",
+)
+
 #: 需要文档工作台插件（`document-workbench`）。
 #:
 #: 插件在**独立仓**（`OmniCrawler-market`），e2e job 只 checkout 主仓，

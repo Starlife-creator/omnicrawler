@@ -63,7 +63,7 @@ def test_pdf_capability_requires_plugin_not_just_pdfplumber(
 def test_open_pdf_workbench_handles_missing_view(monkeypatch: pytest.MonkeyPatch) -> None:
     """视图为 None 时不得抛 AttributeError，要给提示并导向 OmniCrawler 市场。"""
     pytest.importorskip("PySide6")
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
     assert app is not None
@@ -71,10 +71,16 @@ def test_open_pdf_workbench_handles_missing_view(monkeypatch: pytest.MonkeyPatch
     from omnicrawler.gui import main as gui_main
     from omnicrawler.gui import navigation
 
+    # 提示改为**非阻塞 Toast**：原来的 QMessageBox 是模态框，
+    # 无头环境没人点确定 ⇒ 永久卡住（CI 三平台各卡 90 分钟的真因）。
+    # 测试意图不变：插件缺失时必须**给用户可见提示**，只是载体换了。
+    from omnicrawler.gui.widgets.toast import ToastManager
+
     shown: list[str] = []
     monkeypatch.setattr(
-        QMessageBox, "information",
-        staticmethod(lambda *a, **k: shown.append(str(a[1]) if len(a) > 1 else "")),
+        ToastManager, "info",
+        lambda _self, message: shown.append(str(message)),
+        raising=False,
     )
     visited: list[str] = []
     monkeypatch.setattr(

@@ -15,7 +15,7 @@ def test_stages_include_actions_pagination_attachments_without_secret_values(tmp
     assert {step["id"] for step in report["stages"]} >= {"action-1", "pagination", "download", "export"}
     assert "SECRET" not in json.dumps(report)
     assert report["trial"]["state"] == "missing"
-    config.workspace.mkdir(parents=True)
+    config.workspace.mkdir(parents=True, exist_ok=True)
     proof = config.workspace / "preflight_acceptance.json"
     proof.write_text(json.dumps({"config_sha256": config_digest(config), "samples": [1], "summary": {"status": "succeeded"}}))
     assert describe(config)["trial"]["state"] == "matching_history"
@@ -28,7 +28,7 @@ def test_runtime_is_bound_to_task_and_reports_real_failures_without_secrets(tmp_
     path = tmp_path / "task.yaml"
     path.write_text("project: {name: stages, task_id: chosen, workspace: work}\nsource: {kind: static_html, seeds: [https://example.org]}\n", encoding="utf-8")
     config = load_config(path)
-    config.workspace.mkdir(parents=True)
+    config.workspace.mkdir(parents=True, exist_ok=True)
     assert describe(config)["runtime"]["state"] == "not_started"
     with StateStore(config.workspace / "state.sqlite3") as state:
         run = state.start_run("stages", str(path), task_id="chosen")

@@ -27,12 +27,14 @@ from omnicrawler.services.pdf_quality_benchmark import (
 from omnicrawler.services.pdf_quality_benchmark import (
     observations as _observations_public,
 )
+from tests.unit.env_markers import requires_document_workbench
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TESSERACT = REPO_ROOT / ".runtime" / "tesseract" / "tesseract.exe"
 
 _DIGITAL = next(case for case in PDF_CASES if not case.needs_ocr)
 _SCANNED = next(case for case in PDF_CASES if case.needs_ocr)
+
 
 
 def _require_ocr_env() -> None:
@@ -46,6 +48,7 @@ def _run(case: PdfBenchmarkCase, tmp_path: Path):
     return run_case(case, workdir=tmp_path, tesseract=TESSERACT)
 
 
+@requires_document_workbench
 def test_digital_pdf_meets_the_gate(tmp_path: Path) -> None:
     """数字版：原生文字层，三个字段都应与真值归一后逐字相等，且都在门槛内。"""
     score = _run(_DIGITAL, tmp_path)
@@ -58,6 +61,7 @@ def test_digital_pdf_meets_the_gate(tmp_path: Path) -> None:
     assert score.ok is True, score.to_mapping()
 
 
+@requires_document_workbench
 def test_scanned_pdf_meets_the_gate_with_real_ocr(tmp_path: Path) -> None:
     """图片版（无文字层）：真走 OCR，且**在声明的抽取规则下**达到同一门槛。"""
     _require_ocr_env()
@@ -80,6 +84,7 @@ def test_scanned_pdf_meets_the_gate_with_real_ocr(tmp_path: Path) -> None:
     assert rows[0]["金额"] == "12345.67", rows[0]
 
 
+@requires_document_workbench
 def test_ocr_text_whitespace_is_normalized_by_source_by_default(tmp_path: Path) -> None:
     """**新契约（§5.8 #24，2026-09-15）**：不声明任何开关，OCR 页的文本值也按来源归一 ⇒ 达标。
 
@@ -111,6 +116,7 @@ def _case(name: str) -> PdfBenchmarkCase:
     return next(case for case in PDF_CASES if case.name == name)
 
 
+@requires_document_workbench
 def test_multi_page_case_hits_the_true_page_and_the_gate(tmp_path: Path) -> None:
     """多页样本：字段在**第 2 页** ⇒ 页码真值判据必须成立（这条单页样本测不出来）。"""
     case = _case("multi-page-text-layer")
@@ -125,6 +131,7 @@ def test_multi_page_case_hits_the_true_page_and_the_gate(tmp_path: Path) -> None
     assert score.ok is True, score.to_mapping()
 
 
+@requires_document_workbench
 def test_table_case_meets_the_gate(tmp_path: Path) -> None:
     """表格样本：字段在表格单元格里，抽取规则同样要成立。"""
     case = _case("table-text-layer")
@@ -140,6 +147,7 @@ def test_table_case_meets_the_gate(tmp_path: Path) -> None:
     assert rows[0]["合同编号"] == "HT-2026-0001", rows[0]
 
 
+@requires_document_workbench
 def test_low_quality_sample_never_silently_accepts_wrong_values(tmp_path: Path) -> None:
     """低质样本：**无论如何都不许把错值自动放行**；门槛按该形态自己的现实设定。
 

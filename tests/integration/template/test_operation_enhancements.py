@@ -46,7 +46,7 @@ def test_run_control_pause_resume_and_stop(tmp_path: Path) -> None:
 
 def test_error_center_compare_and_config_history(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    config.workspace.mkdir()
+    config.workspace.mkdir(parents=True, exist_ok=True)
     request = CrawlRequest("https://example.com/item?access_token=url-secret")
     with StateStore(config.workspace / "state.sqlite3") as state:
         before = state.start_run("enhanced", str(config.path))

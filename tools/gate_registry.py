@@ -444,6 +444,18 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_workspace_mkdir",
+        args=("tools/gates/check_workspace_mkdir.py",),
+        sets=_STATIC,
+        description="测试的 .workspace.mkdir 必须带 exist_ok（load_config 已建该目录）",
+        script="tools/gates/check_workspace_mkdir.py",
+        ci_note=(
+            "零网络。这类缺陷**只在特定执行顺序下暴露**，本地难复现、CI 稳定红。"
+            "2026-11-22 实测有 4 处踩坑（test_workflow_diagnostics x2、"
+            "test_recovery_center、test_operation_enhancements）。"
+        ),
+    ),
+    Gate(
         name="check_doc_impl_drift",
         args=("tools/gates/check_doc_impl_drift.py",),
         sets=_STATIC,

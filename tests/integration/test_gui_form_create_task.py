@@ -39,6 +39,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from omnicrawler.gui.core.config_serializer import to_yaml  # noqa: E402
 from omnicrawler.gui.core.run_states import is_terminal  # noqa: E402
+from tests.unit.env_markers import requires_writable_data_dir
 
 _TEST_WINDOWS: list[tuple[object, object]] = []
 _APP = None
@@ -114,6 +115,7 @@ def _no_blocking_dialogs(monkeypatch):
     return raised
 
 
+@requires_writable_data_dir
 def test_blocking_dialog_guard_is_wired(_no_blocking_dialogs) -> None:
     """守卫自身有效：调用 `QMessageBox.critical` 既**不阻塞**也被记录。
 
@@ -178,6 +180,7 @@ def _dispose_owned_windows():
         _TEST_WINDOWS.clear()
 
 
+@requires_writable_data_dir
 def test_form_window_disposal_finishes_before_another_theme_application(tmp_path, monkeypatch):
     from shiboken6 import isValid
 
@@ -196,6 +199,7 @@ def _silence_side_effects(window) -> None:
         window._settings.sound_enabled = False
 
 
+@requires_writable_data_dir
 def test_form_created_task_round_trips_into_yaml(tmp_path: Path, monkeypatch) -> None:
     """空白表单 → 填网址/描述 → 「开始」→ 「启发式补全字段」→ 「保存草稿」→ YAML 对得上。
 
@@ -255,6 +259,7 @@ def test_form_created_task_round_trips_into_yaml(tmp_path: Path, monkeypatch) ->
             app.processEvents()
 
 
+@requires_writable_data_dir
 def test_form_edit_preserves_list_container(
     tmp_path: Path, monkeypatch, _no_blocking_dialogs
 ) -> None:
@@ -300,6 +305,7 @@ def test_form_edit_preserves_list_container(
         app.processEvents()
 
 
+@requires_writable_data_dir
 def test_form_edit_preserves_extract_mode_and_item_path(
     tmp_path: Path, monkeypatch, _no_blocking_dialogs
 ) -> None:
@@ -343,6 +349,7 @@ def test_form_edit_preserves_extract_mode_and_item_path(
         app.processEvents()
 
 
+@requires_writable_data_dir
 def test_form_can_author_list_container_and_trial_gate_rearms(
     tmp_path: Path, monkeypatch, _no_blocking_dialogs
 ) -> None:
@@ -375,6 +382,7 @@ def test_form_can_author_list_container_and_trial_gate_rearms(
         app.processEvents()
 
 
+@requires_writable_data_dir
 def test_form_created_list_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> None:
     """**从空白表单建一个列表任务 → 保存 → 运行 → 产物等于真值。**
 
@@ -457,6 +465,7 @@ def test_form_created_list_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> 
 
 
 @pytest.mark.parametrize("intent", ["单页", "采集整个栏目"])
+@requires_writable_data_dir
 def test_draft_intent_controls_scope_budget(tmp_path: Path, monkeypatch, intent: str) -> None:
     """「开始」的意图决定来源类型与页数预算（单页 1 页 / 栏目 30 页）。
 
@@ -535,6 +544,7 @@ def _allow_private(window) -> None:
     window._config.passthrough.setdefault("http", {})["allow_private_network"] = True
 
 
+@requires_writable_data_dir
 def test_analyze_page_fills_container_and_real_selectors(tmp_path: Path, monkeypatch) -> None:
     """点「分析页面并填字段」→ 填入**真实**容器与选择器（不是通用规则）。
 
@@ -570,6 +580,7 @@ def test_analyze_page_fills_container_and_real_selectors(tmp_path: Path, monkeyp
             app.processEvents()
 
 
+@requires_writable_data_dir
 def test_analyze_page_refuses_navigation_only_container(tmp_path: Path, monkeypatch) -> None:
     """只在页面框架（侧边栏 / 导航 / 页脚）里找到重复元素 ⇒ **不填容器**并明确警告。
 
@@ -601,6 +612,7 @@ def test_analyze_page_refuses_navigation_only_container(tmp_path: Path, monkeypa
             app.processEvents()
 
 
+@requires_writable_data_dir
 def test_analyze_page_without_url_only_informs(tmp_path: Path, monkeypatch) -> None:
     """没有网址时不发起抓取，只提示 —— 不假装分析过。"""
     seen = _record_toasts(monkeypatch)
@@ -652,6 +664,7 @@ def _serve_json(body: str):
         server.server_close()
 
 
+@requires_writable_data_dir
 def test_form_can_choose_api_source_and_record_path(tmp_path: Path, monkeypatch) -> None:
     """表单能选「API / JSON」并填记录路径；**显式选择不被之后点「开始」覆盖**。
 
@@ -690,6 +703,7 @@ def test_form_can_choose_api_source_and_record_path(tmp_path: Path, monkeypatch)
         app.processEvents()
 
 
+@requires_writable_data_dir
 def test_form_created_api_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> None:
     """**从空白表单建一个 API 任务 → 保存 → 运行 → 产物等于真值。**
 
@@ -816,6 +830,7 @@ def _business_hits(state: dict) -> list[str]:
     return [hit for hit in state["hits"] if hit.startswith("/items")]
 
 
+@requires_writable_data_dir
 def test_form_authored_pagination_reaches_config_and_survives_extras(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -947,6 +962,7 @@ def test_form_authored_pagination_reaches_config_and_survives_extras(
         app.processEvents()
 
 
+@requires_writable_data_dir
 def test_form_created_cursor_api_task_runs_end_to_end(tmp_path: Path, monkeypatch) -> None:
     """**空白表单 → 选 API + 按游标分页 → 保存 → 运行 → 三页全交付、二次只交付变化那条。**
 
@@ -1085,6 +1101,7 @@ def _serve_links():
         server.server_close()
 
 
+@requires_writable_data_dir
 def test_form_created_element_attr_task_delivers_each_items_href(tmp_path: Path, monkeypatch) -> None:
     """**W2.2 收官**：空白表单建「取条目元素自身 href」的列表任务 → 保存 → 运行 → 链接列逐条正确。
 

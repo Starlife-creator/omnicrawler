@@ -20,7 +20,7 @@ def _task(tmp_path: Path, name: str = "recovery") -> Path:
 
 def test_recovery_center_continue_retry_and_relogin_are_recoverable(tmp_path: Path) -> None:
     config = load_config(_task(tmp_path))
-    config.workspace.mkdir(parents=True)
+    config.workspace.mkdir(parents=True, exist_ok=True)
     with StateStore(config.workspace / "state.sqlite3") as state:
         run_id = state.start_run("recovery", str(config.path))
         request = CrawlRequest("https://example.org/fail")

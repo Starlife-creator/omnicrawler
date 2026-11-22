@@ -15,6 +15,7 @@ from omnicrawler.pipeline_ops.task_ir import (
     template_fragment,
 )
 from omnicrawler.services.application_service import ApplicationService
+from tests.unit.env_markers import requires_writable_data_dir
 
 
 def _config(tmp_path: Path, *, pages: int = 12) -> Path:
@@ -35,6 +36,7 @@ def _config(tmp_path: Path, *, pages: int = 12) -> Path:
     return path
 
 
+@requires_writable_data_dir
 def test_yaml_v5_ir_roundtrip_preserves_unknowns_and_all_task_dimensions(tmp_path: Path) -> None:
     config = load_config(_config(tmp_path))
     ir = TaskIR.from_config(config.raw)
@@ -49,6 +51,7 @@ def test_yaml_v5_ir_roundtrip_preserves_unknowns_and_all_task_dimensions(tmp_pat
     assert set(ir.capabilities) == {"browser", "ocr"}
 
 
+@requires_writable_data_dir
 def test_plan_is_deterministic_secret_independent_explainable_and_diffable(tmp_path: Path) -> None:
     first_ir = TaskIR.from_config(load_config(_config(tmp_path, pages=12)).raw)
     first_ir.authorization = {"provider": "form", "options": {"password": "first"}}
@@ -68,6 +71,7 @@ def test_plan_is_deterministic_secret_independent_explainable_and_diffable(tmp_p
     assert first.plan_hash != changed.plan_hash
 
 
+@requires_writable_data_dir
 def test_plan_detects_missing_capabilities_and_application_service_has_public_dtos(tmp_path: Path) -> None:
     path = _config(tmp_path)
     plan = compile_task_plan(TaskIR.from_config(load_config(path).raw), available_capabilities=[])
@@ -82,6 +86,7 @@ def test_plan_detects_missing_capabilities_and_application_service_has_public_dt
     assert all("Pipeline" not in type(value).__name__ for value in compiled.values())
 
 
+@requires_writable_data_dir
 def test_ir_requires_plugin_capability_only_when_task_declares_plugins(tmp_path: Path) -> None:
     """plugin 能力仅当任务显式声明插件时要求，而非因默认搜索目录普遍要求。"""
     base = _config(tmp_path)
@@ -104,6 +109,7 @@ def test_ir_requires_plugin_capability_only_when_task_declares_plugins(tmp_path:
     assert "缺少运行能力: plugin" in plan.conflicts
 
 
+@requires_writable_data_dir
 def test_recording_api_and_template_inputs_merge_through_one_ir_contract(tmp_path: Path) -> None:
     base = TaskIR.from_config(load_config(_config(tmp_path)).raw)
     recorded = base.merge_fragment(recording_fragment({
@@ -130,6 +136,7 @@ def test_recording_api_and_template_inputs_merge_through_one_ir_contract(tmp_pat
     assert merged.extensions["api_candidate_evidence"]["method"] == "post"
 
 
+@requires_writable_data_dir
 def test_application_service_run_does_not_mutate_cached_config(tmp_path: Path) -> None:
     """S1.1.1: run(max_pages) 不得就地改写缓存配置，污染后续任务的默认值。"""
     path = _config(tmp_path, pages=12)
@@ -145,6 +152,7 @@ def test_application_service_run_does_not_mutate_cached_config(tmp_path: Path) -
     assert after["config"]["crawl"]["max_pages"] == 12
 
 
+@requires_writable_data_dir
 def test_application_service_plan_equivalence_and_sample_binding(tmp_path: Path) -> None:
     path = _config(tmp_path)
     service = ApplicationService(path)

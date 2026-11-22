@@ -12,6 +12,8 @@ import os
 
 import pytest
 
+from tests.unit.env_markers import requires_qt_fonts
+
 from . import BASELINE_DIR
 from .conftest import compare_snapshot
 
@@ -23,6 +25,7 @@ if not BASELINE_DIR.is_dir() and not os.environ.get("OMNI_BASELINE"):
     )
 
 THEMES = ["light", "dark", "high_contrast"]
+
 
 
 def _snap(widget, name: str, theme: str) -> None:
@@ -46,6 +49,7 @@ def _snap(widget, name: str, theme: str) -> None:
         raise AssertionError(f"Visual regression for {name}@{theme}: {result}")
 
 
+@requires_qt_fonts
 def test_empty_state_snapshot(theme_manager):
     from omnicrawler.gui.i18n import _
     from omnicrawler.gui.widgets.empty_state import EmptyState
@@ -61,6 +65,7 @@ def test_empty_state_snapshot(theme_manager):
         _snap(widget, "empty_state", theme)
 
 
+@requires_qt_fonts
 def test_status_indicator_snapshot(theme_manager):
     from omnicrawler.gui.widgets.status_indicator import StatusIndicator
 
@@ -72,6 +77,7 @@ def test_status_indicator_snapshot(theme_manager):
             _snap(widget, f"status_indicator_{state}", theme)
 
 
+@requires_qt_fonts
 def test_help_tooltip_snapshot(theme_manager, qapp):
     """悬浮帮助按钮。
 
@@ -89,6 +95,7 @@ def test_help_tooltip_snapshot(theme_manager, qapp):
         _snap(widget, "help_tooltip", theme)
 
 
+@requires_qt_fonts
 def test_home_hero_snapshot(theme_manager, qapp):
     """首页 hero 区 —— V2"加大字号/留白层级"的落点。
 
@@ -108,6 +115,7 @@ def test_home_hero_snapshot(theme_manager, qapp):
         qapp.setProperty("omnicrawlerReducedMotion", False)
 
 
+@requires_qt_fonts
 def test_navigation_bar_snapshot(theme_manager):
     from PySide6.QtWidgets import QListWidget
 
@@ -124,6 +132,7 @@ def test_navigation_bar_snapshot(theme_manager):
         _snap(nav, "navigation_bar", theme)
 
 
+@requires_qt_fonts
 def test_toast_snapshot(theme_manager, qapp):
     from omnicrawler.gui.design_system import ThemeManager
     from omnicrawler.gui.widgets.toast import Toast
