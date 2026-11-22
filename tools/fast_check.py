@@ -216,7 +216,10 @@ def main(argv: list[str] | None = None) -> int:
         paths = changed_files(staged_only=args.staged)
 
     if not paths:
-        print("没有需要检查的文件（工作区干净）。")
+        # ★ 措辞要准：本工具**只查 .py**，所以「没找到」不等于「工作区干净」。
+        # 说成「工作区干净」会让人误以为没有未提交改动 —— 我本轮就因此
+        # 一度以为 AGENTS.md 的修改丢了。
+        print("没有需要检查的 Python 文件（.md / .yml 等不在本工具范围内）。")
         return 0
 
     print(f"检查 {len(paths)} 个文件…")
