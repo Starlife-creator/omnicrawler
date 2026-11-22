@@ -82,9 +82,13 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[html,gui,dev]"
+      # `test_pdf_workbench_logic.py` 已随 PDF 工作台迁出为可选插件
+      # （document-workbench，817bccc5 / 2026-11-17）。它在主仓已不存在 ——
+      # 继续引用会让这个 step 报 `file or directory not found` 并令
+      # 三平台 GUI smoke 全红（2026-11-22 实测）。这里只保留仍在主仓的。
       - name: Qt-free GUI logic smoke（widget offscreen 套件待 Qt 环境补齐）
         shell: bash
-        run: python -m pytest -q -o faulthandler_timeout=300 tests/unit/gui/test_log_parser.py tests/unit/gui/test_pdf_workbench_logic.py
+        run: python -m pytest -q -o faulthandler_timeout=300 tests/unit/gui/test_log_parser.py
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
