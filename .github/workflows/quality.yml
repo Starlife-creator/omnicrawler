@@ -130,7 +130,9 @@ jobs:
       # 依赖范围以 pyproject 为唯一真源，CI 不再手抄版本号。
       # `pdf-write` 必列：reportlab 已从 `pdf` extra 拆出（见 pyproject 条目 12），
       # 而单测里有生成 PDF 的场景。缺它会报 ModuleNotFoundError（2026-11-22 实测）。
-      - run: python -m pip install -e ".[html,pdf,pdf-write,dev,async-http,gui,tls,storage,ai,document]" cryptography
+      # `browser` 必列：playwright **库** 在 browser extra（不在 gui）。
+      # 缺它时 test_capability_slot_availability 等 10 条会红（2026-11-22 实测）。
+      - run: python -m pip install -e ".[html,pdf,pdf-write,dev,async-http,gui,browser,tls,storage,ai,document]" cryptography
       - name: Exercise optional Zstandard decoding on every supported platform
         run: python -m pip install zstandard==0.25.0
       # **浏览器二进制**：`gui` extra 只装 playwright **库**，不下载浏览器。

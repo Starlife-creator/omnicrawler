@@ -93,8 +93,11 @@ def test_ai_transport_and_document_features_are_declared_and_installed_in_ci():
     core = workflow[workflow.index("  test:"):workflow.index("  docker:")]
     # `pdf-write` 必列：reportlab 已从 `pdf` 拆出（pyproject 条目 12），
     # 而单测里有生成 PDF 的场景。CI 缺它会 ModuleNotFoundError（2026-11-22 实测）。
+    # `browser` 也必列：playwright 库在 browser extra（不在 gui），
+    # 缺它时能力槽相关 10 条测试会红。
     assert (
-        "[html,pdf,pdf-write,dev,async-http,gui,tls,storage,ai,document]" in core
+        "[html,pdf,pdf-write,dev,async-http,gui,browser,tls,storage,ai,document]"
+        in core
     )
 
 
