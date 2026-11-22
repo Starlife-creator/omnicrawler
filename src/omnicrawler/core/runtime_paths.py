@@ -128,7 +128,18 @@ def portable_data_root() -> Path:
         # Last-resort path for locked-down corporate profiles. The app remains
         # usable for the current session even when normal profile storage is denied.
         emergency = Path(os.environ.get("TEMP", str(application_dir()))) / "OmniCrawler"
-        emergency.mkdir(parents=True, exist_ok=True)
+        # **最后兜底也必须容错**：本函数在 `cli_entry.py` 的导入期被调用，
+        # 若这里再抛，整个 CLI 进程直接死掉 —— 连子 worker 都没机会启动。
+        # 三级兜底（preferred → localappdata → TEMP）全不可写时，只能返回
+        # 一个「名义根」并让调用方在真正写盘时再报错：那比导入期崩溃好得多。
+        try:
+            emergency.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.warning(
+                "所有数据根均不可写（preferred/localappdata/TEMP），"
+                "本次会话的数据写入将失败；请解压到可写位置。"
+            )
+            return application_dir()
         # F29：兜底数据根落在临时目录，必须显式告知（会被系统清理、无声丢数据）
         logger.warning(
             "无法创建常规数据目录，工作区落入临时目录: %s；重启后数据可能被系统清理，请改用 portable/local 数据模式",
@@ -235,7 +246,23 @@ def configure_runtime_environment() -> None:
     if not is_frozen() and not runtime_dir.is_dir():
         return
     cache_dir = portable_data_root() / ".omnicrawler" / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    # **mkdir 必须容错**：本函数在 `cli_entry.py` 的**导入期**执行。
+    #
+    # 便携包解压后目录可能只读（CI 的 Linux runner 实测），此时 mkdir 抛
+    # PermissionError ⇒ 整个 CLI 进程在 import 阶段就死掉 ⇒ 连
+    # `omnicrawler components run` 的子 worker 都没机会启动
+    # （症状：stdout 只有「已校验文件 N 个」，`[worker]` 轨迹 0 条，
+    #   stderr 只剩「内置 Tesseract 缺失」这类无关告警）。2026-11-23 定位。
+    #
+    # 这些目录只是**缓存**，建不出来应当降级（用不了缓存）而不是让进程崩。
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        cache_dir = None  # type: ignore[assignment]
+
+    if cache_dir is None:
+        # 缓存不可用：跳过所有「设置缓存路径」的环境变量，让各库回落默认。
+        return
     browsers = browsers_root()
     if browsers.is_dir():
         os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(browsers))
