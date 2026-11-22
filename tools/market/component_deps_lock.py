@@ -52,25 +52,62 @@ def _normalize(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _marker_ok(marker: str) -> bool:
-    """粗判环境标记是否在当前口径成立。只处理最常见的 python_version 比较。"""
-    marker = marker.strip()
+def _marker_ok(marker: str, platform: str = "windows") -> bool:
+    """判断 PEP 508 环境标记在当前目标平台上是否成立。
+
+    **早先这里只判断 `python_version`**，遇到 `platform_system == "Linux"`
+    就直接返回 True —— 于是 `torch` 的 CUDA 依赖
+    （`nvidia-cublas` / `triton` / `cuda-toolkit` 等，全是 Linux 专用）
+    被算进了 Windows 的闭包，配方里却没有它们，门禁报「配方缺少闭包声明的包」。
+
+    这是「快照与配方不同源」的典型：两边对同一个标记给出不同结论。
+    现在两边用同一套求值规则（与 `gen_component_recipe.py` 一致）。
+    """
+    marker = (marker or "").strip()
     if not marker:
         return True
-    match = re.search(r'python_version\s*(>=|<=|==|<|>)\s*"([\d.]+)"', marker)
-    if not match:
-        return True
-    op, want = match.group(1), match.group(2)
-    have = _ENV["python_version"]
-    have_t = tuple(int(x) for x in have.split("."))
-    want_t = tuple(int(x) for x in want.split("."))
-    return {
-        ">=": have_t >= want_t,
-        "<=": have_t <= want_t,
-        "==": have_t == want_t,
-        "<": have_t < want_t,
-        ">": have_t > want_t,
-    }[op]
+    lowered = marker.lower()
+    if "extra" in lowered:
+        return False
+
+    target_system = {"windows": "Windows", "linux": "Linux", "macos": "Darwin"}[platform]
+    facts = {
+        "platform_system": target_system,
+        "python_version": _ENV["python_version"],
+        "sys_platform": {"windows": "win32", "linux": "linux", "macos": "darwin"}[platform],
+        "os_name": "nt" if platform == "windows" else "posix",
+    }
+    pattern = re.compile(r"(\w+)\s*(>=|<=|==|!=|<|>)\s*[\"']([^\"']+)[\"']")
+
+    def _eval_one(expr: str) -> bool:
+        match = pattern.search(expr)
+        if not match:
+            return True
+        key, operator, expected = match.groups()
+        actual = facts.get(key)
+        if actual is None:
+            return True
+        if key == "python_version":
+            try:
+                have_t = tuple(int(x) for x in actual.split("."))
+                want_t = tuple(int(x) for x in expected.split("."))
+            except ValueError:
+                return True
+            return {
+                ">=": have_t >= want_t,
+                "<=": have_t <= want_t,
+                "==": have_t == want_t,
+                "!=": have_t != want_t,
+                "<": have_t < want_t,
+                ">": have_t > want_t,
+            }[operator]
+        equal = actual.strip().lower() == expected.strip().lower()
+        return equal if operator == "==" else (not equal if operator == "!=" else True)
+
+    for disjunct in re.split(r"\bor\b", lowered):
+        if all(_eval_one(part) for part in re.split(r"\band\b", disjunct)):
+            return True
+    return False
 
 
 def _dep_names(requires: list[str] | None) -> list[str]:

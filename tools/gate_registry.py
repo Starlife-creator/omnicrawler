@@ -444,6 +444,17 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_cross_repo_copies",
+        args=("tools/gates/check_cross_repo_copies.py",),
+        sets=_STATIC,
+        description="市场仓的同名工具与主仓判据等价（防只改一边）",
+        script="tools/gates/check_cross_repo_copies.py",
+        ci_note=(
+            "零网络。市场仓不可达时自动跳过（CI 单仓场景）。"
+            "本会话踩过：改了主仓的配方门禁、忘改市场仓副本，CI 才暴露。"
+        ),
+    ),
+    Gate(
         name="check_component_discovery",
         args=("tools/gates/check_component_discovery.py",),
         sets=_STATIC,
@@ -524,6 +535,23 @@ def gates_for(sets: frozenset[str] | set[str] | tuple[str, ...]) -> tuple[Gate, 
     return tuple(gate for gate in GATES if gate.sets & wanted)
 
 
+#: **只在本地跑的集合**，不参与「与 CI 双向一致」校验。
+#:
+#: `syntax` 是秒级快速反馈层：CI 已经跑完整 `ruff` + `mypy`，
+#: 覆盖了它的范围。它的价值是「本地改完立刻查」，不是发布判据 ——
+#: 要求它进 CI 等于让 CI 重复执行一遍已经跑过的东西。
+_LOCAL_ONLY_SETS = frozenset({"syntax"})
+
+
 def ci_managed_scripts() -> frozenset[str]:
-    """返回参与「与 CI 双向一致」校验的脚本集合。"""
-    return frozenset(gate.script for gate in GATES if gate.script)
+    """返回参与「与 CI 双向一致」校验的脚本集合。
+
+    排除 `_LOCAL_ONLY_SETS` 里的门禁：它们**刻意不进 CI**。
+    不排除会让 `test_every_registered_gate_is_wired_into_ci` 误判 ——
+    它原先假定「登记的门禁都该在 CI 跑」，而分层之后这不成立了。
+    """
+    return frozenset(
+        gate.script
+        for gate in GATES
+        if gate.script and not (gate.sets & _LOCAL_ONLY_SETS)
+    )
