@@ -443,6 +443,26 @@ GATES: tuple[Gate, ...] = (
             "本会话新增两个工具却零引用，就是这条要防的。"
         ),
     ),
+    # **跨平台模拟**：本机用别的平台身份跑测试。
+    #
+    # 这一条替代了「只能等 CI」的历史。2026-11-22 实测：模拟 macos/aarch64
+    # 只需 114 秒（3 组合 × services+browser），却复现了 CI 连红 5 轮、
+    # 每轮约 40 分钟才暴露的 40+ 条失败。
+    #
+    # 为什么值得放进 static：`current_platform()` / `current_architecture()`
+    # 只管「平台名分支」这一类，而这类**恰好是本项目最常见的跨平台缺陷源**
+    # （配方声明、能力槽、装配路径都按平台分支）。
+    Gate(
+        name="platform_matrix",
+        args=("tools/qa/platform_matrix.py",),
+        sets=frozenset({"syntax", "static"}),
+        description="本机模拟 linux/macos/windows 三平台跑测试",
+        script="tools/qa/platform_matrix.py",
+        ci_note=(
+            "零网络。只在**本地**跑：CI 本身就有三平台真机，重复模拟是浪费。"
+            "它的价值是把「等 CI 45 分钟」变成「本地 2 分钟」。"
+        ),
+    ),
     Gate(
         name="check_test_platform_defaults",
         args=("tools/gates/check_test_platform_defaults.py",),

@@ -31,11 +31,12 @@ from tools.market.component_discovery import iter_component_recipes
 
 def _recipe(**overrides) -> dict:
     base = {
-        # **用当前架构**：macOS runner 是 aarch64，硬编码 x86_64 会让
-        # 所有「本机应可装」的用例在 Apple Silicon 上被判不兼容。
-        # 2026-11-22 CI macOS 实测因此红了多条。
+        # **全平台/全架构**：这个 fixture 被显式传不同平台/架构的用例共用
+        # （`check_compatibility(..., architecture="x86_64")`），
+        # 默认值若绑定当前架构就会与那些调用冲突。
+        # 默认写成「哪都适用」，由调用方按需 override。
         "platforms": ["windows", "linux", "macos"],
-        "architectures": [current_architecture()],
+        "architectures": ["x86_64", "aarch64"],
         "python_abi": ["cp313"],
     }
     base.update(overrides)
@@ -130,7 +131,7 @@ def test_market_recipes_are_installable_on_this_interpreter() -> None:
     if not components.is_dir():
         pytest.skip("需要 market 仓的 components 目录")
 
-    from omnicrawler.services.component_recipe import current_abi, current_architecture, current_platform
+    from omnicrawler.services.component_recipe import current_abi, current_platform
 
     checked = 0
     # 组件按分类子目录组织（components/<分类>/<id>/），必须递归扫描。
@@ -211,7 +212,7 @@ def test_platform_without_artifacts_is_rejected() -> None:
         "name": "x",
         "version": "1.0.0",
         "platforms": ["windows", "linux"],
-        "architectures": ["x86_64"],
+        "architectures": ["x86_64", "aarch64"],
         "artifacts": [
             {"url": "https://example.invalid/w.whl", "sha256": "a" * 64, "platforms": ["windows"]}
         ],
@@ -332,7 +333,7 @@ def test_assembly_manifest_declares_file_hashes() -> None:
             "name": "demo",
             "version": "1.0.0",
             "platforms": ["windows", "linux", "macos"],
-            "architectures": ["x86_64"],
+            "architectures": ["x86_64", "aarch64"],
             "artifacts": [
                 {
                     "url": "https://example.invalid/artifact.zip",
@@ -728,7 +729,7 @@ def test_multiple_artifacts_into_same_dir_are_merged() -> None:
             "name": "merge-check",
             "version": "1.0.0",
             "platforms": ["windows", "linux", "macos"],
-            "architectures": ["x86_64"],
+            "architectures": ["x86_64", "aarch64"],
             "artifacts": [
                 {
                     "url": "https://example.invalid/a.zip",
@@ -963,7 +964,7 @@ def test_platform_architectures_union_matches_global() -> None:
         "name": "x",
         "version": "1.0.0",
         "platforms": ["linux", "macos"],
-        "architectures": ["x86_64"],  # 少写了 aarch64
+        "architectures": ["x86_64"],  # 少写了 aarch64（本用例就要验这个缺口）
         "artifacts": [
             {"url": "https://e.invalid/a-cp313-manylinux_x86_64.whl", "sha256": "a" * 64, "platforms": ["linux"]},
             {"url": "https://e.invalid/b-cp313-macosx_11_0_arm64.whl", "sha256": "b" * 64, "platforms": ["macos"]},
@@ -987,7 +988,7 @@ def test_platform_architectures_rejects_unknown_platform() -> None:
         "name": "x",
         "version": "1.0.0",
         "platforms": ["linux"],
-        "architectures": ["x86_64"],
+        "architectures": ["x86_64", "aarch64"],
         "artifacts": [
             {"url": "https://e.invalid/a-cp313-manylinux_x86_64.whl", "sha256": "a" * 64, "platforms": ["linux"]},
         ],
@@ -1014,7 +1015,7 @@ def test_provides_validated() -> None:
         "name": "x",
         "version": "1.0.0",
         "platforms": ["linux"],
-        "architectures": ["x86_64"],
+        "architectures": ["x86_64", "aarch64"],
         "artifacts": [
             {"url": "https://e.invalid/a-cp313-manylinux_x86_64.whl", "sha256": "a" * 64, "platforms": ["linux"]},
         ],
@@ -1152,7 +1153,7 @@ def test_pth_files_are_not_extracted() -> None:
             "name": "pth-check",
             "version": "1.0.0",
             "platforms": ["windows", "linux", "macos"],
-            "architectures": ["x86_64"],
+            "architectures": ["x86_64", "aarch64"],
             "artifacts": [
                 {
                     "url": "https://example.invalid/a.zip",

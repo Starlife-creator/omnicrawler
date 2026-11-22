@@ -176,8 +176,14 @@ def find_problems(root: Path) -> tuple[list[str], int]:
             # **三平台全列是安全的**：那不是「假设本平台」，而是「哪都能用」。
             # 只对**排他性**声明（少列了某个平台/架构）判红。
             all_platforms = {"windows", "linux", "macos"}
+            all_architectures = {"x86_64", "aarch64"}
             if env_keys.get("platforms", set()) >= all_platforms:
                 env_keys.pop("platforms", None)
+            # **双架构全列也是安全的**：`["x86_64", "aarch64"]` 覆盖了 CI
+            # 矩阵里出现的两种架构，不是「假设本平台」。它的作用恰恰是
+            # 让该 fixture 在所有架构上都成立。
+            if env_keys.get("architectures", set()) >= all_architectures:
+                env_keys.pop("architectures", None)
             elif env_keys.get("platforms", set()) & {"darwin"}:
                 env_keys["platforms"] = env_keys["platforms"]  # darwin 是别名，保留
             if not env_keys:

@@ -49,8 +49,11 @@ def _recipe(**overrides) -> dict:
         "smoke": {"expect": ["ok"]},
         "name": "demo-ocr",
         "version": "1.0.0",
-        "platforms": [current_platform()],
-        "architectures": [current_architecture()],
+        # **全平台/全架构**：这个 fixture 被显式传不同平台的用例共用，
+        # 默认值若绑定「当前平台」就会与 `platform="windows"` 这类调用冲突。
+        # 默认写成「哪都适用」，由调用方按需 override。
+        "platforms": ["windows", "linux", "macos"],
+        "architectures": ["x86_64", "aarch64"],
         "python_abi": "cp312",
         "artifacts": [
             {
@@ -213,8 +216,6 @@ def test_install_from_recipe_end_to_end(tmp_path: Path) -> None:
 
     from omnicrawler.services.component_recipe import (
         current_abi,
-        current_architecture,
-        current_platform,
         install_from_recipe,
     )
 
@@ -257,8 +258,6 @@ def test_install_refuses_bad_hash_before_extracting(tmp_path: Path) -> None:
     from omnicrawler.services.component_recipe import (
         RecipeError,
         current_abi,
-        current_architecture,
-        current_platform,
         install_from_recipe,
     )
 
@@ -291,8 +290,6 @@ def test_install_requires_explicit_downloader(tmp_path: Path) -> None:
     from omnicrawler.services.component_recipe import (
         RecipeError,
         current_abi,
-        current_architecture,
-        current_platform,
         install_from_recipe,
     )
 
@@ -385,8 +382,6 @@ def test_raw_single_file_artifact_assembly(tmp_path: Path) -> None:
     from omnicrawler.services.component_recipe import (
         RecipeError,
         current_abi,
-        current_architecture,
-        current_platform,
         install_from_recipe,
         validate_recipe,
     )
@@ -452,8 +447,6 @@ def test_tar_gz_artifact_assembly_and_strip_components(tmp_path: Path) -> None:
 
     from omnicrawler.services.component_recipe import (
         current_abi,
-        current_architecture,
-        current_platform,
         install_from_recipe,
     )
 
