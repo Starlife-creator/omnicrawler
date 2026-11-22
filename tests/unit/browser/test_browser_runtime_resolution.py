@@ -120,10 +120,21 @@ def test_capability_slot_browser_providers_and_preference() -> None:
     assert "system-browser" in ids
 
     # 默认活跃提供者为优先级最高的 playwright (Chromium)
+    #
+    # **但仅当捆绑 Chromium 真的存在时**。CI 的 macOS/Windows runner 上
+    # `playwright install chromium` 之外的引擎不一定就位，`system-browser`
+    # （走宿主已装浏览器）会胜出 —— 那是**正确的降级**，不是缺陷。
+    # 2026-11-22 CI macos 实测：`assert 'system-browser' == 'playwright'`。
     active = slot.active()
     assert active is not None
-    assert active.provider_id == "playwright"
-    assert active.metadata.get("bundled") is True
+    chromium = next(p for p in slot.providers() if p.provider_id == "playwright")
+    if chromium.is_available:
+        assert active.provider_id == "playwright"
+        assert active.metadata.get("bundled") is True
+    else:
+        assert active.provider_id == "system-browser", (
+            f"捆绑 Chromium 不可用时应降级到 system-browser，实际 {active.provider_id!r}"
+        )
 
     # ── 切换槽位首选项 ────────────────────────────────────────────────
     #

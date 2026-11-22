@@ -138,6 +138,21 @@ def test_market_recipes_are_installable_on_this_interpreter() -> None:
         abi = recipe.get("python_abi")
         if not abi:
             continue  # 纯数据构件（如语言包）不声明 ABI
+        # **只检查「声称支持当前平台」的配方**。
+        #
+        # 原实现把每个配方都按当前平台校验，于是 macOS runner 是
+        # aarch64 时报 `需要 ['x86_64']，当前 aarch64`、Windows-only 的
+        # 组件在 macos 上报「不支持当前平台」—— 而那是**正确的拒绝行为**，
+        # 不是配方缺陷。2026-11-22 CI macOS 因此红了 11 条。
+        #
+        # 本用例要验的是「配方写法与解析器假设相符」，不是「所有组件
+        # 都该支持我这台机器」。跳过不适用项才是正确判据。
+        platforms = recipe.get("platforms") or []
+        architectures = recipe.get("architectures") or []
+        if platforms and current_platform() not in platforms:
+            continue
+        if architectures and current_architecture() not in architectures:
+            continue
         checked += 1
         check_compatibility(
             recipe,
