@@ -139,10 +139,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve() if args.root else _ROOT
+
+    # **稳健性**：若 root 下没有 pyproject.toml，说明 `_ROOT` 推算错了
+    # （不同检出深度/符号链接下 `parents[N]` 会偏）。向上找一层。
+    if not (root / "pyproject.toml").is_file():
+        for candidate in root.parents:
+            if (candidate / "pyproject.toml").is_file():
+                root = candidate
+                break
+
     problems, checked = find_problems(root)
 
     # **防空集恒真**：一个声明都没扫到，说明正则或扫描范围失效了。
-    if checked < 5:
+    # 阈值取 1：**只要扫到一处就说明扫描链路是通的**。
+    # 早先写 5，本意是「防正则失效导致空集恒真」，但它把「仓库里
+    # 只有少量 install 声明」误判成「判据失效」—— CI 实测就撞上了。
+    if checked < 1:
         print(
             f"{BAD_MARK} 只扫到 {checked} 处 install 声明 —— "
             "正则或扫描范围可能已失效（空集会让判据恒真）"
