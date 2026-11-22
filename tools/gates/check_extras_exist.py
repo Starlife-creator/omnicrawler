@@ -155,10 +155,18 @@ def main(argv: list[str] | None = None) -> int:
     # 早先写 5，本意是「防正则失效导致空集恒真」，但它把「仓库里
     # 只有少量 install 声明」误判成「判据失效」—— CI 实测就撞上了。
     if checked < 1:
+        # **带上诊断**：只说「扫到 0 处」无从定位。把实际看到的根、
+        # 扫到的文件数、其中 .yml 数量都打出来 —— 下一次不必再猜。
+        all_files = [p for p in root.rglob("*") if p.is_file()]
+        yml_files = [p for p in all_files if p.suffix in (".yml", ".yaml")]
         print(
             f"{BAD_MARK} 只扫到 {checked} 处 install 声明 —— "
             "正则或扫描范围可能已失效（空集会让判据恒真）"
         )
+        print(f"  诊断 root={root}")
+        print(f"  诊断 文件总数={len(all_files)}，其中 .yml/.yaml={len(yml_files)}")
+        print(f"  诊断 pyproject 存在={(root / 'pyproject.toml').is_file()}")
+        print(f"  诊断 .github 存在={(root / '.github').is_dir()}")
         return 1
 
     if problems:
