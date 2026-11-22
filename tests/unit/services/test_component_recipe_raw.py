@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 from omnicrawler.services.component_install import RecipeInstallError, install_recipe_file
+from omnicrawler.services.component_recipe import current_architecture
 
 #: 模拟真实语言包：约 1 KB 的二进制内容，不依赖网络。
 _PAYLOAD = bytes(range(256)) * 4
@@ -56,7 +57,7 @@ def _recipe(**artifact_overrides: object) -> dict:
         "version": "1.0.0",
         "description": "raw 单文件构件测试",
         "platforms": ["windows", "linux", "darwin"],
-        "architectures": ["x86_64"],
+        "architectures": [current_architecture()],
         "python_abi": [],
         "artifacts": [artifact],
         "entry": {

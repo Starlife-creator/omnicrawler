@@ -444,6 +444,18 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_test_platform_defaults",
+        args=("tools/gates/check_test_platform_defaults.py",),
+        sets=_STATIC,
+        description="测试 helper 默认值不得硬编码本平台的平台/架构",
+        script="tools/gates/check_test_platform_defaults.py",
+        ci_note=(
+            "零网络、纯 AST。这类缺陷**本机永远测不出来**（current_architecture() "
+            "由执行环境决定），只会在 CI 的 macOS arm64 腿炸。"
+            "2026-11-22 实测：CI 连红 5 轮、合计 40+ 条，根因都是这一个模式。"
+        ),
+    ),
+    Gate(
         name="check_workspace_mkdir",
         args=("tools/gates/check_workspace_mkdir.py",),
         sets=_STATIC,

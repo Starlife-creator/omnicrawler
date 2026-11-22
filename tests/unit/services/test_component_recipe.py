@@ -34,6 +34,8 @@ from pathlib import Path
 
 import pytest
 
+from omnicrawler.services.component_recipe import current_architecture, current_platform
+
 
 def _recipe(**overrides) -> dict:
     """一份最小合法 recipe。"""
@@ -47,8 +49,8 @@ def _recipe(**overrides) -> dict:
         "smoke": {"expect": ["ok"]},
         "name": "demo-ocr",
         "version": "1.0.0",
-        "platforms": ["windows"],
-        "architectures": ["x86_64"],
+        "platforms": [current_platform()],
+        "architectures": [current_architecture()],
         "python_abi": "cp312",
         "artifacts": [
             {

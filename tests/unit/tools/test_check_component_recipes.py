@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from omnicrawler.services.component_recipe import current_architecture
+
 _REPO = Path(__file__).resolve().parents[3]
 _GATE = _REPO / "tools" / "gates" / "check_component_recipes.py"
 
@@ -48,7 +50,7 @@ def _base_recipe(**overrides: object) -> dict:
         "version": "1.0.0",
         "kind": "wheel-pack",
         "platforms": ["windows", "linux", "macos"],
-        "architectures": ["x86_64"],
+        "architectures": [current_architecture()],
         "python_abi": ["cp313"],
         "provides": ["probe.demo"],
         "artifacts": [
@@ -413,7 +415,7 @@ def _builtin_recipe(sha: str = "e" * 64, size: int = 2048) -> dict:
         "name": "probe-builtin",
         "version": "1228",
         "platforms": ["windows", "linux", "macos"],
-        "architectures": ["x86_64"],
+        "architectures": [current_architecture()],
         "python_abi": [],
         "provides": ["browser.probe"],
         "artifacts": [
