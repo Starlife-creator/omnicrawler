@@ -923,8 +923,17 @@ def check_compatibility(
     target_abi = abi or current_abi()
 
     platforms = recipe.get("platforms") or []
+    # **平台名也归一**：`darwin` 与 `macos` 是同一平台的两种叫法。
+    #
+    # 架构那边早就有这层归一（`arm64` = `aarch64`），平台这边漏了。
+    # 配方作者自然会写 `darwin`（那是 Python `sys.platform` 的值），
+    # 而 `current_platform()` 返回 `macos` ⇒ 明明支持却被判「不支持当前平台」。
+    # 2026-11-22 CI macOS 实测因此红了多条。
+    _PLATFORM_ALIASES = {"darwin": "macos", "osx": "macos", "win32": "windows"}
+    normalized_platforms = {_PLATFORM_ALIASES.get(str(x).strip().lower(), str(x).strip().lower()) for x in platforms}
+    normalized_target = _PLATFORM_ALIASES.get(target_platform, target_platform)
     _require(
-        target_platform in platforms,
+        normalized_target in normalized_platforms,
         f"此组件不支持当前平台：需要 {platforms}，当前 {target_platform}",
     )
 

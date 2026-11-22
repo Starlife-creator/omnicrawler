@@ -128,7 +128,10 @@ def test_capability_slot_browser_providers_and_preference() -> None:
     active = slot.active()
     assert active is not None
     chromium = next(p for p in slot.providers() if p.provider_id == "playwright")
-    if chromium.is_available:
+    # `is_available` 是**方法**不是属性（`CapabilityProvider.is_available()`）。
+    # 写成属性会永远拿到 bound method（恒真），分支判断形同虚设 ——
+    # 2026-11-22 我在这里踩了一次，CI macos 报 'system-browser' == 'playwright'。
+    if chromium.is_available():
         assert active.provider_id == "playwright"
         assert active.metadata.get("bundled") is True
     else:
