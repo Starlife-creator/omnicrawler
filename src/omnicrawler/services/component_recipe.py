@@ -929,9 +929,9 @@ def check_compatibility(
     # 配方作者自然会写 `darwin`（那是 Python `sys.platform` 的值），
     # 而 `current_platform()` 返回 `macos` ⇒ 明明支持却被判「不支持当前平台」。
     # 2026-11-22 CI macOS 实测因此红了多条。
-    _PLATFORM_ALIASES = {"darwin": "macos", "osx": "macos", "win32": "windows"}
-    normalized_platforms = {_PLATFORM_ALIASES.get(str(x).strip().lower(), str(x).strip().lower()) for x in platforms}
-    normalized_target = _PLATFORM_ALIASES.get(target_platform, target_platform)
+    _platform_aliases = {"darwin": "macos", "osx": "macos", "win32": "windows"}
+    normalized_platforms = {_platform_aliases.get(str(x).strip().lower(), str(x).strip().lower()) for x in platforms}
+    normalized_target = _platform_aliases.get(target_platform, target_platform)
     _require(
         normalized_target in normalized_platforms,
         f"此组件不支持当前平台：需要 {platforms}，当前 {target_platform}",
