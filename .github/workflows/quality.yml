@@ -133,6 +133,14 @@ jobs:
       - run: python -m pip install -e ".[html,pdf,pdf-write,dev,async-http,gui,tls,storage,ai,document]" cryptography
       - name: Exercise optional Zstandard decoding on every supported platform
         run: python -m pip install zstandard==0.25.0
+      # **浏览器二进制**：`gui` extra 只装 playwright **库**，不下载浏览器。
+      # 缺它时这几处会红（2026-11-22 实测 10 条）：
+      #   test_capability_slot_availability（「装了 chromium 却报不可用」）
+      #   test_browser_runtime_resolution、test_component_native/runner
+      # 本机装了浏览器所以全绿 —— 这类「本机能过、CI 红」最难查。
+      - if: runner.os == 'Linux'
+        name: Install Playwright Chromium (browser capability tests)
+        run: python -m playwright install --with-deps chromium
       - if: runner.os == 'Linux'
         name: Install Qt runtime dependencies
         # gettext：msgfmt --check-format 需要（ubuntu-latest 实测不预装）

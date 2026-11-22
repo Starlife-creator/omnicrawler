@@ -93,7 +93,12 @@ def test_incomplete_model_directory_is_not_ready(tmp_path: Path) -> None:
 
 
 def test_probe_never_downloads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """probe 必须是纯只读：它不得触发 PaddleX 构造（那会联网下载）。"""
+    """probe 必须是纯只读：它不得触发 PaddleX 构造（那会联网下载）。
+
+    需要 `paddleocr`（CI 的 test job 不装它）—— 缺了就跳过，不要改断言：
+    这条验的是「probe 不触发下载」，删掉断言等于放弃这层保护。
+    """
+    pytest.importorskip("paddleocr", reason="probe 需要 paddleocr 才能验证")
     from omnicrawler.services import model_download
 
     monkeypatch.setenv("PADDLE_PDX_CACHE_HOME", str(tmp_path))
