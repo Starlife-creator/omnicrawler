@@ -89,3 +89,9 @@ assets/branding/**/*.md           text eol=lf
 assets/branding/**/*.html         text eol=lf
 assets/branding/**/*.webmanifest  text eol=lf
 assets/branding/**/SHA256SUMS     text eol=lf
+
+# PDF 模板与插件副本必须**逐字节一致**（`test_shared_templates_are_identical`
+# 按 sha256 比对）。市场仓固定 `* text=auto eol=lf`，而本仓是 `* text=auto`
+# ⇒ Windows 上全新检出时这些文件会被转成 CRLF，两份副本字节不同、测试判红。
+# 显式钉死 LF，与市场仓对齐。2026-11-22 CI windows 实测因此失败。
+/src/omnicrawler/templates/pdf/**  text eol=lf
