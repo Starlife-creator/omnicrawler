@@ -42,6 +42,7 @@ from omnicrawler.services.component_install import (
     describe_recipe,
     install_recipe_file,
 )
+from omnicrawler.services.component_recipe import current_architecture
 
 _PAYLOAD_TEXT = b"fake-traineddata-bytes" * 8
 
@@ -102,7 +103,7 @@ def _recipe(url: str, digest: str, size: int) -> dict:
         "version": "0.0.1",
         "description": "测试用假组件",
         "platforms": ["windows", "linux", "darwin"],
-        "architectures": ["x86_64"],
+        "architectures": [current_architecture()],
         "python_abi": [],
         "artifacts": [
             {

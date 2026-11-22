@@ -25,14 +25,17 @@ from __future__ import annotations
 
 import pytest
 
-from omnicrawler.services.component_recipe import check_compatibility
+from omnicrawler.services.component_recipe import check_compatibility, current_architecture
 from tools.market.component_discovery import iter_component_recipes
 
 
 def _recipe(**overrides) -> dict:
     base = {
+        # **用当前架构**：macOS runner 是 aarch64，硬编码 x86_64 会让
+        # 所有「本机应可装」的用例在 Apple Silicon 上被判不兼容。
+        # 2026-11-22 CI macOS 实测因此红了多条。
         "platforms": ["windows", "linux", "macos"],
-        "architectures": ["x86_64"],
+        "architectures": [current_architecture()],
         "python_abi": ["cp313"],
     }
     base.update(overrides)

@@ -31,6 +31,7 @@ from pathlib import Path
 
 import pytest
 
+from omnicrawler.services.component_recipe import current_architecture
 from omnicrawler.services.component_runner import (
     ComponentRunnerError,
     NativeSpec,
@@ -201,6 +202,7 @@ def test_builtin_directory_component_assembles(
     # tmp_path，否则会去真实安装根找不存在的目录。
     import omnicrawler.core.runtime_paths as rp
     from omnicrawler.services.component_recipe import (
+        current_architecture,
         install_from_recipe,
         load_recipe,
     )
@@ -222,7 +224,7 @@ def test_builtin_directory_component_assembles(
         "name": "probe builtin",
         "version": "999",
         "platforms": ["windows", "linux", "macos"],
-        "architectures": ["x86_64"],
+        "architectures": [current_architecture()],
         "python_abi": [],
         "provides": ["browser.probe"],
         "artifacts": [
@@ -305,7 +307,7 @@ def test_builtin_component_can_build_native_spec(
         "name": "probe builtin 2",
         "version": "999",
         "platforms": ["windows", "linux", "macos"],
-        "architectures": ["x86_64"],
+        "architectures": [current_architecture()],
         "python_abi": [],
         "provides": ["browser.probe2"],
         "artifacts": [
