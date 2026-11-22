@@ -45,7 +45,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -91,6 +91,9 @@ class ComponentManagerPanel(WorkerOwnedWidget):
     继承 ``WorkerOwnedWidget`` 以复用仓库既有的线程生命周期机制：
     关闭/删除时请求中断并等 ``finished``，**不阻塞 GUI 线程**。
     """
+
+    #: 用户在「浏览器内核」里切换了内核族（空串＝auto）。
+    kernel_selected = Signal(str)
 
     def __init__(
         self,
@@ -240,6 +243,9 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._kernel_label.setAccessibleName(_("浏览器内核"))
         root.addWidget(self._kernel_label)
         self._kernel_panel = BrowserKernelPanel(self)
+        # 把面板的选择意图向上转发：保存配置是主窗口/市场页的职责，
+        # 组件面板只做中转（它不知道 config_path 与 dirty 标记）。
+        self._kernel_panel.kernel_selected.connect(self.kernel_selected.emit)
         root.addWidget(self._kernel_panel, 1)
 
     def _reload_catalog(self) -> None:

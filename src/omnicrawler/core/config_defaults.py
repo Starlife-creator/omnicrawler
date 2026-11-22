@@ -110,6 +110,13 @@ DEFAULTS: dict[str, Any] = {
     },
     "browser": {
         "engine": "playwright", "headless": True, "pool_size": 2, "actions": [],
+        # **内核族**（不是驱动名）：用户选的「当前内核」持久化在这里。
+        # 空串 = auto（按 `capability_slots` 的优先级自动选）。
+        #
+        # 与 `engine` 的区别：`engine` 是驱动（playwright / selenium），
+        # `kernel_family` 是同一驱动下的引擎（chromium / firefox / webkit）。
+        # 混用会让「换内核」变成「换驱动」，那是两件事。
+        "kernel_family": "",
         "selenium_fallback_engine": "none",
         "capture_api_responses": True, "max_api_response_bytes": 1_000_000,
         "max_api_capture_bytes": 10_000_000,

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -68,6 +69,13 @@ _TRUST_LABELS: dict[str, str] = {
 class BrowserKernelPanel(QWidget):
     """浏览器内核列表与切换面板。"""
 
+    #: 用户切换了内核族（chromium / firefox / webkit / 空串=auto）。
+    #:
+    #: 为什么用信号而不是面板自己写配置：保存涉及 config_path、dirty 标记、
+    #: 未保存提示，那些都由主窗口的 `_config_delegate` 管。面板广播意图，
+    #: 主窗口决定怎么落盘 —— 职责分离，也避免两处各写一套保存逻辑。
+    kernel_selected = Signal(str)
+
     def __init__(self, parent: QWidget | None = None, *, catalog: dict[str, Any] | None = None) -> None:
         super().__init__(parent)
         self.setAccessibleName(_("浏览器内核"))
@@ -75,8 +83,24 @@ class BrowserKernelPanel(QWidget):
         self._options: list[KernelOption] = []
         self._local_kernels: list[dict[str, str]] = []
         self._current_provider = ""
+        # **启动时读回上次选的内核族**。只写不读等于没持久化 ——
+        # 那正是本项此前「仍未做」的实质（面板只改内存变量）。
+        self._restore_preference()
         self._build_ui()
         self.refresh()
+
+    def _restore_preference(self) -> None:
+        """从 QSettings 读回上次选择的内核族（空串＝auto）。"""
+        try:
+            from ..settings import AppSettings
+
+            stored = str(
+                AppSettings.instance().value("browser/kernel_family", "", str) or ""
+            ).strip()
+            if stored:
+                self._current_provider = stored
+        except Exception:  # noqa: BLE001 - 读不到就按 auto
+            pass
 
     # ── UI ────────────────────────────────────────────────────────────────
     def _build_ui(self) -> None:
@@ -213,6 +237,26 @@ class BrowserKernelPanel(QWidget):
             return
 
         self._current_provider = option.provider_id
+        # §15.16.14.7：**发出持久化信号**。早先只改内存里的
+        # `_current_provider`，重启后回到 auto —— 用户以为「换过内核」，
+        # 实际下次启动又变回去。
+        #
+        # 面板不直接写配置文件：保存由主窗口的 `_config_delegate` 负责
+        # （它管着 path / dirty 标记 / 未保存提示）。这里只广播意图。
+        family = str(option.engine_family or "").strip()
+        # **持久化到 QSettings**：项目已有 `gui.settings.make_qsettings`，
+        # 它在冻结便携模式下落到应用数据根内的 INI（脱离注册表、
+        # 多份便携包互不串扰）。不自创新机制。
+        try:
+            # 用 `AppSettings` 而不是裸 QSettings：它**已处理本机这种场景**
+            # （Windows 沙箱拒绝注册表写入），用内存回退保证本次会话仍有效。
+            # 裸 QSettings 在本机 `isWritable()` 为 False、sync 返回 AccessError。
+            from ..settings import AppSettings
+
+            AppSettings.instance().set_value("browser/kernel_family", family)
+        except Exception:  # noqa: BLE001 - 存不下不该打断切换
+            pass
+        self.kernel_selected.emit(family)
         self._status.setText(_("当前内核：{name}").format(name=option.display_name))
 
     def _on_import(self) -> None:
