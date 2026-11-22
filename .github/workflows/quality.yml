@@ -307,6 +307,8 @@ jobs:
       - run: python tools/gates/check_test_platform_defaults.py
       # 配置白名单必须从 schema 派生（手抄会在加字段时漏同步）
       - run: python tools/gates/check_schema_derived_whitelists.py
+      # 目录遍历必须在进入前剪枝（rglob 后过滤会白跑十几万条目）
+      - run: python tools/gates/check_walk_pruning.py
       - run: python -m mypy src/omnicrawler
       # 走 tools/builders/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
       # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）

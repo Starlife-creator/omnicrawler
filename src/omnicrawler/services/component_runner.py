@@ -359,11 +359,11 @@ def run_component(
         # 是启动期的 warning，与本次失败无关。它们出现在 stderr 里会把
         # 真正的信息挤掉 —— 2026-11-20 的 CI 就因此把「worker 未产出 JSON」
         # 误读成「Tesseract 缺失导致失败」。
-        _NOISE = ("内置 tesseract", "内置 chromedriver", "内置tesseract", "内置chromedriver")
+        _noise = ("内置 tesseract", "内置 chromedriver", "内置tesseract", "内置chromedriver")
         stderr_lines = [
             ln
             for ln in (completed.stderr or "").strip().splitlines()
-            if ln.strip() and not ln.strip().lower().startswith(_NOISE)
+            if ln.strip() and not ln.strip().lower().startswith(_noise)
         ]
         detail = "\n".join(stderr_lines[-10:]) or "（stderr 只有无关告警）"
         raise ComponentRunnerError(

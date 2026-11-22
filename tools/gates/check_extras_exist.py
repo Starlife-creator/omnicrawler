@@ -87,6 +87,9 @@ _SKIP_FILES = frozenset(
         # `check_build_profiles.py` 里存着**用来匹配 install 行的正则源码**，
         # 那不是真的 install 声明。把它当声明会报出 `['([^\']` 这种乱码。
         "tools/gates/check_build_profiles.py",
+        # `check_walk_pruning.py` 的 docstring 里举例写了 `.[...]`，
+        # 那不是真的 install 声明。
+        "tools/gates/check_walk_pruning.py",
     }
 )
 

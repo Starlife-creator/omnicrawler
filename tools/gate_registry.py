@@ -468,6 +468,17 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_walk_pruning",
+        args=("tools/gates/check_walk_pruning.py",),
+        sets=_STATIC,
+        description="目录遍历必须在进入前剪枝（rglob 后过滤会白跑 12 万条目）",
+        script="tools/gates/check_walk_pruning.py",
+        ci_note=(
+            "零网络、纯 AST。这个反模式**不报错也不红测试**，只让工具悄悄变慢；"
+            "而慢门禁的后果是不愿意跑它，于是退回全量验证（本会话真实发生）。"
+        ),
+    ),
+    Gate(
         name="check_schema_derived_whitelists",
         args=("tools/gates/check_schema_derived_whitelists.py",),
         sets=_STATIC,
