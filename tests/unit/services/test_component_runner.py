@@ -62,7 +62,7 @@ PROBE = {
 """
 
 
-def _build_component(root: Path, *, entry_script: str = _ENTRY_SCRIPT) -> Path:
+def _build_component(root: Path, *, entry_script: str = _ENTRY_SCRIPT, engine: str = "paddle") -> Path:
     """构造一个最小 Wheel-Pack 组件目录（含 component.json / site-packages / entry.json）。"""
     root.mkdir(parents=True, exist_ok=True)
     site_packages = root / "site-packages"
@@ -93,7 +93,7 @@ def _build_component(root: Path, *, entry_script: str = _ENTRY_SCRIPT) -> Path:
             {
                 "name": "demo-wheelpack",
                 "version": "1.2.3",
-                "engine": "paddle",
+                "engine": engine,
                 "entry": "site-packages/runner_entry.py",
             },
             indent=2,
@@ -101,6 +101,12 @@ def _build_component(root: Path, *, entry_script: str = _ENTRY_SCRIPT) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _build_component_rtest(root: Path, **kwargs):
+    """执行型用例用 generic 引擎（见下方各用例内的说明）。"""
+    kwargs.setdefault("engine", "generic")
+    return _build_component(root, **kwargs)
 
 
 def test_spec_reads_entry_and_site_packages(tmp_path: Path) -> None:
@@ -169,7 +175,7 @@ def test_runner_executes_in_subprocess_and_passes_env(tmp_path: Path) -> None:
     `component_runner_env()` 与 `_probe_generic` 保证，这里验证
     worker 确实起来、模块确实可 import、payload 确实透传。
     """
-    root = _build_component(tmp_path / "demo")
+    root = _build_component_rtest(tmp_path / "demo")
     spec = build_wheelpack_spec(root)
 
     result = run_component(spec, {"hello": "world"}, timeout=60)
@@ -210,7 +216,7 @@ def test_runner_reports_nonzero_exit(tmp_path: Path) -> None:
 
 
 def test_runner_rejects_non_json_output(tmp_path: Path) -> None:
-    root = _build_component(tmp_path / "demo", entry_script="print('not json')\n")
+    root = _build_component_rtest(tmp_path / "demo", entry_script="print('not json')\n")
     spec = build_wheelpack_spec(root)
 
     with pytest.raises(ComponentRunnerError) as excinfo:
@@ -291,7 +297,7 @@ def test_subprocess_uses_current_interpreter(tmp_path: Path) -> None:
     )
 
     # 端到端再确认一次：worker 能真的起来并回报结果
-    root = _build_component(tmp_path / "demo")
+    root = _build_component_rtest(tmp_path / "demo")
     spec = build_wheelpack_spec(root)
     result = run_component(spec, {})
     assert result["ok"] is True, f"worker 未成功执行：{result}"

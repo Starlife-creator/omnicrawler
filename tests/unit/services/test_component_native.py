@@ -287,8 +287,15 @@ def test_builtin_component_can_build_native_spec(
     monkeypatch.setattr(rp, "browsers_root", lambda: tmp_path / "runtime" / "browsers")
 
     source_dir = tmp_path / "runtime" / "browsers" / "chromium-999"
-    (source_dir / "chrome-win64").mkdir(parents=True)
-    (source_dir / "chrome-win64" / "chrome.exe").write_bytes(b"fake")
+    entry_dir = source_dir / "chrome-win64"
+    entry_dir.mkdir(parents=True)
+    entry = entry_dir / "chrome.exe"
+    entry.write_bytes(b"fake")
+    # **POSIX 上必须给可执行位**：`build_native_spec` 会检查入口是否可执行
+    # （`os.access(X_OK)`），否则报「装配应保留可执行位」。
+    # Windows 无此概念，跳过。2026-11-22 CI ubuntu/macos 因此红了 4 条。
+    if os.name == "posix":
+        entry.chmod(0o755)
 
     recipe = {
         "schema": 1,
