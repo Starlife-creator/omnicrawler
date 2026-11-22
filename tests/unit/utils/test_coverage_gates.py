@@ -259,6 +259,42 @@ _FLOORS_SNAPSHOTS: tuple[dict[str, float], ...] = (
 )
 
 
+#: **合规退役**的单文件下限：目标文件已不存在，下线它不等于放宽口径。
+#:
+#: 「只升不降」的方向是对的（防止靠删门禁美化通过率），但它缺一个出口：
+#: 当**被测文件本身被移出仓库**（本例：PDF 工作台整块迁到
+#: document-workbench 插件），保留该下限只会让门禁永远报
+#: "missing from coverage report"，而红的原因与代码质量无关。
+#:
+#: 所以这里要求**显式登记 + 写清去向**，而不是允许静默删除：
+#: 键是被删的下限名，值是「文件去哪了」。
+#: **合规下调**的分组下限：被测范围本身缩小了，原下限失去意义。
+#:
+#: `pdf_and_ocr` 原为 72.6%，那是「整条 PDF 管线都在宿主内」时的数字。
+#: PDF 工作台迁出后，该组只剩两份编排胶水（87 行），原下限对应的
+#: 被测面已不存在。下调必须在这里留痕并写清理由。
+_RETIRED_GROUP_FLOORS: dict[str, tuple[float, str]] = {
+    "GATES.pdf_and_ocr": (
+        63.0,
+        "PDF 工作台整体迁出到 document-workbench 插件；该组只剩 "
+        "pipeline_ops/pdf_integration.py 与 pdf_region.py 两份胶水（87 行），"
+        "原 72.6% 对应的被测面已不存在。2026-11-22 实测 63.22%。",
+    ),
+}
+
+_RETIRED_FILE_FLOORS: dict[str, str] = {
+    "_FILE_FLOORS.field_extractor.py": (
+        "apps/field_extractor.py 随 document-workbench 插件迁出（2026-11-17），宿主侧文件已删除"
+    ),
+    "_FILE_FLOORS.pdf_processor.py": (
+        "apps/pdf_processor.py 随 document-workbench 插件迁出（2026-11-17），宿主侧文件已删除"
+    ),
+    "_FILE_FLOORS.pdf_workbench_worker.py": (
+        "gui/views/pdf_workbench_worker.py 随 document-workbench 插件迁出（2026-11-17）"
+    ),
+}
+
+
 def _current_floors(checker: ModuleType) -> dict[str, float]:
     floors = {"OVERALL_COVERAGE_GATE": checker.OVERALL_COVERAGE_GATE}
     floors.update({f"GATES.{name}": value for name, (value, _m) in checker.GATES.items()})
@@ -277,11 +313,24 @@ def test_coverage_ratchet_never_lowers_a_floor() -> None:
     for snapshot in _FLOORS_SNAPSHOTS:
         for key, value in snapshot.items():
             expected[key] = max(expected.get(key, float("-inf")), value)
-    missing = sorted(set(expected) - set(current))
+    # **合规退役**：目标文件已不存在、且已在 `_RETIRED_FILE_FLOORS` 登记去向的，
+    # 不算「删门禁放宽口径」。未登记的一律仍判红 —— 出口必须留痕。
+    missing = sorted(set(expected) - set(current) - set(_RETIRED_FILE_FLOORS))
     assert not missing, (
         f"这些覆盖率门禁被删除了 —— 删门禁等于放宽口径，与 W6.2 只升不降相悖：{missing}"
+        "\n若目标文件已随能力迁出而删除，请登记到 _RETIRED_FILE_FLOORS 并写明去向。"
     )
-    lowered = {k: (v, current[k]) for k, v in expected.items() if current[k] < v}
+    # 只比较**当前仍存在**的键：退役项（见上）已从 current 里消失。
+    # **合规下调**：登记在 `_RETIRED_GROUP_FLOORS` 且现值与登记值一致的，
+    # 视为「被测面缩小后的重新标定」，不算偷偷放宽。
+    allowed_lowered = {k: v[0] for k, v in _RETIRED_GROUP_FLOORS.items()}
+    lowered = {
+        k: (v, current[k])
+        for k, v in expected.items()
+        if k in current
+        and current[k] < v
+        and not (k in allowed_lowered and current[k] >= allowed_lowered[k])
+    }
     assert not lowered, f"这些覆盖率下限被调低了（快照->现值）：{lowered}"
 
 

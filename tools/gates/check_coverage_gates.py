@@ -63,15 +63,20 @@ GATES: dict[str, tuple[float, Matcher]] = {
             prefixes=("src/omnicrawler/fetching/browser_",),
         ),
     ),
+    # PDF / OCR 支柱：**主体已随 document-workbench 插件迁出**
+    # （`src/omnicrawler/pdfx/` 现为空目录；`apps/pdf_processor.py` 与
+    # `apps/field_extractor.py` 已删除）。留在宿主侧的只剩两份编排胶水，
+    # 它们的真实下限是 `_MEASURED` 里的值，不再按 72.6% 要求 ——
+    # 那是「整条 PDF 管线都在宿主内」时代的数字。
+    #
+    # 2026-11-22 实测：该组只剩 87 行，覆盖 55 行（63.22%）。
+    # 继续按 72.6% 判会永远红，而红的原因与代码质量无关。
     "pdf_and_ocr": (
-        72.6,
-        lambda path: path.startswith("src/omnicrawler/pdfx/")
-        or path
+        63.0,
+        lambda path: path
         in {
             "src/omnicrawler/pipeline_ops/pdf_integration.py",
             "src/omnicrawler/pipeline_ops/pdf_region.py",
-            "src/omnicrawler/apps/pdf_processor.py",
-            "src/omnicrawler/apps/field_extractor.py",
         },
     ),
     "desktop_core": (
@@ -176,9 +181,10 @@ _FILE_FLOORS: dict[str, float] = {
     "src/omnicrawler/state/state_store_runs.py": 85.0,  # 实测 87.18%
     "src/omnicrawler/plugins/plugin_loader.py": 82.0,  # 实测 84.91%
     "src/omnicrawler/gui/views/plugin_market_install.py": 30.0,  # 实测 32.50%
-    "src/omnicrawler/gui/views/pdf_workbench_worker.py": 18.0,  # 实测 20.48%
-    "src/omnicrawler/apps/field_extractor.py": 34.0,  # 实测 36.92%
-    "src/omnicrawler/apps/pdf_processor.py": 42.0,  # 实测 44.83%
+    # `gui/views/pdf_workbench_worker.py` 已随插件迁出（文件不存在）。
+    # `apps/field_extractor.py` 与 `apps/pdf_processor.py` **已随
+    # document-workbench 插件迁出**（文件不存在）—— 留着会让覆盖率门禁
+    # 一直报 "missing from coverage report"。2026-11-22 移除。
 }
 
 #: **需要浏览器运行时**才能达标的下限（2026-09-15 新增，按环境分离）。
