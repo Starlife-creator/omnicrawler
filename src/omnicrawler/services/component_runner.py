@@ -355,10 +355,21 @@ def run_component(
         # 没有 JSON（worker 自己崩了）：报**最后 10 行**而不是最后 800 字符 ——
         # 崩溃栈的末尾几行才是「哪一行炸的」，而中文字符占 3 字节，
         # 800 字符窗口很容易被前面的告警吃光。
-        stderr_lines = [ln for ln in (completed.stderr or "").strip().splitlines() if ln.strip()]
-        detail = "\n".join(stderr_lines[-10:])
+        # **过滤无关告警**：`内置 Tesseract 缺失` / `内置 ChromeDriver 缺失`
+        # 是启动期的 warning，与本次失败无关。它们出现在 stderr 里会把
+        # 真正的信息挤掉 —— 2026-11-20 的 CI 就因此把「worker 未产出 JSON」
+        # 误读成「Tesseract 缺失导致失败」。
+        _NOISE = ("内置 tesseract", "内置 chromedriver", "内置tesseract", "内置chromedriver")
+        stderr_lines = [
+            ln
+            for ln in (completed.stderr or "").strip().splitlines()
+            if ln.strip() and not ln.strip().lower().startswith(_NOISE)
+        ]
+        detail = "\n".join(stderr_lines[-10:]) or "（stderr 只有无关告警）"
         raise ComponentRunnerError(
-            f"组件 {spec.name} 退出码 {completed.returncode}：{detail}"
+            f"组件 {spec.name} 退出码 {completed.returncode}："
+            f"**worker 未产出结果 JSON**（进程在写结果前就退出了）。"
+            f"原始 stderr 末 10 行（已滤掉启动期告警）：\n{detail}"
         )
 
     raw = (completed.stdout or "").strip()
