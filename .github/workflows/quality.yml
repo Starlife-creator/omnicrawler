@@ -100,7 +100,10 @@ jobs:
     # （结论是 `cancelled`：前 16 步全绿、卡在 `coverage run -m pytest`；PR #81 即因此卡住）。
     # ★ 超时是**资源上限**，不是正确性门禁：测试内容与各门禁一字未改，此处只消除假阴性。
     # 45（≈ Windows 实测 1.5×）给最慢平台留出余量；其余平台更宽裕，且作业成功即结束、不占额外时间。
-    timeout-minutes: 45
+    # ⚠ 临时抬高以取得耗时数据：2026-11-12 全绿时 Windows 实测 14.8 分，
+    # 现三平台均 >45 分被取消。先用 90 分跑通一次拿到 durations 与 junit，
+    # 定位真实慢点后**必须改回**（45 是实测 1.5× 余量的既定值）。
+    timeout-minutes: 90
     strategy:
       # Keep every platform running so one assertion cannot hide another failure.
       fail-fast: false
