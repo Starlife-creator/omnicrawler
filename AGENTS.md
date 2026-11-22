@@ -53,6 +53,10 @@
   用于「测试红了但不知道为什么」——本会话有一条测试卡了很久，
   用探针一次看清了「信任根解析到了随包路径而不是测试注入的路径」。
   模板在 `tools/qa/probe_template.py`（独立文件，避免嵌套 f-string 的转义地狱）。
+- **CI 日志**：`python tools/qa/ci_log.py [--run <id>] [--errors-only] [--raw]`
+  把 `gh` 的原始日志变成可读摘要：自动剥掉 ANSI 转义与 ISO 时间戳，
+  按 job 列出失败步骤与关键错误行。缺省自动找最近一次失败的 run。
+  不自己发 HTTP 请求 —— `gh` 处理了认证与 API 版本，重写一遍只会更脆弱。
 
 **写新工具时的两个高频陷阱（本项目已踩过多次）**：
 - **直接运行找不到 `tools` 包**：`python tools/xxx/yyy.py` 的 `sys.path[0]` 是脚本目录，
