@@ -27,7 +27,11 @@ def test_task_workspace_template_library_and_rebuild_start_offscreen(monkeypatch
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from omnicrawler.gui.main import MainWindow, NavIndex, TemplateLibraryDialog
+    from omnicrawler.gui.main import MainWindow, NavIndex
+
+    # `TemplateLibraryDialog` 已迁到独立模块（gui/views/template_library_dialog.py），
+    # `gui.main` 不再导出它 —— 从新位置导入。
+    from omnicrawler.gui.template_library_dialog import TemplateLibraryDialog
     from omnicrawler.gui.views.task_canvas import TaskCanvas
 
     monkeypatch.setattr(MainWindow, "_on_first_launch", lambda self: None)
