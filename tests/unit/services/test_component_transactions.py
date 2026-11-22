@@ -82,17 +82,27 @@ def test_corrupt_registry_is_not_silently_overwritten(tmp_path: Path) -> None:
 
 
 def test_command_import_uses_explicit_trusted_public_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from omnicrawler.commands import components
 
     monkeypatch.setattr(components, "portable_data_root", lambda: tmp_path)
+    # ★ **必须用环境变量锚定信任根**：`resolve_trust_path` 的优先级是
+    # 「显式（环境变量）> 随包 configs/ > 数据目录」。
+    #
+    # 仓库自带 `configs/component_trust.pub.pem`（随包兜底），它的优先级
+    # **高于**这里写的 tmp_path 文件 —— 只 monkeypatch `portable_data_root`
+    # 不够，因为随包那份会先命中，于是刚签好的包用随包公钥验签失败。
+    #
+    # 这条结论是用 `tools/qa/probe.py` 观察 `resolve_trust_path` 的返回值
+    # 确认的（不用改源码加 print）。
     key = Ed25519PrivateKey.generate()
     trust = tmp_path / ".omnicrawler" / "component_trust.pub.pem"
     trust.parent.mkdir()
     trust.write_bytes(key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
+    # 用「显式」那一级把信任根钉到测试密钥上（优先级高于随包 configs/）
+    monkeypatch.setenv("OMNICRAWL_COMPONENT_TRUST", str(trust))
     archive_path = package(tmp_path / "signed.ocp", "ocr")
     with zipfile.ZipFile(archive_path) as archive:
         manifest = json.loads(archive.read("component.json"))
@@ -104,5 +114,9 @@ def test_command_import_uses_explicit_trusted_public_key(tmp_path: Path, monkeyp
         archive.writestr("model.bin", payload)
     assert components.execute("import", package=str(archive_path))["name"] == "ocr"
     trust.write_bytes(Ed25519PrivateKey.generate().public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
-    with pytest.raises(InvalidSignature):
+    # 判据是 **ValueError 而非 cryptography 的 InvalidSignature**：
+    # `_verify_ed25519` 有意把底层异常包装成可读的 ValueError
+    # （`InvalidSignature.__str__()` 是空串，用户会看到空白错误提示）。
+    # 这条包装本身有专门注释说明原因，属设计而非疏漏。
+    with pytest.raises(ValueError, match="签名校验失败"):
         components.execute("inspect", package=str(archive_path))

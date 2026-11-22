@@ -48,6 +48,11 @@
   需要遍历组件配方时**必须**用 `iter_component_recipes()`，不要自己写 `glob`/`iterdir` ——
   目录形状是 `components/<分类>/<id>/`，一层 glob 会扫到空且报错伪装成「未找到任何组件配方」。
   有反向索引门禁 `tools/gates/check_component_discovery.py` 守着这一点。
+- **诊断探针**：`python tools/qa/probe.py --target <模块>:<类.方法> --test <测试>`
+  **不改源码**就观察某函数每次调用的参数/返回/异常。
+  用于「测试红了但不知道为什么」——本会话有一条测试卡了很久，
+  用探针一次看清了「信任根解析到了随包路径而不是测试注入的路径」。
+  模板在 `tools/qa/probe_template.py`（独立文件，避免嵌套 f-string 的转义地狱）。
 
 **写新工具时的两个高频陷阱（本项目已踩过多次）**：
 - **直接运行找不到 `tools` 包**：`python tools/xxx/yyy.py` 的 `sys.path[0]` 是脚本目录，
