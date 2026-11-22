@@ -198,15 +198,31 @@ def job_logs(run_id: str) -> list[tuple[str, str]]:
 def _payload(text: str) -> str:
     """从 `##[group]Run` 段里剥出命令本身（便于看这一步在做什么）。"""
     lines = text.splitlines()
+
+    # ★ 取**报错前最后一个** `##[group]Run`，不是第一个。
+    #
+    # 第一个往往是 runner 自己的信息段（"Hosted Compute Agent / Version …"），
+    # 与失败原因无关。失败的那一步通常是**报错行之前最近的那个** Run 组。
+    error_index = len(lines)
     for index, line in enumerate(lines):
-        if "##[group]Run" in line:
-            body: list[str] = []
-            for follow in lines[index + 1 :]:
-                if follow.startswith("##[endgroup]"):
-                    break
-                body.append(follow)
-            return "\n".join(body).strip()
-    return ""
+        if _ERROR_HINTS.search(line):
+            error_index = index
+            break
+
+    candidate = ""
+    for index, line in enumerate(lines[:error_index]):
+        if "##[group]Run" not in line:
+            continue
+        body: list[str] = []
+        for follow in lines[index + 1 :]:
+            if follow.startswith("##[endgroup]"):
+                break
+            body.append(follow)
+        stripped = "\n".join(body).strip()
+        # 跳过 runner 元信息段（它们没有命令行的样子）
+        if stripped and "Hosted Compute Agent" not in stripped:
+            candidate = stripped
+    return candidate
 
 
 def summarize(name: str, text: str, *, errors_only: bool) -> str:
