@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-23T12:36:46+00:00",
-  "sequence": 1791080240,
+  "generated_at": "2026-11-23T12:51:15+00:00",
+  "sequence": 1791080241,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -214,6 +214,39 @@
       "versions": {
         "1.2.0": {
           "sha256": "466cef38bbcd740a626f4d0dda58062e394f93ae057233fa7be85a200b0f2c84"
+        }
+      }
+    },
+    {
+      "id": "csv-io",
+      "name": "CSV 导出/导入",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "exporter",
+      "summary": "导出/导入 CSV，UTF-8 BOM 兼容 Excel，防公式注入。",
+      "description_file": "plugins/csv-io/listing.md",
+      "plugin_file": "plugins/csv-io/plugin.py",
+      "signature_file": "plugins/csv-io/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "exporter",
+        "csv",
+        "excel",
+        "privacy",
+        "security"
+      ],
+      "updated_at": "2026-11-23",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/csv-io",
+      "creator_signature_file": "plugins/csv-io/creator.sig",
+      "creator_identity_file": "plugins/csv-io/creator.identity",
+      "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "95fd73e398aec8a20caa3210dfa1910ce17995592439d5613382c064074bd775"
         }
       }
     },
