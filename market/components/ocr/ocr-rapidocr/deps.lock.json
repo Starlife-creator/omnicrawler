@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "642a938f53e87b6a1cec818b7fbf1f5974c77951b1db3ffa6b3d76459144c3ab",
+  "recipe_digest": "52ab9a760d89dbacd76e65e9985addd6e88e1352dc19208334556a6f4891d873",
   "python_version": "3.13",
   "packages": [
     "colorama",

@@ -10,8 +10,7 @@
   ],
   "platforms": [
     "windows",
-    "linux",
-    "macos"
+    "linux"
   ],
   "architectures": [
     "x86_64",
@@ -42,7 +41,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -84,7 +82,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -136,7 +133,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -158,7 +154,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -170,7 +165,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -181,7 +175,6 @@
       "format": "whl",
       "extract_to": "site-packages",
       "platforms": [
-        "macos",
         "windows"
       ]
     },
@@ -343,126 +336,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/0f/fa/4ae71d860267f2f9eaf7640516f693acf61c9575d48157cdea459c0215aa/numpy-2.5.5-cp313-cp313-macosx_10_13_x86_64.whl",
-      "sha256": "228e3d90e967495d61ddc79dd64e95267aae3bcf1b1c516a6186429106a0b444",
-      "size": 14747053,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/f3/25/018c8ad2f404bd235d03d822b033a1e59464054bd57d164575fb0939608a/opencv_python-5.1.0.95-cp37-abi3-macosx_15_0_x86_64.whl",
-      "sha256": "6438ef9bfbd15b9ff6474115d836932d24fba80f693f6b1b53b8e0a7a4b387a6",
-      "size": 47012381,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/08/bc/578ab2eaa04705a8978bd9be0fe15c3d43a8fc95097c4f7e39540e79e4fa/pillow-13.0.0-cp313-cp313-macosx_10_13_x86_64.whl",
-      "sha256": "ef5fe6b7db3f501c56000ba8fe7c7e1a35ca1d45824fbeb95a67daa85cff4dbe",
-      "size": 5568469,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/ce/cc/742b9d69d96c58ac156947e1b56d0f81cbacbccf869e2ac7229f2f86dc4e/pyclipper-1.4.0-cp313-cp313-macosx_10_13_x86_64.whl",
-      "sha256": "37bfec361e174110cdddffd5ecd070a8064015c99383d95eb692c253951eee8a",
-      "size": 139839,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/95/22/b445c43210fe7f466fcf5a38bcbe850fd3db31b85594db22b5a43e63c482/pyyaml-6.0.4-cp313-cp313-macosx_10_15_x86_64.whl",
-      "sha256": "61eef2f08e977b725f37a8d1663f5a222c6f09207ac0794030d5fca062e7c96e",
-      "size": 188392,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/28/b6/9ba2a62ab6e831b911a248f0752f0f4120be7637a33ab33d8649ed4ede4d/shapely-2.2.0-cp313-cp313-macosx_10_13_x86_64.whl",
-      "sha256": "c037369c35510f51100dd6d386ee3203bac32f164d53e27ca12c3cea5bb643b1",
-      "size": 1785102,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/d4/9a/01a332ebb0899ddb14d782f86ed66d080463e5387a8778029462d1902019/numpy-2.5.5-cp313-cp313-macosx_11_0_arm64.whl",
-      "sha256": "7e71ac4284c700afa654e2d15b1b174166710dca932f24045e5dc92001b5bda0",
-      "size": 10744599,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/f1/0c/97eb4ac42266545d7630e8231f8cc969f5c3f144d2ee6cb568ef45f81360/onnxruntime-1.32.0-cp313-cp313-macosx_14_0_arm64.whl",
-      "sha256": "27bf5dad46355a8a435c9c4e1556464d99ca834ea44e0f452909712068b8821b",
-      "size": 22518865,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/54/9e/cf62919a706d3288f1a5d9158d5614f1c44e0c3ee978cc769f942a22a232/opencv_python-5.1.0.95-cp37-abi3-macosx_15_0_arm64.whl",
-      "sha256": "0b62fb3c71086ea96369e0f47e3b11949345b2f301b88dff97c92c5118176d7b",
-      "size": 25824349,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/98/c8/ccede3dcc4f274b80fb49199eed1ef34ba05566c8b71976b9d1f111da2e3/pillow-13.0.0-cp313-cp313-macosx_11_0_arm64.whl",
-      "sha256": "f11a3c1358bb3c68012a7b1f41b223c3db9f7bfde90b481df028cfe1c3363313",
-      "size": 4852187,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/1f/c3/1536ad41fd962d3915f3f8252ecc7f91192ab15c3120ba72ff45e76b7077/pyyaml-6.0.4-cp313-cp313-macosx_11_0_arm64.whl",
-      "sha256": "9d4211f080920629a90c9e31c51e326fb70cfae38f18d4128b9913c23642bace",
-      "size": 179961,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/e9/8a/d7c11c2d1beef99a4df4183b255ea2d8669f3bcf7d049bb17fe56bf7cd72/shapely-2.2.0-cp313-cp313-macosx_11_0_arm64.whl",
-      "sha256": "d75957716368f919c63016dae1977a0d007e15f06861cd178701edb91b08d2b0",
-      "size": 1584542,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
       ]
     }
   ],
