@@ -170,3 +170,31 @@ def test_process_exit_code_matches_envelope() -> None:
         f"进程退出码 {completed.returncode} 与 envelope 的 "
         f"{payload['exit_code']} 不一致 —— agent 会误判成败"
     )
+
+@pytest.mark.parametrize(
+    ("message", "must_contain"),
+    [
+        ("the following arguments are required: --output/-o", "--output/-o"),
+        ("unrecognized arguments: --badflag x", "--badflag"),
+        ("argument --mode: invalid choice: 'wrong'", "允许范围"),
+    ],
+)
+def test_usage_suggestion_names_the_specific_problem(message: str, must_contain: str) -> None:
+    """**建议必须点名具体问题**，不能只说「检查参数拼写」。
+
+    argparse 的 message 里已经有参数名了。把它抽出来写进 suggestion，
+    agent 就能直接照做，不必再去读一遍 `--help`。
+    """
+    from omnicrawler.cli._main import _usage_suggestion
+
+    suggestion = _usage_suggestion(message)
+    assert must_contain in suggestion, (
+        f"建议没有点名具体问题（缺 {must_contain!r}）：{suggestion!r}"
+    )
+
+
+def test_usage_suggestion_falls_back_when_unparseable() -> None:
+    """无法识别的文案要给通用兜底，不能返回空串。"""
+    from omnicrawler.cli._main import _usage_suggestion
+
+    assert _usage_suggestion("某种没见过的错误")

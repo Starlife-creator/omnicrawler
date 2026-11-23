@@ -121,6 +121,25 @@ EXIT_CODE_HELP: tuple[tuple[str, str], ...] = (
 )
 
 
+def _usage_suggestion(message: str) -> str:
+    """从 argparse 的错误文案里抽出「缺什么/错什么」，给出具体建议。"""
+    text = (message or "").strip()
+    lowered = text.casefold()
+    if "required" in lowered:
+        # 形如 `the following arguments are required: --output/-o, --config/-c`
+        _head, _sep, tail = text.partition(":")
+        names = tail.strip()
+        if names:
+            return f"缺少必填参数 {names}；加 `--help` 查看完整用法"
+        return "缺少必填参数；加 `--help` 查看完整用法"
+    if "unrecognized arguments" in lowered:
+        _head, _sep, tail = text.partition(":")
+        return f"参数不被识别 {tail.strip()}；检查拼写或用 `--help` 查看支持的选项"
+    if "invalid choice" in lowered:
+        return "参数取值不在允许范围内；用 `--help` 查看可选项"
+    return "检查参数拼写与必填项；用 --help 查看用法"
+
+
 _NamespaceT = TypeVar("_NamespaceT")
 
 
@@ -184,7 +203,11 @@ class _ArgumentParser(argparse.ArgumentParser):
                 "error": {
                     "type": "UsageError",
                     "message": message,
-                    "suggestion": "检查参数拼写与必填项；用 --help 查看用法",
+                    # **建议要指向具体缺失项**，不能只说「检查参数拼写」。
+                    # argparse 的 message 已经把参数名列出来了
+                    # （如 `the following arguments are required: --output/-o`），
+                    # 直接点名比重读一遍 help 快得多 —— agent 尤其如此。
+                    "suggestion": _usage_suggestion(message),
                     "is_retryable": False,
                 },
             }
