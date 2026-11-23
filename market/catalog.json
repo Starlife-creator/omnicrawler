@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-23T07:37:59+00:00",
-  "sequence": 1791080230,
+  "generated_at": "2026-11-23T08:50:40+00:00",
+  "sequence": 1791080231,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -218,6 +218,38 @@
       }
     },
     {
+      "id": "diff-report",
+      "name": "变更对比报告",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "processor",
+      "summary": "对比两次采集结果，产出「新增 / 删除 / 修改」三类差异与一行摘要。",
+      "description_file": "plugins/diff-report/listing.md",
+      "plugin_file": "plugins/diff-report/plugin.py",
+      "signature_file": "plugins/diff-report/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "processor",
+        "diff",
+        "change-tracking",
+        "report"
+      ],
+      "updated_at": "2026-11-23",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/diff-report",
+      "creator_signature_file": "plugins/diff-report/creator.sig",
+      "creator_identity_file": "plugins/diff-report/creator.identity",
+      "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "5261bfd9f13cca222f1e27b34c912636abcdb194ebca99e49897ca83e6ff84ee"
+        }
+      }
+    },
+    {
       "id": "document-workbench",
       "name": "document-workbench",
       "version": "1.0.0",
@@ -303,6 +335,39 @@
       "versions": {
         "1.0.0": {
           "sha256": "2630ed2c32a15a9cc355251e1547a05b0b14b07ee0f94b6aed962f8e75f9db2c"
+        }
+      }
+    },
+    {
+      "id": "export-jsonl",
+      "name": "JSONL 导出",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "exporter",
+      "summary": "把采集结果导出为 JSON Lines（每行一条独立 JSON），流式友好、大结果集不 OOM。",
+      "description_file": "plugins/export-jsonl/listing.md",
+      "plugin_file": "plugins/export-jsonl/plugin.py",
+      "signature_file": "plugins/export-jsonl/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "exporter",
+        "jsonl",
+        "ndjson",
+        "streaming",
+        "integration"
+      ],
+      "updated_at": "2026-11-23",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/export-jsonl",
+      "creator_signature_file": "plugins/export-jsonl/creator.sig",
+      "creator_identity_file": "plugins/export-jsonl/creator.identity",
+      "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "c8bcba36069eba85bc2be1a4737a25d490fb82d788479418a90767fae7f847ff"
         }
       }
     },
@@ -415,6 +480,38 @@
       "versions": {
         "0.6.0": {
           "sha256": "ea1b23fd58a7e77ff2abbd6f886053ffb75a3be017b1db0b54ae1e4b58c4a1f7"
+        }
+      }
+    },
+    {
+      "id": "notify-webhook",
+      "name": "Webhook 任务通知",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "hook",
+      "summary": "任务结束（终态）时向配置的 Webhook 推送摘要：状态、成功/失败/跳过计数。",
+      "description_file": "plugins/notify-webhook/listing.md",
+      "plugin_file": "plugins/notify-webhook/plugin.py",
+      "signature_file": "plugins/notify-webhook/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "hook",
+        "notify",
+        "webhook",
+        "integration"
+      ],
+      "updated_at": "2026-11-23",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/notify-webhook",
+      "creator_signature_file": "plugins/notify-webhook/creator.sig",
+      "creator_identity_file": "plugins/notify-webhook/creator.identity",
+      "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "842382d0e67c760819aad4b16a9861b7f7cfd550b4d3a3080ef442c596b38109"
         }
       }
     },
@@ -561,6 +658,38 @@
       "versions": {
         "0.3.1": {
           "sha256": "d98fe0606c100d65560c60594b2bb5b21f839aacc7b1b9c2f838b4f40288bc2f"
+        }
+      }
+    },
+    {
+      "id": "validate-items",
+      "name": "数据质量校验",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "processor",
+      "summary": "导出前拦下静默失败：必填缺失、键重复、字段被整段 HTML 污染。",
+      "description_file": "plugins/validate-items/listing.md",
+      "plugin_file": "plugins/validate-items/plugin.py",
+      "signature_file": "plugins/validate-items/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "processor",
+        "validation",
+        "quality",
+        "hook"
+      ],
+      "updated_at": "2026-11-23",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/validate-items",
+      "creator_signature_file": "plugins/validate-items/creator.sig",
+      "creator_identity_file": "plugins/validate-items/creator.identity",
+      "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "3abe1ded68df5cac75f223cc99407e9bcce15e74e27200273dfc8f3fd94dc686"
         }
       }
     }
@@ -984,6 +1113,386 @@
     }
   ],
   "components": [
+    {
+      "id": "convert-markdown",
+      "name": "HTML 转 Markdown（正文交付形态）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/convert/convert-markdown/recipe.json",
+      "recipe_digest": "93dc9760fe51854a033e87572a14af815fbde381a4aea74961478cc1123184b4",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.convert-markdown"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/markdownify/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl",
+          "sha256": "d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9",
+          "size": 109924
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/df/37/9905803c2df99e10c69df1b0ecaad16a559d51cec20e2929006975d1bedc/markdownify-1.2.4-py3-none-any.whl",
+          "sha256": "e0375484fdd2bb007e86779fe34c59673d0011b14f8299953aaf0bf092269220",
+          "size": 15852
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f6/f7/be207468cac6ad79389f36cf1fce4f2836960df91659979ec486c727bb2e/soupsieve-4.1.3-py3-none-any.whl",
+          "sha256": "7a390d1a57d1ab7bb228531e9b8a750a5ebf87db774e0ef6faeeac057d22a5bf",
+          "size": 59792
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "size": 45571
+        }
+      ],
+      "declared_total_bytes": 231139,
+      "package_manifest_file": "components/convert/convert-markdown/package.manifest.json",
+      "creator_package_signature_file": "components/convert/convert-markdown/package.manifest.creator.sig",
+      "creator_identity_file": "components/convert/convert-markdown/creator.identity",
+      "creator_signature_file": "components/convert/convert-markdown/creator.sig"
+    },
+    {
+      "id": "dedup-simhash",
+      "name": "近重复内容检测（MinHash/LSH，去重站点同质文章）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/extract/dedup-simhash/recipe.json",
+      "recipe_digest": "10f2a4b4007ba18daa0ef7e6d4427737b373451c88bf50342944cde32b365067",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.dedup-simhash"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/datasketch/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/54/df/9e79bf1fb2f660507dbd00d24730d107595a2f599f2524a96344149c95f1/datasketch-2.0.0-py3-none-any.whl",
+          "sha256": "aea5ffafcce776e03d085740e78b874e778d779b07ee11ca636ca51b3fef09ed",
+          "size": 107247
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/45/74/bb9161943fb65caf24e4bb04c788f5c7815e6cb78ac595e7f46781033c82/numpy-2.5.5-cp313-cp313-win_amd64.whl",
+          "sha256": "e0608d1585557b68dcb6a70a41654f7536567960afad79d91752d2863b242b68",
+          "size": 12573354
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/93/0e/e0348fbc0dbab65c114cf78957e7dfeb49f8e8b556b4d930cc12ff195e18/scipy-1.18.1-cp313-cp313-win_amd64.whl",
+          "sha256": "559ed65f60c1af5a03f3912605a1b5114f522c7c32fb23c3376ae8f03219fe28",
+          "size": 36622841
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/40/d6/68dd5a83914bbcaf32b3165993f7955979916708cb0156d1e28231e18803/numpy-2.5.5-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "824025655df929268bfe6b47ed91a00d14209a6f760847cf150be446829e1ce4",
+          "size": 15713899
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/41/48/6450ed9243315322bbc19ac57b9b70d66a20bf1d38d124c96bc4bf6af9ea/scipy-1.18.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "fdaf5ea890a6183d0565f51a61799d67081bd5b1cf03c5f4b3fd3732108625c9",
+          "size": 35312578
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/0f/fa/4ae71d860267f2f9eaf7640516f693acf61c9575d48157cdea459c0215aa/numpy-2.5.5-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "228e3d90e967495d61ddc79dd64e95267aae3bcf1b1c516a6186429106a0b444",
+          "size": 14747053
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b6/55/4540ee0f9c42a9ad7109d0d1a8cc70de54c3572b01c6693a2b1c70e90ceb/scipy-1.18.1-cp313-cp313-macosx_10_15_x86_64.whl",
+          "sha256": "3ab3523da44749156e1f68b464dc56af11ae4cbc5c739a49d05f32b982eca9f3",
+          "size": 31089958
+        }
+      ],
+      "declared_total_bytes": 146166930,
+      "package_manifest_file": "components/extract/dedup-simhash/package.manifest.json",
+      "creator_package_signature_file": "components/extract/dedup-simhash/package.manifest.creator.sig",
+      "creator_identity_file": "components/extract/dedup-simhash/creator.identity",
+      "creator_signature_file": "components/extract/dedup-simhash/creator.sig"
+    },
+    {
+      "id": "export-docx",
+      "name": "导出 Word（python-docx，交付形态）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/export/export-docx/recipe.json",
+      "recipe_digest": "c04ebf62d6a222cba0945642b7c632434a233566aba34adc4050fcaf8c5a2d7b",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.export-docx"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/docx/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/c0/28/e46a7702bd95e9043291f7c3539b6184cba66f96cea9936f20939b284eeb/lxml-6.1.3-cp313-cp313-win_amd64.whl",
+          "sha256": "e477aca0bc0d19f3b4ae9e4f2a1cfd687c31bf772d78734910658186b40b2477",
+          "size": 4004091
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d0/00/1e03a4989fa5795da308cd774f05b704ace555a70f9bf9d3be057b680bcf/python_docx-1.2.0-py3-none-any.whl",
+          "sha256": "3fd478f3250fbbbfd3b94fe1e985955737c145627498896a8a6bf81f4baf66c7",
+          "size": 252987
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "size": 45571
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ab/8d/8a7b91df0b54d09d25f5f44885d6b3e0a6d6643a8c070191580318d20c42/lxml-6.1.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "b477912f42c5c33405a10c759d22f80cf5af043ae02d95b9d8e5e5bc555739ed",
+          "size": 5093324
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/8c/a5/eee2fc77eee5ea68e4a4334b1def1781a3beaeefd3d98e81b4a38dc447b7/lxml-6.1.3-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "887c021d9a977cff89cb273047c1352997b772a8908a25c21836861f69b92be1",
+          "size": 4632616
+        }
+      ],
+      "declared_total_bytes": 14028589,
+      "package_manifest_file": "components/export/export-docx/package.manifest.json",
+      "creator_package_signature_file": "components/export/export-docx/package.manifest.creator.sig",
+      "creator_identity_file": "components/export/export-docx/creator.identity",
+      "creator_signature_file": "components/export/export-docx/creator.sig"
+    },
+    {
+      "id": "extract-article",
+      "name": "正文抽取（去导航/广告，爬虫最核心痛点）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/extract/extract-article/recipe.json",
+      "recipe_digest": "80ab02a6f928ef5c110c739808ee8730e5898d2c287a37e3b467e3b21f4a952e",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.extract-article"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/trafilatura/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/c6/c6/4761a2ccb03d650ca803b11a7cdd69ff0696926d3fea218c8ca22c808448/backports.functools_lru_cache-2.0.0-py2.py3-none-any.whl",
+          "sha256": "0a754323a46847735a112677fb8807b45f6d824d02a5795a50905218ac56a0d6",
+          "size": 6657
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/6d/39/5eec3296860b94ac20bb8ed807725b88f6adfab3f343df592afd975f5f86/certifi-2026.11.20-py3-none-any.whl",
+          "sha256": "7422df25243767b9877031a2248cb14d09ddac9beee846f4cef3d5c9191d488f",
+          "size": 127913
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/5f/02/b01868added37f27a6b0fd29e7fa19d0ae52b3fdbfc6fde6b9c98ef377ec/charset_normalizer-3.5.3-cp37-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+          "sha256": "26c6ad87bb79628954b52f8f7b9e18ab5cd9667546712ded9689fb7677e630d6",
+          "size": 234407
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/a3/a5/cc188879ab8e8a36d295f888335f0a2875e39bcdacc6fe3207427c14036f/charset_normalizer-3.5.3-cp37-abi3-win_amd64.whl",
+          "sha256": "a5a7e0326566759f9a7bc44f4b9a179cc40a297e09e759b0bc7c848c06347527",
+          "size": 200667
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d2/0d/07ab8eb9b7015274353eac2add4067bde1ab1b51912bbae505392905eedd/charset_normalizer-3.5.3-py3-none-any.whl",
+          "sha256": "96e268b0cbda016ac519513294fcd17032264085b600abaac58b93049477e132",
+          "size": 68878
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/8b/59/4f564893812e0b1f2775437f43bb6b9d492e36c659dd3a1f52a29a0b189e/courlan-1.5.0-py3-none-any.whl",
+          "sha256": "a5b121409f864e6ddf39a026ebafabf59c64511d11b336ae30ad4034bbd42b77",
+          "size": 64860
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/81/f0/1efe5925fb65ba58628656ae19bea27764f6e6817ecbc756c98746fce8e1/dateparser-1.5.1-py3-none-any.whl",
+          "sha256": "1d312d2dbc3cddd61fe96d336af733b54bd01d7beb5657a432c7d1c2a144a5c8",
+          "size": 376770
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/42/f8/6139fc95b889f44e9a4b373778f10315ade81b395a6298adf3c08415de64/htmldate-1.11.0-py3-none-any.whl",
+          "sha256": "2a5a0d80cce38d3f986a64bb9ab64ba03e5953159b38fd78a841492131ead348",
+          "size": 33365
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f2/ac/52f4e86d1924a7fc05af3aeb34488570eccc39b4af90530dd6acecdf16b5/justext-3.0.2-py2.py3-none-any.whl",
+          "sha256": "62b1c562b15c3c6265e121cc070874243a443bfd53060e869393f09d6b6cc9a7",
+          "size": 837940
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/8c/a5/eee2fc77eee5ea68e4a4334b1def1781a3beaeefd3d98e81b4a38dc447b7/lxml-6.1.3-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "887c021d9a977cff89cb273047c1352997b772a8908a25c21836861f69b92be1",
+          "size": 4632616
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ab/8d/8a7b91df0b54d09d25f5f44885d6b3e0a6d6643a8c070191580318d20c42/lxml-6.1.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "b477912f42c5c33405a10c759d22f80cf5af043ae02d95b9d8e5e5bc555739ed",
+          "size": 5093324
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/c0/28/e46a7702bd95e9043291f7c3539b6184cba66f96cea9936f20939b284eeb/lxml-6.1.3-cp313-cp313-win_amd64.whl",
+          "sha256": "e477aca0bc0d19f3b4ae9e4f2a1cfd687c31bf772d78734910658186b40b2477",
+          "size": 4004091
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f5/36/4898b5e3951635846ed0e445e042fadf02b7c5e811a9e43da5b3557bc8d2/lxml_html_clean-0.4.6-py3-none-any.whl",
+          "sha256": "cc037270ba500a65e7235409dcddcae8ef37300f26dea826b61d917bf0236880",
+          "size": 14952
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl",
+          "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+          "size": 92853
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b6/25/564f3fc5b70c1398d706c51f2b1470d0ea0b1b2f96fee67877b6f5bdf3b6/pytz-2026.6-py2.py3-none-any.whl",
+          "sha256": "7fed3fee8fd6bd4a2b7b75a8d56021d0624127bf69bd5691f115db929ac570b3",
+          "size": 506321
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/60/c6/00b196934e0564e7e0fec5e9ddd8610a0d9dd77de9d116d12fbeee1301b3/regex-2026.11.19-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "75b9cdf5147fd0a15bb346bbd60cd23ad2664267e612af416f01ecc539e9eb56",
+          "size": 297450
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ea/dd/bdc44884d86dab01f1aa87c1a6c6897d756410b5f36186de0ae34537ac77/regex-2026.11.19-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "5403bbcbd207f6e498fab36c4bfa31d857a0bd4173f74a845f1f731cb95d31ff",
+          "size": 809356
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/fd/13/0b310db8244876514da955817cdf10a375fdc097b779bb358b1bc5818be6/regex-2026.11.19-cp313-cp313-win_amd64.whl",
+          "sha256": "0d40bb306d4979b4c6f78f779492528ec9a6a59ca68381a78e6769ea969349cf",
+          "size": 281472
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f5/20/e95d135c417aceaa3d34d1b4dff9aceb85e98800480eca1b033933717169/trafilatura-2.3.1-py3-none-any.whl",
+          "sha256": "f86bad2ee36f82884e14dee84c83aae0f0ac0127da5c65764e82f3846716b822",
+          "size": 158660
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl",
+          "sha256": "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec",
+          "size": 348210
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/7b/c1/9be4e1a8a30db8729a86628073910e56f85aaf8a659e053f376a2e6ea5a8/tzlocal-5.4.5-py3-none-any.whl",
+          "sha256": "ecab534f6d65d9deb4c4ea52c121ab6dd5958e9b878e71dcb102578269752454",
+          "size": 18215
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
+          "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+          "size": 135717
+        }
+      ],
+      "declared_total_bytes": 18344694,
+      "package_manifest_file": "components/extract/extract-article/package.manifest.json",
+      "creator_package_signature_file": "components/extract/extract-article/package.manifest.creator.sig",
+      "creator_identity_file": "components/extract/extract-article/creator.identity",
+      "creator_signature_file": "components/extract/extract-article/creator.sig"
+    },
     {
       "id": "ocr-doctr",
       "name": "docTR：Mindee 深度学习 OCR（PyTorch CPU 版）",
@@ -1659,18 +2168,634 @@
       "creator_signature_file": "components/ocr/ocr-easyocr/creator.sig"
     },
     {
-      "id": "ocr-rapidocr",
-      "name": "RapidOCR：PaddleOCR 模型的 ONNX 移植，纯 CPU、无需 PaddlePaddle 运行时",
+      "id": "ocr-paddle",
+      "name": "PaddleOCR 重型运行时（Wheel-Pack）——wheel 从上游拉，模型另行直拉，本仓只托管配方",
       "version": "1.0.0",
       "publisher": "starlife",
-      "recipe_file": "components/ocr/ocr-rapidocr/recipe.json",
-      "recipe_digest": "a93d08140527bdbf22e90fe891dfa2a4bf6936f5af429bf9362cedd615e602eb",
+      "recipe_file": "components/ocr/ocr-paddle/recipe.json",
+      "recipe_digest": "6d7db2fd159a799e15f5f443aaf04db62ef18fb6b14e13d02387d0ab1c0b7d99",
       "platforms": [
         "windows",
         "linux"
       ],
       "architectures": [
         "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.paddle"
+      ],
+      "platform_architectures": {
+        "windows": [
+          "x86_64"
+        ],
+        "linux": [
+          "x86_64"
+        ]
+      },
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "paddle",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/paddleocr/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f4/c8/408b9e94ac2e10a55c1122b787359f7a6f79ef894ee1d57d78c5cca838d0/paddlepaddle-3.3.1-cp313-cp313-win_amd64.whl",
+          "sha256": "1203e2e1114b49e73a8440b68837ce5c93fdab51fe4838c5e5874ab40f58f747",
+          "size": 104794530
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/56/8d/5a700dc20c0d3d581f1d429f95f5064eb766c2818c5a05992dfef66b0765/paddlepaddle-3.3.1-cp313-cp313-manylinux1_x86_64.whl",
+          "sha256": "4f28038427649bb2fcfd4d52efa85ed8311df19122b4ebedc942484a0b57b032",
+          "size": 194837642
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d2/79/2ade66cf72074a3d2a013e2ba1f256d6116fec797b908fc1b4f9c320d8c4/paddleocr-3.7.0-py3-none-any.whl",
+          "sha256": "c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338",
+          "size": 146750
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/a7/9e/7110d2c5d543ab03b9581dbb1f8e2429863e44e0c9b4960b766f230c1279/opencv_contrib_python-4.10.0.84-cp37-abi3-win_amd64.whl",
+          "sha256": "47ec3160dae75f70e099b286d1a2e086d20dac8b06e759f60eaf867e6bdecba7",
+          "size": 45541421
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b0/e0/8f5d065ebb2e5941d289c5f653f944318f9e418bc5167bc6a346ab5e0f6a/opencv_contrib_python-4.10.0.84-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "a261223db41f6e512d76deaf21c8fcfb4fbbcbc2de62ca7f74a05f2c9ee489ef",
+          "size": 68681489
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ba/42/0a1920d276a0e1ca21dc0d13ee9e3ba10a9a8aa3abac76cd5e5a9f503306/pyclipper-1.4.0-cp313-cp313-win_amd64.whl",
+          "sha256": "d4b2d7c41086f1927d14947c563dfc7beed2f6c0d9af13c42fe3dcdc20d35832",
+          "size": 104007
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/db/48/dd301d62c1529efdd721b47b9e5fb52120fcdac5f4d3405cfc0d2f391414/pyclipper-1.4.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "14c8bdb5a72004b721c4e6f448d2c2262d74a7f0c9e3076aeff41e564a92389f",
+          "size": 972142
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/fe/7f/8aa446529fa14523e5c18f89e823afc95526689f76a75efe68a82a10d850/pypdfium2-5.15.2-py3-none-win_amd64.whl",
+          "sha256": "74d1bace34fb01c660d0b64344d5a4b7d276942b7c6623c88ab59ea21c5acfbd",
+          "size": 4187589
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/c8/e5/2e668bc1bc6fe22f9006694b5571a2dd2c9b874d6a21d16ee839c8f7f6ea/pypdfium2-5.15.2-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "dc31aea5b0fb9fefc9b537a65f4113980b2c40798445736a7e6565bc85161e37",
+          "size": 4020833
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/84/a3/49451e221c1152532d017ceb45684eebb0cf0132efd017e9c40490cdffc1/python_bidi-0.6.12-cp313-cp313-win_amd64.whl",
+          "sha256": "78f9e4f61d130304a1eecdf9ebd0fb5c921f3442c3c5628fb1eee31d8bbd4101",
+          "size": 162351
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/25/ed/7fcd625c9796e61d815ca9545d4e44a16f075f83869c1532206de88f23f1/shapely-2.2.0-cp313-cp313-win_amd64.whl",
+          "sha256": "1eaa2cb64cdedaf65d6bc86f2819c9cd7d6d68f969aa3ebfdc93743ab581f437",
+          "size": 1790191
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/01/f9/575c8d760eae1fc99651b7cc5efd96ad5379ca4d6b53750b0fb4fe983f34/imagesize-2.0.1-py3-none-any.whl",
+          "sha256": "ea0c9a0384df69ed86a943a15cde37d0360b82491b3910dc2215e202e62b5b02",
+          "size": 14794
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b8/d0/2d400c99b00d83b6aa7a1e595f1ad48fc62e888d5848e9ecbc70622cf067/prettytable-3.19.0-py3-none-any.whl",
+          "sha256": "66d0eaf75f21198e92ce09e59a12c140be76c78b8a89252e7e87ac8994f96383",
+          "size": 37554
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/e0/a9/023730ba63db1e494a271cb018dcd361bd2c917ba7004c3e49d5daf795a2/py_cpuinfo-9.0.0-py3-none-any.whl",
+          "sha256": "859625bc251f64e21f077d099d4162689c762b5d6a4c3c97553d56241c9674d5",
+          "size": 22335
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
+          "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+          "size": 73075
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/68/30/173960c42b05a6c59f7558e4b12a4b0d9ba376cf6aa9bde7f9e08a30ca8d/aiohttp-3.14.5-py3-none-any.whl",
+          "sha256": "efc21a454892828368b11c2c780de0ff8bc991f73f6b99c6b66e56205470929b",
+          "size": 279517
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "size": 45571
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/8a/8c/824a686c4ba815ddb0722f9e66272088bccd4e1ae1d2f7015375e4a4fc7f/pydantic-2.14.4-py3-none-any.whl",
+          "sha256": "653a2ad9f6d8858529c77c72717d0ea991d6c6837fe683246b2f4b2bbfc3fadc",
+          "size": 494865
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/97/c9/39d5b874e8b28845e4ec2202b5da735d0199dbe5b8fb85f91398814a9a46/pyyaml-6.0.3-cp313-cp313-win_amd64.whl",
+          "sha256": "79005a0d97d5ddabfeeea4cf676af11e647e41d81c9a7722a193022accdb6b7c",
+          "size": 154090
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/74/27/e5b8f34d02d9995b80abcef563ea1f8b56d20134d8f4e5e81733b1feceb2/pyyaml-6.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6",
+          "size": 801626
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/38/ef/15b6a24451e75f2d48931062f73a5ebbd00d86394d750699dbd8d6b159b6/pandas-3.1.1-cp313-cp313-win_amd64.whl",
+          "sha256": "6d84760cc1bd799440a66b4df2ceb7a508870f3b8b4d8dda21befd62779cd3b4",
+          "size": 10732758
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/79/c2/c8bc972d6dcba13910fc92b622420704a2f655dd6b01ed54269a1bf7c2d2/pandas-3.1.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "645fa00fd85cfced2d2c09dc116d3694f578501b1ce4899153fbe64788ecda98",
+          "size": 11978871
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/40/52/9bbb9cd5f4fbbbefc7391c7d1ee61df8d511017a31e6933f6744b063fdab/paddlex-3.7.2-py3-none-any.whl",
+          "sha256": "f1678bf650bbaccfd8f0d4e49d0ae631b4685c829fdae6e802ccd90d4fcb9a7f",
+          "size": 2239708
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/c2/56/ce14f76c1892f335fbcd82568d347fd1652e1a4b0b76ac4a4cd90e1ae202/aistudio_sdk-0.3.9-py3-none-any.whl",
+          "sha256": "41621d052ddb7a58643438a7ca541f58ef0ab94a2acdfff0a71db81bf68dc027",
+          "size": 67186
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/cc/75/88a3eb36264375ff951bd2f9397c409727ab6aa6a18e1bd933851571d421/chardet-7.7.0-py3-none-any.whl",
+          "sha256": "11cf9b719ea3675a2a7d8a3071bbe4d7ea24b26bfe39a51588d515ddd05cacad",
+          "size": 706680
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d4/19/0b6647bf5e331521e55d2b63bfbdc210bd9cd605189273f03614a05f702d/colorlog-6.12.0-py3-none-any.whl",
+          "sha256": "30d392604e9110045a2c2aeefc27d7a017abbab63f3a8aee594eac0801df784e",
+          "size": 12239
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/8a/c9/eb6b6528c7edb958d4c24ac47a8b94113d9de36e4cfc6eecd599b1a4f349/filelock-4.2.12-py3-none-any.whl",
+          "sha256": "21decfec02f116ed4c954433cdb31f28c3b346b784543177b6d7059da2702ee9",
+          "size": 222442
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d4/55/ff47f1b082ecf5f43f4bc1e3b932d68eead171dabbbd1a92666c686301d7/huggingface_hub-2.4.0-py3-none-any.whl",
+          "sha256": "42ecfd93ede47bdd333daebbf66a32d7bfe2e18752754fe4d2d4f98a0179d801",
+          "size": 857021
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/bc/89/13e64797471146fa4060c0ece96a80eb0aedf81359a9b3eca18382f6046d/modelscope-1.40.3-py3-none-any.whl",
+          "sha256": "a2d9e239e58de7c1162da4a54472defb98f4c076900dd7ebfed3370c694e2cb8",
+          "size": 6062711
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/45/74/bb9161943fb65caf24e4bb04c788f5c7815e6cb78ac595e7f46781033c82/numpy-2.5.5-cp313-cp313-win_amd64.whl",
+          "sha256": "e0608d1585557b68dcb6a70a41654f7536567960afad79d91752d2863b242b68",
+          "size": 12573354
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/40/d6/68dd5a83914bbcaf32b3165993f7955979916708cb0156d1e28231e18803/numpy-2.5.5-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "824025655df929268bfe6b47ed91a00d14209a6f760847cf150be446829e1ce4",
+          "size": 15713899
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+          "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+          "size": 129956
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d7/ed/1b16fb66a37e1b9e41370b93b2c614c7da761a5b2a41dc333f7af4639962/pillow-13.0.0-cp313-cp313-win_amd64.whl",
+          "sha256": "9dda0788a9932776a75d8bcc020076edc308ce2508b51f6739a45e3158b3fc42",
+          "size": 7284777
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ef/fe/f5cdaa2d1c4086e757430f368c271a58ee29cfe7378e7ae7b9d964015c25/pillow-13.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "5f56499c1a74d2b862beb0c33b8016f99d095858455df9d21583bbbc1c15b582",
+          "size": 7142544
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl",
+          "sha256": "27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93",
+          "size": 118102
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/45/6a/1aadd4c403bf5753e673a6ad0bdc2c69745c4a28f556db6b01dbae375f7f/ujson-6.1.0-cp313-cp313-win_amd64.whl",
+          "sha256": "d06b767b8bdf43cdb45f9a6e76f89b198de304b02c548fdf0580d3b679973532",
+          "size": 227518
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/5d/09/03bb90bba2faed79f14d60612a670f80dc57ec712b61658d6110cfcfe73a/ujson-6.1.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "4b90c4be08dd2d0d59f61ff77204c3da0b88c582c3da944915985c35fe683e4c",
+          "size": 53717
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/31/7d/164b7ffc8624fe9efb4221bf9af485d5c1e41b9ae118045d2b6dc5457d8b/click-8.5.1-py3-none-any.whl",
+          "sha256": "8bb5376d2006950386f8c6427613334a2acadc5f559cb80e638d00b4df957e37",
+          "size": 126163
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl",
+          "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6",
+          "size": 25335
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/0e/dd/cff1ac23c868962c6515b769c1d0217373086d5b98dbc4eca7832cb2295c/crc32c-2.9.post0-cp313-cp313-win_amd64.whl",
+          "sha256": "ec93306e36242e1883de21d68a2a536e0b9603dfe0035ec9b6d7f2341075152f",
+          "size": 65912
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/40/bc/662e5bde677c6aeb176c258d524ff720c5a40daea1e4318f572538b23eca/crc32c-2.9.post0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+          "sha256": "ca44675cf3afe5eae2f8c65faf7cceb4057a30d2b4aa9f883278393b0643f510",
+          "size": 80196
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/9a/4f/adfc442765721292fff86d314ce385d3249d22db42295c0dd057727b60f3/cryptography-50.0.2-cp311-abi3-win_amd64.whl",
+          "sha256": "7afa5a6602a9f29af1f3a2965f831bae7c9d5d597b7cbb716d41ab3b7d89879c",
+          "size": 3824692
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/21/69/64cef1f702bf6657e0cc186ed1a2891d50d29fb41586b254e1c07adea261/cryptography-50.0.2-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "630ebfea3bf689d075f82316324ff7433dc447fe6bc1bfc76524b74b4a9567d2",
+          "size": 4719841
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/9a/9a/e35b4a917281c0b8419d4207f4334c8e8c5dbf4f3f5f9ada73958d937dcc/frozenlist-1.8.0-py3-none-any.whl",
+          "sha256": "0c18a16eab41e82c295618a77502e17b195883241c563b00f0aa5106fc4eaa0d",
+          "size": 13409
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/6c/c0/a98505f18594f1bce828bb159cec0fcf9860562f1a2c85913409fc8f3d9e/fsspec-2026.9.0-py3-none-any.whl",
+          "sha256": "8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f",
+          "size": 221738
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/da/71/ae30dadffc90b9006d77af76b393cb9dfbfc9629f339fc1574a1c52e6806/future-1.0.0-py3-none-any.whl",
+          "sha256": "929292d34f5872e70396626ef385ec22355a1fae8ad29e1a734c3e43f9fbc216",
+          "size": 491326
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+          "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+          "size": 37515
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/97/4d/2c76a992b370ff77d0b5219275779f8c9a7dabb8ee649deb265dfed84d0f/hf_xet-1.8.0-cp38-abi3-win_amd64.whl",
+          "sha256": "92188598dedc1e1f5609bd718d4db8687a6c89915553912571e2f587892eecec",
+          "size": 3911559
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f8/1e/1e8ecc05ef034e9a95c18ed32d2ec07905a7cd2ca611a9d88e25ee1f4850/hf_xet-1.8.0-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "29dab7c904cd1914a0439c6e1306c12c7497c8bd32290fbe563ebf51ca4b6d6d",
+          "size": 4292483
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/2a/e8/009c347feac27f8960605aa98d55ed263b5870dd4fd80b82fd1d00d5716c/httpcore2-2.16.2-py3-none-any.whl",
+          "sha256": "16051ae2a42f776007543f32de9349a317b23d2cbb4e1456b4bac0e88b87419a",
+          "size": 85551
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/77/de/8c4306a3d6aa2495111986addf33a9e561eff4c47552e4c4b9251160d0ad/httpx2-2.16.2-py3-none-any.whl",
+          "sha256": "f05c13aade4c45dbf1c9060647a1058f0acad62398fad96e741269edb33d46f5",
+          "size": 97893
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/9b/43/832f631d32e4f1211caa2ba368317739fe71f0b8530e4c9d15dc454bac2a/httpx2_jsfetch-1.0-py3-none-any.whl",
+          "sha256": "cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32",
+          "size": 6382
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
+          "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+          "size": 69583
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/4d/97/251ed3ac2506dba305fb758be928a21f5b6e49b0268d13b375abc7e8bb5f/modelscope_hub-0.7.1-py3-none-any.whl",
+          "sha256": "1e41a686a57831c3d8176cc041f2825944fe16ea579a0dbc1cc90df4d42a42f5",
+          "size": 304588
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/9d/96/1aaad0e5df33f1f5af21775c411349c0234a6edd581ea403bc81919a6eab/multidict-7.2.1-py3-none-any.whl",
+          "sha256": "08ea94663d9e7c25d14d78222f7aee906c472d4837766bec62477c38f6e419dc",
+          "size": 28145
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f5/cd/785c64ed382f3f04201870267b02783f63b4678c2acfddc177a3ebcc2727/propcache-0.5.4-py3-none-any.whl",
+          "sha256": "62c60aec739ed00124573cce1178138fd690c7676352d67a37328c1cf51d7468",
+          "size": 16338
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b6/ae/315bbeee126a769cbde43cf4908acb4b40408d8bf8bbf334dd7368d8dadf/pycparser-3.12-py3-none-any.whl",
+          "sha256": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+          "size": 62600
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/61/04/471045179e76295f5da06e8d1f167054a360d418a90cd3218ed10f99975f/pycryptodome-4.5.0-cp39-abi3-win_amd64.whl",
+          "sha256": "b05fed07d07d69c5205689293c3b71a21b8bb4c6f4bb964d1c2d24dfdf22433d",
+          "size": 1731036
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/41/2d/e4d8e0ac2e1192c05ac7078fc37aaeb2bd21083af7c0561092ff3268e19f/pycryptodome-4.5.0-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "3afbe7ecd62357203a588d451c604a61af7d7c9d3f0aa0b792de0612cffb8f8d",
+          "size": 3101721
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/7b/08/2759efbffc5643787a5a0a6e19b98805d102346a8e52ad2a181a92bd55ea/pydantic_core-2.50.5-cp313-cp313-win_amd64.whl",
+          "sha256": "d34c0d4dd4a318f2be788a60a972c3a1ed5da0155a7c06d6dd810dc5d60ad704",
+          "size": 2268229
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/13/c2/62015187d0e986dafc530ea4df390fce3d3379c744959148806668d40ab9/pydantic_core-2.50.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "cbfde3ad127786f1dea1a6cd89a5eb824a16203f24743ad2b4e07506f43bc844",
+          "size": 2264332
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl",
+          "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+          "size": 92853
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl",
+          "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2",
+          "size": 876263
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+          "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+          "size": 11050
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl",
+          "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73",
+          "size": 80199
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/51/e9/3a7820be2bb0fe53b6bc9c3be26d3d1158004e4c3ab953aa6840b955b1e9/truststore-0.10.5-py3-none-any.whl",
+          "sha256": "9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c",
+          "size": 19017
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/de/0c/ea2544850a7c135e15033a5c7a8e7211136184b7ae63e2239d557c2b3019/typing_inspection-0.4.5-py3-none-any.whl",
+          "sha256": "bc210535442b39e1bf2805e0c7a17dfd6a4ace760c84c7f7d16245d23a6b1c39",
+          "size": 14874
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl",
+          "sha256": "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec",
+          "size": 348210
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
+          "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+          "size": 135717
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/6f/0c/309b1813b230d1dbbd6f2c2ab2bb21ef68992358977605d9ef289bbfedcc/wcwidth-0.9.4-py3-none-any.whl",
+          "sha256": "901eace6d2dd25ebb917d0ce5db18e5c537e1504c905cf32f0d006c12098b05d",
+          "size": 301806
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/54/22/318c7980066769c6bcd9221ed2248294f5698811da099013098c670565ed/yarl-1.25.1-py3-none-any.whl",
+          "sha256": "681c758b0490f9e96b78e5fa8e8dc6e648e9185bb6eaebe73183c33ea0c445f3",
+          "size": 63617
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b5/70/5d8df3b09e25bce090399cf48e452d25c935ab72dad19406c77f4e828045/psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9",
+          "size": 155560
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b4/90/e2159492b5426be0c1fef7acba807a03511f97c5f86b3caeda6ad92351a7/psutil-7.2.2-cp37-abi3-win_amd64.whl",
+          "sha256": "eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988",
+          "size": 137737
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/71/43/1947f06babed6b3f1d7f38b0c767f52df66bfb2bc10b468c4a7de9eceff2/aiohappyeyeballs-2.7.1-py3-none-any.whl",
+          "sha256": "9243213661e29250eb41368e5daa826fc017156c3b8a11440826b2e3ed376472",
+          "size": 15038
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl",
+          "sha256": "053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e",
+          "size": 7490
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+          "size": 13427
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/a9/16/7757fb84c819accc7d7e9af5291b261e4abb8627ee040f99e7d35ef2457a/anyio-4.16.0-py3-none-any.whl",
+          "sha256": "c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026",
+          "size": 134521
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl",
+          "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+          "size": 67548
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ef/de/52b763b183e23f4dd73811a2dd2664824ae7fc6ceb1aa8dcd3f1102b1094/bce_python_sdk-0.9.79-py3-none-any.whl",
+          "sha256": "71799ac8740505e0759d30873f6f1a478fa8f83aedf425d511f1419a5f30082e",
+          "size": 440268
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl",
+          "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+          "size": 135082
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/60/a6/8b149b2c3f2e11aaa1618ef64500b45f50f22c57a977a4dff1aff1f91042/cffi-2.1.1-cp313-cp313-win_amd64.whl",
+          "sha256": "1aa5645c30469b09530c4ebca77ebf8f17618293c58f8549cb1a543a50236e7d",
+          "size": 185688
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/95/95/86342356ff5953b3fb06f7ef7c5bee212d45e770abc7218d451b9148313c/cffi-2.1.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "a931079504ecc49efed7744c476a5c343a92fabf66dec2db95edb1b2fdc770e2",
+          "size": 221824
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/fc/ad/d07d7862a62ffa6d79d68074d14823243dd235a77c45262acbf6adeb28bf/charset_normalizer-3.5.2-py3-none-any.whl",
+          "sha256": "b6b751274acb69d77b3323d6b7dbaa3c7fdfc1eb829b7eb61d262f32e1af9685",
+          "size": 68872
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/fe/ba/e2081de779ca30d473f21f5b30e0e737c438205440784c7dfc81efc2b029/async_timeout-5.0.1-py3-none-any.whl",
+          "sha256": "39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c",
+          "size": 6233
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/a0/7d/0fb19ccdf794c448141461180d5992c50402f69f8515a801bfac7ad65f45/exceptiongroup-1.3.2-py3-none-any.whl",
+          "sha256": "41c6a70dfec22050d3d8b43386b059a4dc0bca3f3d40a40971cb206fff1785af",
+          "size": 16854
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/60/3f/3e3f8fd0919249b0200c80fbc4f9a1e70be19f9883da71dfb7f8b9ab8aca/tomli-2.5.0-py3-none-any.whl",
+          "sha256": "32a7b79ac57a2e83670ce329ccf675798bc5a2094783a63676866b70503f2e2b",
+          "size": 14765
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/38/c9/ebc3a67639f358fc2bf76e112bbbd8875772458a2e5793fb6d969600aa85/python_bidi-0.6.12-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "862d4c6035f9b75f86ba450d42bebf8cca1ed97a2badb07b5638877fc95bdc97",
+          "size": 296711
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/5d/df/d67d5c56efddf9b8c2e6913c917c8eca78fdd9e7c6fb73b541dd56b1ce1d/shapely-2.2.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "f340e7f99aaee3df5acd6b247cddf723051a7c93d1e1ef09025b80d84e4c0ded",
+          "size": 2299018
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/7e/cd/fe58041e9011f307c490e3e17dd48cc516448f7c698a3f2d9d9d65d7e6a8/networkx-3.7-py3-none-any.whl",
+          "sha256": "e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0",
+          "size": 2142205
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl",
+          "sha256": "69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd",
+          "size": 71932
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/e4/04/d52c7016b04b6c5108f26691f9d33ec82a9b65d041f1a9c771137693d618/protobuf-7.36.2-py3-none-any.whl",
+          "sha256": "bdb3a345d48db958e6ce1f18e508beb0cc981d64f24088427549c866cd039f1e",
+          "size": 179806
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/1b/6d/3fba214c1e5e0f69991677ec3bc17023f0421776975e1de0c682dca475e2/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+          "sha256": "096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f",
+          "size": 355540
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/28/50/f203ff3a3ddfe19308efc83c5a3a29ed02bf786732ec35e68bf9162f3365/safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "sha256": "fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774",
+          "size": 516040
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl",
+          "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+          "size": 73517
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl",
+          "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+          "size": 78784
+        }
+      ],
+      "declared_total_bytes": 540710488,
+      "package_manifest_file": "components/ocr/ocr-paddle/package.manifest.json",
+      "creator_package_signature_file": "components/ocr/ocr-paddle/package.manifest.creator.sig",
+      "creator_identity_file": "components/ocr/ocr-paddle/creator.identity",
+      "creator_signature_file": "components/ocr/ocr-paddle/creator.sig"
+    },
+    {
+      "id": "ocr-rapidocr",
+      "name": "RapidOCR（ONNX Runtime 后端，跨平台轻量 OCR）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/ocr/ocr-rapidocr/recipe.json",
+      "recipe_digest": "642a938f53e87b6a1cec818b7fbf1f5974c77951b1db3ffa6b3d76459144c3ab",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
       ],
       "python_abi": [
         "cp313"
@@ -1685,21 +2810,9 @@
         "protocol": "ocr-file-v1",
         "engine": "generic",
         "runner": "worker-wheelpack",
-        "module": "site-packages/rapidocr/__init__.py"
+        "module": "site-packages/rapidocr_onnxruntime/__init__.py"
       },
       "artifacts": [
-        {
-          "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/6d/39/5eec3296860b94ac20bb8ed807725b88f6adfab3f343df592afd975f5f86/certifi-2026.11.20-py3-none-any.whl",
-          "sha256": "7422df25243767b9877031a2248cb14d09ddac9beee846f4cef3d5c9191d488f",
-          "size": 127913
-        },
-        {
-          "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/9d/8a/b618149cc5207943a0242068d7a27897f56a62947b5a039085f2a22029f8/charset_normalizer-3.5.2-cp37-abi3-win_amd64.whl",
-          "sha256": "9f56f72050826f63dcee7a7f55b0a77168cb3bfc553fd405e7f8f9ece75a4036",
-          "size": 200092
-        },
         {
           "source": "remote",
           "url": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl",
@@ -1708,15 +2821,9 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/d4/19/0b6647bf5e331521e55d2b63bfbdc210bd9cd605189273f03614a05f702d/colorlog-6.12.0-py3-none-any.whl",
-          "sha256": "30d392604e9110045a2c2aeefc27d7a017abbab63f3a8aee594eac0801df784e",
-          "size": 12239
-        },
-        {
-          "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
-          "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
-          "size": 69583
+          "url": "https://files.pythonhosted.org/packages/e8/2d/d2a548598be01649e2d46231d151a6c56d10b964d94043a335ae56ea2d92/flatbuffers-25.12.19-py2.py3-none-any.whl",
+          "sha256": "7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4",
+          "size": 26661
         },
         {
           "source": "remote",
@@ -1726,21 +2833,33 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/4f/bd/0d9f8247b0819385213d09564eda5c52d3673313c2414d51f72883ec24cd/omegaconf-2.4.0-py3-none-any.whl",
-          "sha256": "f141a664c777582405e3cc6e0545ecc79429e79f844995b1a6e71c35946a025c",
-          "size": 254152
+          "url": "https://files.pythonhosted.org/packages/6f/ee/a776ccc71ba54de3739c20c7c815d9695c55db1d08e2b3c621452676c23f/onnxruntime-1.32.0-cp313-cp313-win_amd64.whl",
+          "sha256": "c7f9aa98036ba2a47aa041a4a8c6d0a1f7bfe1bde44c131dcd15ce334f2f148d",
+          "size": 16697937
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/26/d1/a52c8d8e1cecf86725930170dfba1c7c1f59674ac8f131e96583aa41433d/opencv_python_headless-5.1.0.95-cp37-abi3-win_amd64.whl",
-          "sha256": "2fd11ce2e88feb28869ad5762a31546ce0062e7c55c130c425ccd3918a19e4fa",
-          "size": 47789463
+          "url": "https://files.pythonhosted.org/packages/b2/40/e8c3938d34f22e629a7c599482360b1cadebc22b3c5b25bbbdccded52624/opencv_python-5.1.0.95-cp37-abi3-win_amd64.whl",
+          "sha256": "ab505983b1c1e21e89b5c43bf59cccc805b8aa7981f4385a17812efa63ceccb9",
+          "size": 47965460
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+          "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+          "size": 129956
         },
         {
           "source": "remote",
           "url": "https://files.pythonhosted.org/packages/d7/ed/1b16fb66a37e1b9e41370b93b2c614c7da761a5b2a41dc333f7af4639962/pillow-13.0.0-cp313-cp313-win_amd64.whl",
           "sha256": "9dda0788a9932776a75d8bcc020076edc308ce2508b51f6739a45e3158b3fc42",
           "size": 7284777
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/8a/55/b77bda4e5e5f5971fb51b07663694690e9afdb9402136c16a522bd621cad/protobuf-7.36.2-cp310-abi3-win_amd64.whl",
+          "sha256": "a300819d441e078a5608c0d3c709796bb548136058fda017ae51d425b44fd353",
+          "size": 456514
         },
         {
           "source": "remote",
@@ -1756,15 +2875,9 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/59/07/203065283bba0c5e9c10af3602dc25ab3e59ee54dc2d1d22c8faeabf5ed8/rapidocr-3.10.0-py3-none-any.whl",
-          "sha256": "2fc34e26cd0f48514804a94f8832283039c7334076bff60768b1fed9ad068050",
-          "size": 27288134
-        },
-        {
-          "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
-          "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
-          "size": 73075
+          "url": "https://files.pythonhosted.org/packages/ba/12/1e5497183bdbe782dbb91bad1d0d2297dba4d2831b2652657f7517bfc6df/rapidocr_onnxruntime-1.4.4-py3-none-any.whl",
+          "sha256": "971d7d5f223a7a808662229df1ef69893809d8457d834e6373d3854bc1782cbf",
+          "size": 14915192
         },
         {
           "source": "remote",
@@ -1786,15 +2899,9 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl",
-          "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
-          "size": 135717
-        },
-        {
-          "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/7e/84/371eac6b30bdbcbf2d632a1a01809103459216fcaae61b8b8d922c1bfb8a/charset_normalizer-3.5.2-cp37-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
-          "sha256": "1c50fe28bbc2ced33386f298650d91218076c05420e6cbd790b913adc41659e7",
-          "size": 253276
+          "url": "https://files.pythonhosted.org/packages/e4/04/d52c7016b04b6c5108f26691f9d33ec82a9b65d041f1a9c771137693d618/protobuf-7.36.2-py3-none-any.whl",
+          "sha256": "bdb3a345d48db958e6ce1f18e508beb0cc981d64f24088427549c866cd039f1e",
+          "size": 179806
         },
         {
           "source": "remote",
@@ -1804,15 +2911,27 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/37/63/6f18cf6b25aca818c5432317f9c9db3ee87d9f03d576d1e5953910429be3/opencv_python_headless-5.1.0.95-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-          "sha256": "93cc83677f07791a9d3284bb6b9bbf7c2ffcca05aabcee239e68ca4abaf50aa1",
-          "size": 57722171
+          "url": "https://files.pythonhosted.org/packages/92/74/1f7c51522822e93aa91f633ebcd75688e2deebeca5901b2e6da8a8c5ad7c/onnxruntime-1.32.0-cp313-cp313-manylinux_2_28_x86_64.whl",
+          "sha256": "02ea12a28c069ea8510093d95a7f6ff8126bfd9fc5c0d3381c03b80fb2b424ba",
+          "size": 27780404
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/69/b5/d55ad2e38fafe028c21639fa750ddcfdee29eaa047c3638e2e71741a6cda/opencv_python-5.1.0.95-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+          "sha256": "63ad2b9e34c8ee4acde30fd93a162bc91f53480273f595667fedb5bb65ce6069",
+          "size": 72331896
         },
         {
           "source": "remote",
           "url": "https://files.pythonhosted.org/packages/ef/fe/f5cdaa2d1c4086e757430f368c271a58ee29cfe7378e7ae7b9d964015c25/pillow-13.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
           "sha256": "5f56499c1a74d2b862beb0c33b8016f99d095858455df9d21583bbbc1c15b582",
           "size": 7142544
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/db/f3/3996583dd2906297a637af12114deddf7658af6e683fedb83be061983fb5/protobuf-7.36.2-cp310-abi3-manylinux2014_x86_64.whl",
+          "sha256": "89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2",
+          "size": 343223
         },
         {
           "source": "remote",
@@ -1831,13 +2950,275 @@
           "url": "https://files.pythonhosted.org/packages/5d/df/d67d5c56efddf9b8c2e6913c917c8eca78fdd9e7c6fb73b541dd56b1ce1d/shapely-2.2.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
           "sha256": "f340e7f99aaee3df5acd6b247cddf723051a7c93d1e1ef09025b80d84e4c0ded",
           "size": 2299018
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/57/06/de83b859944409bb9058bc6110581a3d7fc1f54d6df1222744911d7f6b19/numpy-2.5.5-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "ae2b8285d0b4eed24739c3ca9ec0fa424a0247489c01e1d5fe2815a599e11d33",
+          "size": 15278148
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/96/c7/26be6be3ebe42597a521645a7bb18701ce0716af87af0cd2c9281d2e84a5/onnxruntime-1.32.0-cp313-cp313-manylinux_2_28_aarch64.whl",
+          "sha256": "54d02baff2df38777b4c3cc7af326406fe8b8a48f54720f4c446d2d327920a79",
+          "size": 23195811
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/7a/35/1b920c87c56c6aa181b0d249ae767e6834e70dfb6d5caaa4e238a44d95e1/opencv_python-5.1.0.95-cp37-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+          "sha256": "a36fc15cb1ccf31dc2883ff9f13b214340267ff1ff4c51f198ea3d6a4a6cbdbb",
+          "size": 49914363
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/fb/3c/cd0770e96d20bfd990db024bcbd43897ff3e88da1f4782cf90ea231b1d4f/pillow-13.0.0-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "19b66ca0a4d25cc0200b381ce824c7ea090db61427315e73cfb05dbf1b35c369",
+          "size": 6515908
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b6/ea/91fdf7c2b8bbd49cde056f00a9df6773532987e1c00fe2830b895af95c7e/protobuf-7.36.2-cp310-abi3-manylinux2014_aarch64.whl",
+          "sha256": "e11e1f0180583a2af89db6a2ecd9e8dc40aa6d2988ca175bfd0e6d12ea72d74e",
+          "size": 344219
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/07/bf/d493fd1b33bb090fa64e28c1009374d5d72fa705f9331cd56517c35e381e/pyclipper-1.4.0-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "f2a50c22c3a78cb4e48347ecf06930f61ce98cf9252f2e292aa025471e9d75b1",
+          "size": 952789
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/40/fd/c5297cc6370e4ab63d0c44d2e63510cc53354f5e8e74bcff047e2a384698/pyyaml-6.0.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "41b4669c3a8fd5750e594dff59d3e62d40e321fec467b50449603710ed0a68f3",
+          "size": 804464
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f0/bd/21ed8bfd340455ede2df0d25d896acf4e4bab2ed9b582bb67389e97b2250/shapely-2.2.0-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "4ed79beb8d4b6cc7c67780fd381feed25848a5f9b8a2385ac5711eccd115647a",
+          "size": 2175369
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/0f/fa/4ae71d860267f2f9eaf7640516f693acf61c9575d48157cdea459c0215aa/numpy-2.5.5-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "228e3d90e967495d61ddc79dd64e95267aae3bcf1b1c516a6186429106a0b444",
+          "size": 14747053
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f3/25/018c8ad2f404bd235d03d822b033a1e59464054bd57d164575fb0939608a/opencv_python-5.1.0.95-cp37-abi3-macosx_15_0_x86_64.whl",
+          "sha256": "6438ef9bfbd15b9ff6474115d836932d24fba80f693f6b1b53b8e0a7a4b387a6",
+          "size": 47012381
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/08/bc/578ab2eaa04705a8978bd9be0fe15c3d43a8fc95097c4f7e39540e79e4fa/pillow-13.0.0-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "ef5fe6b7db3f501c56000ba8fe7c7e1a35ca1d45824fbeb95a67daa85cff4dbe",
+          "size": 5568469
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ce/cc/742b9d69d96c58ac156947e1b56d0f81cbacbccf869e2ac7229f2f86dc4e/pyclipper-1.4.0-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "37bfec361e174110cdddffd5ecd070a8064015c99383d95eb692c253951eee8a",
+          "size": 139839
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/95/22/b445c43210fe7f466fcf5a38bcbe850fd3db31b85594db22b5a43e63c482/pyyaml-6.0.4-cp313-cp313-macosx_10_15_x86_64.whl",
+          "sha256": "61eef2f08e977b725f37a8d1663f5a222c6f09207ac0794030d5fca062e7c96e",
+          "size": 188392
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/28/b6/9ba2a62ab6e831b911a248f0752f0f4120be7637a33ab33d8649ed4ede4d/shapely-2.2.0-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "c037369c35510f51100dd6d386ee3203bac32f164d53e27ca12c3cea5bb643b1",
+          "size": 1785102
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d4/9a/01a332ebb0899ddb14d782f86ed66d080463e5387a8778029462d1902019/numpy-2.5.5-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "7e71ac4284c700afa654e2d15b1b174166710dca932f24045e5dc92001b5bda0",
+          "size": 10744599
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f1/0c/97eb4ac42266545d7630e8231f8cc969f5c3f144d2ee6cb568ef45f81360/onnxruntime-1.32.0-cp313-cp313-macosx_14_0_arm64.whl",
+          "sha256": "27bf5dad46355a8a435c9c4e1556464d99ca834ea44e0f452909712068b8821b",
+          "size": 22518865
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/54/9e/cf62919a706d3288f1a5d9158d5614f1c44e0c3ee978cc769f942a22a232/opencv_python-5.1.0.95-cp37-abi3-macosx_15_0_arm64.whl",
+          "sha256": "0b62fb3c71086ea96369e0f47e3b11949345b2f301b88dff97c92c5118176d7b",
+          "size": 25824349
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/98/c8/ccede3dcc4f274b80fb49199eed1ef34ba05566c8b71976b9d1f111da2e3/pillow-13.0.0-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "f11a3c1358bb3c68012a7b1f41b223c3db9f7bfde90b481df028cfe1c3363313",
+          "size": 4852187
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/1f/c3/1536ad41fd962d3915f3f8252ecc7f91192ab15c3120ba72ff45e76b7077/pyyaml-6.0.4-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "9d4211f080920629a90c9e31c51e326fb70cfae38f18d4128b9913c23642bace",
+          "size": 179961
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/e9/8a/d7c11c2d1beef99a4df4183b255ea2d8669f3bcf7d049bb17fe56bf7cd72/shapely-2.2.0-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "d75957716368f919c63016dae1977a0d007e15f06861cd178701edb91b08d2b0",
+          "size": 1584542
         }
       ],
-      "declared_total_bytes": 182915088,
+      "declared_total_bytes": 464143132,
       "package_manifest_file": "components/ocr/ocr-rapidocr/package.manifest.json",
       "creator_package_signature_file": "components/ocr/ocr-rapidocr/package.manifest.creator.sig",
       "creator_identity_file": "components/ocr/ocr-rapidocr/creator.identity",
       "creator_signature_file": "components/ocr/ocr-rapidocr/creator.sig"
+    },
+    {
+      "id": "parse-datetime",
+      "name": "多语言日期解析归一（站点常见痛点）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/extract/parse-datetime/recipe.json",
+      "recipe_digest": "6ae6d62324f5ea82294e5225e5f6e893217dd84403d0a267f9e515b08f3be9d9",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.parse-datetime"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/dateparser/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/81/f0/1efe5925fb65ba58628656ae19bea27764f6e6817ecbc756c98746fce8e1/dateparser-1.5.1-py3-none-any.whl",
+          "sha256": "1d312d2dbc3cddd61fe96d336af733b54bd01d7beb5657a432c7d1c2a144a5c8",
+          "size": 376770
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl",
+          "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+          "size": 92853
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/b6/25/564f3fc5b70c1398d706c51f2b1470d0ea0b1b2f96fee67877b6f5bdf3b6/pytz-2026.6-py2.py3-none-any.whl",
+          "sha256": "7fed3fee8fd6bd4a2b7b75a8d56021d0624127bf69bd5691f115db929ac570b3",
+          "size": 506321
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/fd/13/0b310db8244876514da955817cdf10a375fdc097b779bb358b1bc5818be6/regex-2026.11.19-cp313-cp313-win_amd64.whl",
+          "sha256": "0d40bb306d4979b4c6f78f779492528ec9a6a59ca68381a78e6769ea969349cf",
+          "size": 281472
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl",
+          "sha256": "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec",
+          "size": 348210
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/7b/c1/9be4e1a8a30db8729a86628073910e56f85aaf8a659e053f376a2e6ea5a8/tzlocal-5.4.5-py3-none-any.whl",
+          "sha256": "ecab534f6d65d9deb4c4ea52c121ab6dd5958e9b878e71dcb102578269752454",
+          "size": 18215
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/ea/dd/bdc44884d86dab01f1aa87c1a6c6897d756410b5f36186de0ae34537ac77/regex-2026.11.19-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "5403bbcbd207f6e498fab36c4bfa31d857a0bd4173f74a845f1f731cb95d31ff",
+          "size": 809356
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/60/c6/00b196934e0564e7e0fec5e9ddd8610a0d9dd77de9d116d12fbeee1301b3/regex-2026.11.19-cp313-cp313-macosx_10_13_x86_64.whl",
+          "sha256": "75b9cdf5147fd0a15bb346bbd60cd23ad2664267e612af416f01ecc539e9eb56",
+          "size": 297450
+        }
+      ],
+      "declared_total_bytes": 2730647,
+      "package_manifest_file": "components/extract/parse-datetime/package.manifest.json",
+      "creator_package_signature_file": "components/extract/parse-datetime/package.manifest.creator.sig",
+      "creator_identity_file": "components/extract/parse-datetime/creator.identity",
+      "creator_signature_file": "components/extract/parse-datetime/creator.sig"
+    },
+    {
+      "id": "schedule-cron",
+      "name": "Cron 表达式解析（定时抓取的基础能力）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/schedule/schedule-cron/recipe.json",
+      "recipe_digest": "59a777ec6c03fe35474171deb37fb79a8beb5f205ed43610d1ea8bb5cd732069",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.schedule-cron"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/croniter/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/4c/89/10f9987ebdef47dbe9db94e9c00dcbd91a6ff1aa46ad58bee5b50fa454c9/croniter-7.0.0-py3-none-any.whl",
+          "sha256": "92090bce3cef195a037a46b78430c4cdd6250e90671d9d7dcd9e486147daaca4",
+          "size": 63225
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl",
+          "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+          "size": 92853
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl",
+          "sha256": "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec",
+          "size": 348210
+        }
+      ],
+      "declared_total_bytes": 504288,
+      "package_manifest_file": "components/schedule/schedule-cron/package.manifest.json",
+      "creator_package_signature_file": "components/schedule/schedule-cron/package.manifest.creator.sig",
+      "creator_identity_file": "components/schedule/schedule-cron/creator.identity",
+      "creator_signature_file": "components/schedule/schedule-cron/creator.sig"
     },
     {
       "id": "tesseract-chi-sim",

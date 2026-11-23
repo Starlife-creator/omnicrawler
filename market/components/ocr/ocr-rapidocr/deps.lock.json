@@ -1,24 +1,21 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "a93d08140527bdbf22e90fe891dfa2a4bf6936f5af429bf9362cedd615e602eb",
+  "recipe_digest": "642a938f53e87b6a1cec818b7fbf1f5974c77951b1db3ffa6b3d76459144c3ab",
   "python_version": "3.13",
   "packages": [
-    "certifi",
-    "charset-normalizer",
     "colorama",
-    "colorlog",
-    "idna",
+    "flatbuffers",
     "numpy",
-    "omegaconf",
-    "opencv-python-headless",
+    "onnxruntime",
+    "opencv-python",
+    "packaging",
     "pillow",
+    "protobuf",
     "pyclipper",
     "pyyaml",
-    "rapidocr",
-    "requests",
+    "rapidocr-onnxruntime",
     "shapely",
     "six",
-    "tqdm",
-    "urllib3"
+    "tqdm"
   ]
 }
