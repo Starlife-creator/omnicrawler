@@ -31,6 +31,17 @@ updates:
       # windows-full-dependency-matrix 的 ".[full]" 安装，升级 PyYAML 必致
       # ResolutionImpossible（PR #47/#51 已两次复现），故永久忽略直至 paddlex 放宽。
       - dependency-name: "PyYAML"
+      # **uv 是构建工具链，不能由 dependabot 单独升级。**
+      #
+      # `constraints/quality.txt` 的 `uv==X` 与 4 个 reusable 工作流里的
+      # `setup-uv version:` pin **必须逐字相等**（守卫
+      # `test_release_build_toolchain_uv_version_matches_constraints`）。
+      # dependabot 只改 constraints 一处，必然让该守卫红 —— PR `7bad484e`
+      # （2026-11-23）就是这样三个平台全红。
+      #
+      # 升级 uv 要走「同时改 constraints + 4 个 workflow」的明确动作，
+      # 而不是自动 PR。
+      - dependency-name: "uv"
 
   - package-ecosystem: "github-actions"
     directory: "/"
