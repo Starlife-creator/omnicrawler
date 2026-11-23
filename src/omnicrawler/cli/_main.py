@@ -549,7 +549,13 @@ def _dispatch(args: argparse.Namespace) -> None:
         # 会写自己的 JSON，这里检测到输出已是 JSON 就原样透传。
         from ._json_envelope import run_with_envelope
 
-        run_with_envelope(args.command, handler, args)
+        # **退出码必须与 envelope 里的 `exit_code` 一致。**
+        # 早先这里丢弃了返回值，于是一个真实失败（envelope 说 exit_code=1）
+        # 进程却以 0 退出 —— agent 会把它当成功，脚本 `&&` 链也不会中断。
+        # 2026-11-23 实测 `--json status -c nope.yaml` 就是这样。
+        code = run_with_envelope(args.command, handler, args)
+        if code:
+            raise SystemExit(code)
         return
 
     handler(args)

@@ -151,3 +151,22 @@ def test_argparse_error_also_emits_json() -> None:
     assert payload["error"]["is_retryable"] is False
     # usage 文本仍要在 stderr（保持人读行为不变）
     assert "usage" in (completed.stderr or "").lower()
+
+def test_process_exit_code_matches_envelope() -> None:
+    """**核心契约**：进程退出码必须等于 envelope 里的 `exit_code`。
+
+    早先 `_dispatch` 丢弃了 `run_with_envelope` 的返回值，于是真实失败
+    （envelope 说 exit_code=1）进程却以 0 退出 —— agent 会当成功，
+    脚本 `&&` 链也不中断。这是最危险的一类不一致。
+    """
+    completed = subprocess.run(
+        [sys.executable, "-m", "omnicrawler", "--json", "status", "-c", "__nope__.yaml"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False, timeout=120, env=utf8_env(),
+    )
+    payload = json.loads((completed.stdout or "").strip().splitlines()[0])
+    assert payload["ok"] is False
+    assert completed.returncode == payload["exit_code"], (
+        f"进程退出码 {completed.returncode} 与 envelope 的 "
+        f"{payload['exit_code']} 不一致 —— agent 会误判成败"
+    )
