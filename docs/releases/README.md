@@ -8,7 +8,7 @@
 
 | 文件 | 说明 |
 |---|---|
-| `RELEASE_REPORT_1.0.29.md` | 当前版本 1.0.29 的发布报告 |
+| `RELEASE_REPORT_1.1.0.md` | 当前版本 1.1.0 的发布报告 |
 | `RELEASE_REPORT_TEMPLATE.md` | 报告模板，新建版本时以此为底稿 |
 
 ## 谁来写这里

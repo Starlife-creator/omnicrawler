@@ -1,6 +1,6 @@
-# OmniCrawler 1.0.29 配置参考
+# OmniCrawler 1.1.0 配置参考
 
-> 适用版本：1.0.29 · 配置协议：v5 · 维护状态：现行
+> 适用版本：1.1.0 · 配置协议：v5 · 维护状态：现行
 
 配置为 UTF-8 YAML。未知顶层字段会在迁移和 GUI 往返保存时保留。相对路径以配置文件所在项目根目录解析。
 
@@ -273,7 +273,7 @@ plugins:
   enabled_market_plugins: [site]
   permission_grants:
     site:
-      version: 1.0.29
+      version: 1.1.0
       artifact_sha256: "<64位SHA-256>"
       creator_fingerprint: "<有签名身份时填写>"
       permissions: [network:scoped]
