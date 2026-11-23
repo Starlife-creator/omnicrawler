@@ -1,0 +1,116 @@
+{
+  "schema": 1,
+  "id": "fix-text-encoding",
+  "name": "fix-text-encoding",
+  "version": "1.0.0",
+  "description": "修复乱码文本（mojibake/双重编码/错误码页）",
+  "kind": "wheel-pack",
+  "provides": [
+    "ocr.fix-text-encoding"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": [
+    "x86_64",
+    "aarch64"
+  ],
+  "python_abi": [
+    "cp313"
+  ],
+  "requires": [
+    "ftfy"
+  ],
+  "artifacts": [
+    {
+      "url": "https://files.pythonhosted.org/packages/ab/6e/81d47999aebc1b155f81eca4477a616a70f238a2549848c38983f3c22a82/ftfy-6.3.1-py3-none-any.whl",
+      "sha256": "7c70eb532015cd2f9adb53f101fb6c7945988d023a085d127d1573dc49dd0083",
+      "size": 44821,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/4c/f8/f192d5bb1ef6d373ab68e6797480bdc07f43650b8badecf61b96f046b598/wcwidth-0.9.5-cp310-abi3-win_amd64.whl",
+      "sha256": "83392b339571c9f1161a360079229c65099c96801433fb71757ab183ce9742b0",
+      "size": 619979,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/ca/77/61587cff9534a911b3116009f42de1edb2fa12bbb7c45ca92c4a415993f1/wcwidth-0.9.5-py3-none-any.whl",
+      "sha256": "ef205150ff317032d633de2d8ca26d03dc8d5ba6a00294f6acfd1d0cfe1365d6",
+      "size": 329353,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/5a/cb/55c50713af3697d7dc88b99763826e77ac1e5cec515670c9400a6dee980e/wcwidth-0.9.5-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "61ffb194ccf2224ff552b46912aa44f1bc841f8ef751b193335b317a286b7c03",
+      "size": 822732,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/ba/17/6631bfa4d7666441d86053c58c208388e8f2c4bc28bbd96ba03f90a424b4/wcwidth-0.9.5-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "sha256": "a631629c8a131f7fa58c99bc0630f7011bcdc385146b1ebac9d74becba2b6a90",
+      "size": 826581,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/e7/37/3fd79ed60a52d3bef465abf826af97159b10ca0be16d5ad9f1dce3113fe2/wcwidth-0.9.5-cp310-abi3-macosx_10_9_x86_64.whl",
+      "sha256": "020031ef4b8d11c8f3247103b9fb9ea5adea7474ed2bb0a3beeb1633c6ab00e6",
+      "size": 634579,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/34/65/12f5f1afd3bb6a2ac4b56ee71b43ac18d384f348daf2e20ede7b335a5a19/wcwidth-0.9.5-cp310-abi3-macosx_11_0_arm64.whl",
+      "sha256": "a7e0ccc62c7171a8f6b47f7127559e8d9fbfa36d36dfffefb409655dd669717d",
+      "size": 640980,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    }
+  ],
+  "entry": {
+    "path": "entry.json",
+    "protocol": "ocr-file-v1",
+    "engine": "generic",
+    "runner": "worker-wheelpack",
+    "module": "site-packages/ftfy/__init__.py"
+  },
+  "smoke": {
+    "expect": [
+      "ok",
+      "engine",
+      "module"
+    ],
+    "timeout_seconds": 600,
+    "description": "import ftfy，确认原生扩展可加载"
+  }
+}

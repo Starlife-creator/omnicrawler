@@ -1,0 +1,9 @@
+{
+  "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
+  "recipe_digest": "23197a1322ac32ddceb6177a02666ec4b84df2b94a5b8a69ba401d21ebb0142e",
+  "python_version": "3.13",
+  "packages": [
+    "ftfy",
+    "wcwidth"
+  ]
+}
