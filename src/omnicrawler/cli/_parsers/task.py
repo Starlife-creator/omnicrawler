@@ -56,14 +56,19 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     control.add_argument("--config", "-c", required=True)
     control.add_argument("action", choices=["status", "pause", "resume", "stop"])
     compare = sub.add_parser("compare-runs", help="对比两次运行的新增、删除和字段变化")
-    compare.add_argument("--config", "-c", required=True)
-    compare.add_argument("before_run")
-    compare.add_argument("after_run")
-    compare.add_argument("--output", "-o")
+    compare.add_argument("--config", "-c", required=True, help="任务配置文件路径")
+    compare.add_argument("before_run", help="基线运行 id（见 status 输出）")
+    compare.add_argument("after_run", help="对比目标运行 id")
+    compare.add_argument(
+        "--output", "-o", help="把对比报告写到该路径（缺省只打印摘要）",
+    )
     regression = sub.add_parser("regression", help="离线验证已保存的网页/API 回归样本")
     regression.add_argument("--config", "-c", required=True)
     capabilities = sub.add_parser("capabilities", help="分层检查当前任务所需的 Python、浏览器、OCR 和存储能力")
-    capabilities.add_argument("--mode", choices=["quick", "task", "deep"], default="quick")
+    capabilities.add_argument(
+        "--mode", choices=["quick", "task", "deep"], default="quick",
+        help="检查深度：quick=只查模块存在；task=按配置所需；deep=逐个导入验证",
+    )
     capabilities.add_argument(
         "--require",
         action="append",
@@ -80,26 +85,39 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     capabilities.add_argument("--self-test", action="store_true", help="用生成样本离线运行 Tesseract 与 PaddleOCR（分钟级）")
     capabilities.add_argument("--portable-paths", action="store_true", help="把运行路径写成可移植占位符")
     security_report = sub.add_parser("security-report", help="汇总任务实际网络访问边界和安全例外")
-    security_report.add_argument("--config", "-c", required=True)
+    security_report.add_argument("--config", "-c", required=True, help="任务配置文件路径")
     recovery = sub.add_parser("recovery", help="查看并执行任务恢复中心操作")
     recovery.add_argument("--config", "-c", required=True)
     recovery.add_argument(
-        "action", choices=["overview", "failures", "coverage", "retry-discovery", "continue", "retry-failed", "relogin", "reprocess", "rollback-config"]
+        "action",
+        choices=["overview", "failures", "coverage", "retry-discovery", "continue",
+                 "retry-failed", "relogin", "reprocess", "rollback-config"],
+        help=(
+            "要执行的恢复动作：overview=总览；failures=失败清单；coverage=覆盖缺口；"
+            "retry-discovery=重试发现；continue=继续；retry-failed=重试死信；"
+            "relogin=重新登录；reprocess=重处理；rollback-config=回滚配置"
+        ),
     )
     recovery.add_argument("--run-id", help="coverage / retry-discovery 的发现记录运行标识；默认最近运行")
     recovery.add_argument("--offset", type=int, default=0, help="coverage 清单分页偏移")
-    recovery.add_argument("--limit", type=int)
+    recovery.add_argument("--limit", type=int, help="单次返回条目上限（分页用）")
     recovery.add_argument("--fingerprint", action="append", help="retry-failed 选择失败请求；retry-discovery 选择发现清单中的父请求；可重复")
     recovery.add_argument("--backup", help="rollback-config使用的已验证配置备份")
     recovery.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（rollback-config 需要）")
     plan = sub.add_parser("plan", help="把任务编译为可解释、可校验哈希的执行计划")
-    plan.add_argument("--config", "-c", required=True)
+    plan.add_argument("--config", "-c", required=True, help="任务配置文件路径")
     plan.add_argument("--compare", help="与另一配置的计划进行字段级差异比较")
-    plan.add_argument("--output", "-o")
+    plan.add_argument("--output", "-o", help="把执行计划写到该路径（缺省打印到 stdout）")
     worker = sub.add_parser("worker", help="启动或重新连接认证的独立本地Worker")
-    worker.add_argument("--config", "-c", required=True)
-    worker.add_argument("action", choices=["start", "status", "pause", "resume", "stop", "shutdown"])
-    worker.add_argument("--session")
+    worker.add_argument("--config", "-c", required=True, help="任务配置文件路径")
+    worker.add_argument(
+        "action", choices=["start", "status", "pause", "resume", "stop", "shutdown"],
+        help=(
+            "worker 动作：start=启动/重新连接；status=查看状态；"
+            "pause/resume/stop=控制运行；shutdown=关闭 worker 进程"
+        ),
+    )
+    worker.add_argument("--session", help="会话标识（status/pause/resume/stop 时指定目标）")
     # 性能基准测试
     benchmark = sub.add_parser("benchmark", help="运行性能基准测试并对比历史基线")
     benchmark.add_argument("--config", "-c", required=True, help="跑分所用的 YAML 配置")

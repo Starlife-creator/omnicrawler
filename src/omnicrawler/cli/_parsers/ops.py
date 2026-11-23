@@ -64,18 +64,32 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     )
     su_cleanup.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     schedule = sub.add_parser("schedule", help="管理可恢复的本地定时任务")
-    schedule.add_argument("--database", default="work/schedules.sqlite3")
+    schedule.add_argument(
+        "--database", default="work/schedules.sqlite3",
+        help="定时任务数据库（SQLite）路径；缺省为 work/schedules.sqlite3",
+    )
     schedule_sub = schedule.add_subparsers(dest="schedule_command", required=True)
     schedule_add = schedule_sub.add_parser("add", help="添加按固定间隔运行的任务")
-    schedule_add.add_argument("--config", "-c", required=True)
-    schedule_add.add_argument("--name", default="")
-    schedule_add.add_argument("--every-seconds", type=int, required=True)
-    schedule_add.add_argument("--require-ac", action="store_true")
-    schedule_add.add_argument("--require-network", action="store_true")
-    schedule_add.add_argument("--minimum-battery", type=float, default=0)
+    schedule_add.add_argument("--config", "-c", required=True, help="任务配置文件路径")
+    schedule_add.add_argument("--name", default="", help="任务显示名（缺省用配置名）")
+    schedule_add.add_argument(
+        "--every-seconds", type=int, required=True, help="运行间隔秒数（最小 60）",
+    )
+    schedule_add.add_argument(
+        "--require-ac", action="store_true", help="仅在接通电源时运行（笔记本省电）",
+    )
+    schedule_add.add_argument(
+        "--require-network", action="store_true", help="仅在检测到网络时运行",
+    )
+    schedule_add.add_argument(
+        "--minimum-battery", type=float, default=0,
+        help="最低电量百分比门槛（0-100，默认不限）",
+    )
     schedule_sub.add_parser("list", help="列出定时任务")
     schedule_run = schedule_sub.add_parser("run-due", help="领取并运行当前到期任务")
-    schedule_run.add_argument("--limit", type=int, default=10)
+    schedule_run.add_argument(
+        "--limit", type=int, default=10, help="本次最多领取几个到期任务（默认 10）",
+    )
     queue_cmd = sub.add_parser("queue", help="远程任务调度队列（Redis 可用时共享，否则本地降级）")
     queue_sub = queue_cmd.add_subparsers(dest="action", required=True)
     q_submit = queue_sub.add_parser("submit", help="提交配置任务到队列")
