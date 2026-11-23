@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "id": "parse-datetime",
+  "name": "parse-datetime",
+  "version": "1.0.0",
+  "description": "多语言日期解析归一（站点常见痛点）",
+  "kind": "wheel-pack",
+  "provides": [
+    "ocr.parse-datetime"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": [
+    "x86_64"
+  ],
+  "python_abi": [
+    "cp313"
+  ],
+  "requires": [
+    "dateparser"
+  ],
+  "artifacts": [
+    {
+      "url": "https://files.pythonhosted.org/packages/81/f0/1efe5925fb65ba58628656ae19bea27764f6e6817ecbc756c98746fce8e1/dateparser-1.5.1-py3-none-any.whl",
+      "sha256": "1d312d2dbc3cddd61fe96d336af733b54bd01d7beb5657a432c7d1c2a144a5c8",
+      "size": 376770,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/2f/a9/52b89563d154433d79b51ed1eb4842bf7334cb2696891a7fe135618853d7/python_dateutil-4.0.0-py3-none-any.whl",
+      "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c",
+      "size": 92853,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/b6/25/564f3fc5b70c1398d706c51f2b1470d0ea0b1b2f96fee67877b6f5bdf3b6/pytz-2026.6-py2.py3-none-any.whl",
+      "sha256": "7fed3fee8fd6bd4a2b7b75a8d56021d0624127bf69bd5691f115db929ac570b3",
+      "size": 506321,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/fd/13/0b310db8244876514da955817cdf10a375fdc097b779bb358b1bc5818be6/regex-2026.11.19-cp313-cp313-win_amd64.whl",
+      "sha256": "0d40bb306d4979b4c6f78f779492528ec9a6a59ca68381a78e6769ea969349cf",
+      "size": 281472,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl",
+      "sha256": "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec",
+      "size": 348210,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/7b/c1/9be4e1a8a30db8729a86628073910e56f85aaf8a659e053f376a2e6ea5a8/tzlocal-5.4.5-py3-none-any.whl",
+      "sha256": "ecab534f6d65d9deb4c4ea52c121ab6dd5958e9b878e71dcb102578269752454",
+      "size": 18215,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/ea/dd/bdc44884d86dab01f1aa87c1a6c6897d756410b5f36186de0ae34537ac77/regex-2026.11.19-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "5403bbcbd207f6e498fab36c4bfa31d857a0bd4173f74a845f1f731cb95d31ff",
+      "size": 809356,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/60/c6/00b196934e0564e7e0fec5e9ddd8610a0d9dd77de9d116d12fbeee1301b3/regex-2026.11.19-cp313-cp313-macosx_10_13_x86_64.whl",
+      "sha256": "75b9cdf5147fd0a15bb346bbd60cd23ad2664267e612af416f01ecc539e9eb56",
+      "size": 297450,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    }
+  ],
+  "entry": {
+    "path": "entry.json",
+    "protocol": "ocr-file-v1",
+    "engine": "generic",
+    "runner": "worker-wheelpack",
+    "module": "site-packages/dateparser/__init__.py"
+  },
+  "smoke": {
+    "expect": [
+      "ok",
+      "engine",
+      "module"
+    ],
+    "timeout_seconds": 600,
+    "description": "import dateparser，确认原生扩展可加载"
+  }
+}

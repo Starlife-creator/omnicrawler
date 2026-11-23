@@ -1,0 +1,23 @@
+{
+  "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
+  "recipe_digest": "80ab02a6f928ef5c110c739808ee8730e5898d2c287a37e3b467e3b21f4a952e",
+  "python_version": "3.13",
+  "packages": [
+    "backports-functools-lru-cache",
+    "certifi",
+    "charset-normalizer",
+    "courlan",
+    "dateparser",
+    "htmldate",
+    "justext",
+    "lxml",
+    "lxml-html-clean",
+    "python-dateutil",
+    "pytz",
+    "regex",
+    "trafilatura",
+    "tzdata",
+    "tzlocal",
+    "urllib3"
+  ]
+}

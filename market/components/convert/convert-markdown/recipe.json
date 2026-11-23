@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "id": "convert-markdown",
+  "name": "convert-markdown",
+  "version": "1.0.0",
+  "description": "HTML 转 Markdown（正文交付形态）",
+  "kind": "wheel-pack",
+  "provides": [
+    "ocr.convert-markdown"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": [
+    "x86_64"
+  ],
+  "python_abi": [
+    "cp313"
+  ],
+  "requires": [
+    "markdownify"
+  ],
+  "artifacts": [
+    {
+      "url": "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl",
+      "sha256": "d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9",
+      "size": 109924,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/df/37/9905803c2df99e10c69df1b0ecaad16a559d51cec20e2929006975d1bedc/markdownify-1.2.4-py3-none-any.whl",
+      "sha256": "e0375484fdd2bb007e86779fe34c59673d0011b14f8299953aaf0bf092269220",
+      "size": 15852,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/f6/f7/be207468cac6ad79389f36cf1fce4f2836960df91659979ec486c727bb2e/soupsieve-4.1.3-py3-none-any.whl",
+      "sha256": "7a390d1a57d1ab7bb228531e9b8a750a5ebf87db774e0ef6faeeac057d22a5bf",
+      "size": 59792,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "size": 45571,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    }
+  ],
+  "entry": {
+    "path": "entry.json",
+    "protocol": "ocr-file-v1",
+    "engine": "generic",
+    "runner": "worker-wheelpack",
+    "module": "site-packages/markdownify/__init__.py"
+  },
+  "smoke": {
+    "expect": [
+      "ok",
+      "engine",
+      "module"
+    ],
+    "timeout_seconds": 600,
+    "description": "import markdownify，确认原生扩展可加载"
+  }
+}

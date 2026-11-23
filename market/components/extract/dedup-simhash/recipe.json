@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "id": "dedup-simhash",
+  "name": "dedup-simhash",
+  "version": "1.0.0",
+  "description": "近重复内容检测（MinHash/LSH，去重站点同质文章）",
+  "kind": "wheel-pack",
+  "provides": [
+    "ocr.dedup-simhash"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": [
+    "x86_64"
+  ],
+  "python_abi": [
+    "cp313"
+  ],
+  "requires": [
+    "datasketch"
+  ],
+  "artifacts": [
+    {
+      "url": "https://files.pythonhosted.org/packages/54/df/9e79bf1fb2f660507dbd00d24730d107595a2f599f2524a96344149c95f1/datasketch-2.0.0-py3-none-any.whl",
+      "sha256": "aea5ffafcce776e03d085740e78b874e778d779b07ee11ca636ca51b3fef09ed",
+      "size": 107247,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/45/74/bb9161943fb65caf24e4bb04c788f5c7815e6cb78ac595e7f46781033c82/numpy-2.5.5-cp313-cp313-win_amd64.whl",
+      "sha256": "e0608d1585557b68dcb6a70a41654f7536567960afad79d91752d2863b242b68",
+      "size": 12573354,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/93/0e/e0348fbc0dbab65c114cf78957e7dfeb49f8e8b556b4d930cc12ff195e18/scipy-1.18.1-cp313-cp313-win_amd64.whl",
+      "sha256": "559ed65f60c1af5a03f3912605a1b5114f522c7c32fb23c3376ae8f03219fe28",
+      "size": 36622841,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "windows"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/40/d6/68dd5a83914bbcaf32b3165993f7955979916708cb0156d1e28231e18803/numpy-2.5.5-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "824025655df929268bfe6b47ed91a00d14209a6f760847cf150be446829e1ce4",
+      "size": 15713899,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/41/48/6450ed9243315322bbc19ac57b9b70d66a20bf1d38d124c96bc4bf6af9ea/scipy-1.18.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "fdaf5ea890a6183d0565f51a61799d67081bd5b1cf03c5f4b3fd3732108625c9",
+      "size": 35312578,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/0f/fa/4ae71d860267f2f9eaf7640516f693acf61c9575d48157cdea459c0215aa/numpy-2.5.5-cp313-cp313-macosx_10_13_x86_64.whl",
+      "sha256": "228e3d90e967495d61ddc79dd64e95267aae3bcf1b1c516a6186429106a0b444",
+      "size": 14747053,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/b6/55/4540ee0f9c42a9ad7109d0d1a8cc70de54c3572b01c6693a2b1c70e90ceb/scipy-1.18.1-cp313-cp313-macosx_10_15_x86_64.whl",
+      "sha256": "3ab3523da44749156e1f68b464dc56af11ae4cbc5c739a49d05f32b982eca9f3",
+      "size": 31089958,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    }
+  ],
+  "entry": {
+    "path": "entry.json",
+    "protocol": "ocr-file-v1",
+    "engine": "generic",
+    "runner": "worker-wheelpack",
+    "module": "site-packages/datasketch/__init__.py"
+  },
+  "smoke": {
+    "expect": [
+      "ok",
+      "engine",
+      "module"
+    ],
+    "timeout_seconds": 600,
+    "description": "import datasketch，确认原生扩展可加载"
+  }
+}

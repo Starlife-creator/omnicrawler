@@ -1,0 +1,10 @@
+{
+  "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
+  "recipe_digest": "c04ebf62d6a222cba0945642b7c632434a233566aba34adc4050fcaf8c5a2d7b",
+  "python_version": "3.13",
+  "packages": [
+    "lxml",
+    "python-docx",
+    "typing-extensions"
+  ]
+}

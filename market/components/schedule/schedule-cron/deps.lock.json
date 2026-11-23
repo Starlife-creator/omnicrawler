@@ -1,0 +1,10 @@
+{
+  "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
+  "recipe_digest": "59a777ec6c03fe35474171deb37fb79a8beb5f205ed43610d1ea8bb5cd732069",
+  "python_version": "3.13",
+  "packages": [
+    "croniter",
+    "python-dateutil",
+    "tzdata"
+  ]
+}

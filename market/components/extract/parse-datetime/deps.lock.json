@@ -1,0 +1,13 @@
+{
+  "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
+  "recipe_digest": "6ae6d62324f5ea82294e5225e5f6e893217dd84403d0a267f9e515b08f3be9d9",
+  "python_version": "3.13",
+  "packages": [
+    "dateparser",
+    "python-dateutil",
+    "pytz",
+    "regex",
+    "tzdata",
+    "tzlocal"
+  ]
+}
