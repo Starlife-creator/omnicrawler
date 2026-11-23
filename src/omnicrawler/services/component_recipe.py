@@ -672,24 +672,61 @@ def _validate_requires(recipe: dict[str, Any]) -> None:
         )
 
 
-def artifacts_for_platform(recipe: dict[str, Any], platform: str) -> list[dict[str, Any]]:
-    """该平台需要拉取的构件。
+#: 从轮子文件名推断架构的关键词。顺序有意义（先具体后宽泛）。
+_ARCH_TOKENS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("aarch64", ("aarch64", "arm64")),
+    ("x86_64", ("x86_64", "amd64", "win64", "x64")),
+    ("universal2", ("universal2",)),
+)
+
+
+def _artifact_arch(filename: str) -> str:
+    """从构件文件名推断架构；推断不出返回空串（视为通用）。"""
+    lowered = filename.lower()
+    for canonical, tokens in _ARCH_TOKENS:
+        if any(token in lowered for token in tokens):
+            return canonical
+    return ""
+
+
+def artifacts_for_platform(
+    recipe: dict[str, Any], platform: str, *, architecture: str = ""
+) -> list[dict[str, Any]]:
+    """该平台（及架构）需要拉取的构件。
 
     构件的 `platforms` 缺省表示「所有平台」（向后兼容早期只有 windows 的配方）。
     显式声明时按成员判定 —— 这样一份 recipe 可以给不同平台配不同轮子。
+
+    **架构筛选**（2026-11-23 补）：同一平台的两个架构不能共存于同一个
+    `site-packages/` —— 它们有同名的 `.so`，解压时后者覆盖前者。
+    真实 CI：`ocr-paddle` 配方补了 aarch64 轮子后，x86_64 runner 上
+    `cryptography` 的 `.so` 被 aarch64 版覆盖，报
+    `cannot open shared object file`，连 ubuntu 都红了。
+
+    规则：
+    * `architecture` 为空 ⇒ 不筛架构（保持旧行为）；
+    * 构件文件名推断不出架构（纯 Python `none-any`）⇒ **总是保留**
+      （它通用于所有架构）；
+    * 推断出的架构与目标不符 ⇒ **丢弃**。
     """
+    wanted = normalize_architecture(architecture) if architecture else ""
     selected: list[dict[str, Any]] = []
     for artifact in recipe.get("artifacts") or []:
         if not isinstance(artifact, dict):
             continue
         declared = artifact.get("platforms")
-        if declared is None:
-            selected.append(artifact)
-            continue
-        if isinstance(declared, str):
-            declared = [declared]
-        if platform in {str(item) for item in declared}:
-            selected.append(artifact)
+        if declared is not None:
+            if isinstance(declared, str):
+                declared = [declared]
+            if platform not in {str(item) for item in declared}:
+                continue
+        if wanted:
+            url = str(artifact.get("url") or artifact.get("builtin_path") or "")
+            filename = str(artifact.get("filename") or url.rsplit("/", 1)[-1])
+            found = _artifact_arch(filename)
+            if found and found != wanted and found != "universal2":
+                continue
+        selected.append(artifact)
     return selected
 
 
@@ -1333,9 +1370,17 @@ def install_from_recipe(
         destination = component_root / install_id
     else:
         destination = component_root / f"{install_id}-{version}"
-    # 按**当前平台**筛构件：一份 recipe 可以给不同平台配不同轮子
+    # 按**当前平台 + 当前架构**筛构件：一份 recipe 可以给不同平台配不同轮子
     # （paddle 的 win_amd64 / manylinux1_x86_64 / macosx_11_0_arm64）。
-    artifacts = artifacts_for_platform(recipe, current_platform())
+    #
+    # **架构必须参与筛选**：同一平台的两个架构轮子有同名 `.so`
+    # （如 `cryptography/hazmat/bindings/_rust.abi3.so`），同时解压到
+    # 同一个 `site-packages/` 会后者覆盖前者 ⇒ x86_64 runner 上留下 aarch64
+    # 的 `.so`，报 `cannot open shared object file`。2026-11-23 真实 CI 踩到
+    # （补 aarch64 轮子后连 ubuntu 都红了）。
+    artifacts = artifacts_for_platform(
+        recipe, current_platform(), architecture=current_architecture()
+    )
     _require(
         bool(artifacts),
         f"recipe 没有任何适用于 {current_platform()} 的构件",

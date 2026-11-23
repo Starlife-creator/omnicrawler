@@ -244,7 +244,19 @@ def test_env_prepends_native_library_paths(tmp_path: Path) -> None:
 
     site = str(spec.site_packages)
     assert site in env["LD_LIBRARY_PATH"], "LD_LIBRARY_PATH 未包含 site-packages"
-    assert site in env["DYLD_LIBRARY_PATH"], "DYLD_LIBRARY_PATH 未包含 site-packages"
+    # **macOS 用 DYLD_FALLBACK_LIBRARY_PATH，不是 DYLD_LIBRARY_PATH**。
+    #
+    # 前者只在默认搜索失败后才查（语义是「兜底」）；后者会**改变
+    # @rpath/@loader_path 的解析**，而 macOS 上 CPython 扩展模块正是靠
+    # @loader_path 定位同目录依赖 —— 设了它，`dlopen` 就只在
+    # site-packages 根找，找不到模块自己目录里的 .so。
+    # 真实 CI（2026-11-23, macOS arm64）：pydantic_core 的 .so 因此加载失败。
+    assert site in env["DYLD_FALLBACK_LIBRARY_PATH"], (
+        "DYLD_FALLBACK_LIBRARY_PATH 未包含 site-packages"
+    )
+    assert "DYLD_LIBRARY_PATH" not in env, (
+        "不得设 DYLD_LIBRARY_PATH —— 它会顶掉 @loader_path 的解析"
+    )
     # 必须前置而不是追加：否则系统旧版本库会抢先被加载。
     # 分隔符按平台取——Windows 是 `;`，不是 POSIX 的 `:`。
     assert env["LD_LIBRARY_PATH"].split(os.pathsep)[0] == site
