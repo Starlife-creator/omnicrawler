@@ -138,6 +138,25 @@
   （`from tools.child_env import utf8_env`）。否则 Windows 下子进程按 cp936 写，
   中文变 `U+FFFD`。`tools/gates/check_subprocess_encoding.py` 会判红。
 
+**本地工具链同步（维护者 2026-11-23 指出）**：
+
+> 「有时候你代码里升级了，但本地也要同步升级。」
+
+`python tools/gates/check_local_toolchain_sync.py` 检查本地 `ruff` / `mypy` /
+`coverage` / `pytest` 是否与 `constraints/quality.txt` **逐字相等**。
+
+**为什么必须逐字相等，而不是「装最新版」**：CI 就是按 constraints 装的。
+本地版本比 constraints 旧 ⇒ 「本地绿、CI 红」（一轮 40 分钟才发现）；
+本地比 constraints 新 ⇒ 「本地红、CI 绿」（同样误导）。
+两个方向都是自找的浪费。
+
+它已进 `static` 集合。CI 里必然通过（CI 正是按 constraints 装的），
+**价值在本地**：跑 `--set static` 时立刻告诉你版本漂了，并打印可照抄的
+升级命令。
+
+实证：2026-11-23 一次检查就发现 ruff 0.16.4≠0.17.6、mypy 2.3.1≠2.4.1、
+coverage 7.15.4≠7.17.3、pytest 9.1.1≠9.2.0 —— **四个全漂了**。
+
 **判据纪律（最容易翻车）**：
 - 判据必须**确定性**：「看起来正常」≠「运行时正确」；偶然正确 ≠ 正确。
 - 新守卫**必须做反向断言**（装回缺口 ⇒ 必须红 ⇒ 字节级还原）；只绿不红等于没装护栏。

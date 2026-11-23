@@ -311,6 +311,8 @@ jobs:
       - run: python tools/gates/check_walk_pruning.py
       # CLI 选项 help 覆盖率（agent 只能靠 --help 认识命令）
       - run: python tools/gates/check_agent_surface_help.py
+      # 本地开发工具版本必须与 constraints 一致（防「本地绿、CI 红」）
+      - run: python tools/gates/check_local_toolchain_sync.py
       - run: python -m mypy src/omnicrawler
       # 走 tools/builders/build_wheel.py：它先清 build/ 再构建（裸 pip wheel 在同一工作树里
       # 第二次会因 setuptools 复用 build/ 而失败，见 §5.7 / W6.7-⑥）

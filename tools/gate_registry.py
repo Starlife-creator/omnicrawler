@@ -469,6 +469,25 @@ GATES: tuple[Gate, ...] = (
             "它的价值是把「等 CI 45 分钟」变成「本地 2 分钟」。"
         ),
     ),
+    # 本地开发工具版本必须与 constraints 逐字一致。
+    #
+    # 维护者 2026-11-23 的原话：「有时候你代码里升级了，但本地也要同步升级」。
+    # 实证就在同一天：constraints pin ruff==0.17.6，我本机是 0.16.4 ——
+    # 这会让「本地绿、CI 红」，而一轮 CI 要 40 分钟。
+    #
+    # 它进 static 而不是 CI 专用：CI 本身就是按 constraints 装的，必然通过；
+    # **真正的价值在本地**（`--set static` 时立刻告诉你版本漂了）。
+    Gate(
+        name="check_local_toolchain_sync",
+        args=("tools/gates/check_local_toolchain_sync.py",),
+        sets=_STATIC,
+        description="本地开发工具版本与 constraints/quality.txt 一致",
+        script="tools/gates/check_local_toolchain_sync.py",
+        ci_note=(
+            "零网络。CI 按 constraints 装，必然通过 —— 价值在本地："
+            "防止「本地绿、CI 红」。要求逐字相等，不是「装最新版」。"
+        ),
+    ),
     Gate(
         name="check_agent_surface_help",
         args=("tools/gates/check_agent_surface_help.py",),
