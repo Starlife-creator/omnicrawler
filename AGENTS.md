@@ -70,6 +70,16 @@
   判据是「跑完测试后主仓不许多出文件」——能一次抓住所有「测试往仓库写东西」的问题
   （本会话 37 条「单独跑能过、整目录跑就失败」全属此类）。
   本地开发用 `--baseline <文件>` 记基线、`--diff-baseline <文件>` 只报增量。
+- **CLI `--json` 覆盖度体检**：`python tools/qa/cli_json_audit.py [--table]`
+  **真跑每个命令一次**，看 stdout 能不能 `json.loads` —— 不做静态推断。
+  需要 `--config` 的命令用「不存在的配置」测**错误路径**（那才是 agent
+  最常遇到、也最容易绕过 `_json()` 输出裸文本的地方）。
+  实测：**47/55（85%）** 输出合法 JSON；8 个跳过全是长驻/交互/GUI
+  （`serve` / `wizard` / `workbench` / `visual-select` / `record-actions` /
+  `self-update` / `pdf` / `worker`），它们天然不该是 JSON。
+  **为什么需要**：我在同一天里两次判断错这个指标 —— 先按「有没有 `--json`
+  flag」统计得 3/55，再按「handler 有没有调 `_json()`」得 43/54。
+  两次都是看代码，不是看运行。这个工具把口径固定成可执行事实。
 - **待签条目就绪检查**：`python tools/market/pending_signature.py --check`
   逐条验证 `OmniCrawler-market/pending-signature/` 里的条目是否**真的就绪**：
   配方可解析、`deps.lock.json` 新鲜（摘要与配方一致）、插件自包含（AST 扫描
