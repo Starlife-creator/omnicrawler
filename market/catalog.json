@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-23T10:44:10+00:00",
-  "sequence": 1791080238,
+  "generated_at": "2026-11-23T10:53:37+00:00",
+  "sequence": 1791080239,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -589,6 +589,39 @@
       "versions": {
         "0.4.1": {
           "sha256": "6b748513f09e31138bc98e76ec99481ed3251aa5d43fb1e4d09485c8d7dc2e34"
+        }
+      }
+    },
+    {
+      "id": "text-similarity",
+      "name": "文本相似度与变更检测",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "processor",
+      "summary": "比较两次采集的文本相似度，区分「相同 / 微调 / 实质变更」三档，避免误告警。",
+      "description_file": "plugins/text-similarity/listing.md",
+      "plugin_file": "plugins/text-similarity/plugin.py",
+      "signature_file": "plugins/text-similarity/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "processor",
+        "similarity",
+        "diff",
+        "change-detection",
+        "incremental"
+      ],
+      "updated_at": "2026-11-23",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/text-similarity",
+      "creator_signature_file": "plugins/text-similarity/creator.sig",
+      "creator_identity_file": "plugins/text-similarity/creator.identity",
+      "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "060bda1718715f1bd68ac931cfb8d6e7c498e7a11a14782f0ad8e869b809c9a9"
         }
       }
     },
