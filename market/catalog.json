@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-23T10:40:57+00:00",
-  "sequence": 1791080236,
+  "generated_at": "2026-11-23T10:44:10+00:00",
+  "sequence": 1791080238,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -480,6 +480,39 @@
       "versions": {
         "0.6.0": {
           "sha256": "ea1b23fd58a7e77ff2abbd6f886053ffb75a3be017b1db0b54ae1e4b58c4a1f7"
+        }
+      }
+    },
+    {
+      "id": "mask-sensitive",
+      "name": "敏感数据脱敏",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "processor",
+      "summary": "导出前脱敏邮箱/手机/身份证/银行卡/IP/API Key，输出逐类命中统计。",
+      "description_file": "plugins/mask-sensitive/listing.md",
+      "plugin_file": "plugins/mask-sensitive/plugin.py",
+      "signature_file": "plugins/mask-sensitive/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "processor",
+        "privacy",
+        "security",
+        "pii",
+        "gdpr"
+      ],
+      "updated_at": "2026-11-23",
+      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/mask-sensitive",
+      "creator_signature_file": "plugins/mask-sensitive/creator.sig",
+      "creator_identity_file": "plugins/mask-sensitive/creator.identity",
+      "execution_mode": "subprocess",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.0.0": {
+          "sha256": "77bcbaac7c5f0363f44acd9b193e8332be950cf7cad6c6fc8fb811eeb4a442f8"
         }
       }
     },
@@ -1544,6 +1577,63 @@
       "creator_package_signature_file": "components/extract/extract-article/package.manifest.creator.sig",
       "creator_identity_file": "components/extract/extract-article/creator.identity",
       "creator_signature_file": "components/extract/extract-article/creator.sig"
+    },
+    {
+      "id": "extract-table",
+      "name": "HTML 表格抽取（含 colspan/rowspan 归一，容错残缺 HTML）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/extract/extract-table/recipe.json",
+      "recipe_digest": "5d3ce0cad9582de459731b0fe589d57ebeb685f9314375501ad9d64b1a033e0f",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.extract-table"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/bs4/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl",
+          "sha256": "d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9",
+          "size": 109924
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/f6/f7/be207468cac6ad79389f36cf1fce4f2836960df91659979ec486c727bb2e/soupsieve-4.1.3-py3-none-any.whl",
+          "sha256": "7a390d1a57d1ab7bb228531e9b8a750a5ebf87db774e0ef6faeeac057d22a5bf",
+          "size": 59792
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+          "size": 45571
+        }
+      ],
+      "declared_total_bytes": 215287,
+      "package_manifest_file": "components/extract/extract-table/package.manifest.json",
+      "creator_package_signature_file": "components/extract/extract-table/package.manifest.creator.sig",
+      "creator_identity_file": "components/extract/extract-table/creator.identity",
+      "creator_signature_file": "components/extract/extract-table/creator.sig"
     },
     {
       "id": "format-table",
