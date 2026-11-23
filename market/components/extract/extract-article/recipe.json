@@ -10,8 +10,7 @@
   ],
   "platforms": [
     "windows",
-    "linux",
-    "macos"
+    "linux"
   ],
   "architectures": [
     "x86_64"
@@ -31,7 +30,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -43,7 +41,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -68,16 +65,6 @@
       ]
     },
     {
-      "url": "https://files.pythonhosted.org/packages/d2/0d/07ab8eb9b7015274353eac2add4067bde1ab1b51912bbae505392905eedd/charset_normalizer-3.5.3-py3-none-any.whl",
-      "sha256": "96e268b0cbda016ac519513294fcd17032264085b600abaac58b93049477e132",
-      "size": 68878,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
-      ]
-    },
-    {
       "url": "https://files.pythonhosted.org/packages/8b/59/4f564893812e0b1f2775437f43bb6b9d492e36c659dd3a1f52a29a0b189e/courlan-1.5.0-py3-none-any.whl",
       "sha256": "a5b121409f864e6ddf39a026ebafabf59c64511d11b336ae30ad4034bbd42b77",
       "size": 64860,
@@ -85,7 +72,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -97,7 +83,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -109,7 +94,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -121,18 +105,7 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/8c/a5/eee2fc77eee5ea68e4a4334b1def1781a3beaeefd3d98e81b4a38dc447b7/lxml-6.1.3-cp313-cp313-macosx_10_13_x86_64.whl",
-      "sha256": "887c021d9a977cff89cb273047c1352997b772a8908a25c21836861f69b92be1",
-      "size": 4632616,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
       ]
     },
     {
@@ -164,8 +137,7 @@
       "extract_to": "site-packages",
       "platforms": [
         "windows",
-        "linux",
-        "macos"
+        "linux"
       ]
     },
     {
@@ -176,7 +148,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -188,18 +159,7 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
-      ]
-    },
-    {
-      "url": "https://files.pythonhosted.org/packages/60/c6/00b196934e0564e7e0fec5e9ddd8610a0d9dd77de9d116d12fbeee1301b3/regex-2026.11.19-cp313-cp313-macosx_10_13_x86_64.whl",
-      "sha256": "75b9cdf5147fd0a15bb346bbd60cd23ad2664267e612af416f01ecc539e9eb56",
-      "size": 297450,
-      "format": "whl",
-      "extract_to": "site-packages",
-      "platforms": [
-        "macos"
       ]
     },
     {
@@ -230,7 +190,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -242,7 +201,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -254,7 +212,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -266,7 +223,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     }

@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "59a777ec6c03fe35474171deb37fb79a8beb5f205ed43610d1ea8bb5cd732069",
+  "recipe_digest": "fbc8b46791e344dbeee35a7f430bb4405edac207535c09cccae8d9fb25b7335b",
   "python_version": "3.13",
   "packages": [
     "croniter",

@@ -3,7 +3,7 @@
   "id": "parse-datetime",
   "name": "parse-datetime",
   "version": "1.0.0",
-  "description": "多语言日期解析归一（站点常见痛点）",
+  "description": "多语言日期解析归一",
   "kind": "wheel-pack",
   "provides": [
     "ocr.parse-datetime"
@@ -14,7 +14,8 @@
     "macos"
   ],
   "architectures": [
-    "x86_64"
+    "x86_64",
+    "aarch64"
   ],
   "python_abi": [
     "cp313"
@@ -104,9 +105,29 @@
       ]
     },
     {
+      "url": "https://files.pythonhosted.org/packages/e0/a2/ab71c53f8adfe1c330c935c0eb7dcc753bd74843f4a0c6c1f46c3a61ac1a/regex-2026.11.19-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "3c916c26a235d06a4dfe717c4dd618563e373a15d0dd86085e9c8d8b1d1abd70",
+      "size": 806540,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
       "url": "https://files.pythonhosted.org/packages/60/c6/00b196934e0564e7e0fec5e9ddd8610a0d9dd77de9d116d12fbeee1301b3/regex-2026.11.19-cp313-cp313-macosx_10_13_x86_64.whl",
       "sha256": "75b9cdf5147fd0a15bb346bbd60cd23ad2664267e612af416f01ecc539e9eb56",
       "size": 297450,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "macos"
+      ]
+    },
+    {
+      "url": "https://files.pythonhosted.org/packages/4e/b4/d3de2b971baa718a8f47b240e6051ee0c1fd95d681ce44cd18109d33141e/regex-2026.11.19-cp313-cp313-macosx_11_0_arm64.whl",
+      "sha256": "e1dfacd322bc5d76b4f65c5f7b632c89311a8c48d199c5b5b73231e4d7fb0103",
+      "size": 294869,
       "format": "whl",
       "extract_to": "site-packages",
       "platforms": [

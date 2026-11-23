@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "10f2a4b4007ba18daa0ef7e6d4427737b373451c88bf50342944cde32b365067",
+  "recipe_digest": "01005b198de103fc38b3d647fe5c01a3418ecd6195a29a273c00c3a2461e8222",
   "python_version": "3.13",
   "packages": [
     "datasketch",

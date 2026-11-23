@@ -14,7 +14,8 @@
     "macos"
   ],
   "architectures": [
-    "x86_64"
+    "x86_64",
+    "aarch64"
   ],
   "python_abi": [
     "cp313"

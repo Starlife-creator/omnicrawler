@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-23T08:50:40+00:00",
-  "sequence": 1791080231,
+  "generated_at": "2026-11-23T09:10:55+00:00",
+  "sequence": 1791080232,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -1119,14 +1119,15 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/convert/convert-markdown/recipe.json",
-      "recipe_digest": "93dc9760fe51854a033e87572a14af815fbde381a4aea74961478cc1123184b4",
+      "recipe_digest": "90d1348f5bcf9089ea713f468a9723b6bebcd1557ac73c1a41ecd012123113a2",
       "platforms": [
         "windows",
         "linux",
         "macos"
       ],
       "architectures": [
-        "x86_64"
+        "x86_64",
+        "aarch64"
       ],
       "python_abi": [
         "cp313"
@@ -1177,18 +1178,19 @@
     },
     {
       "id": "dedup-simhash",
-      "name": "近重复内容检测（MinHash/LSH，去重站点同质文章）",
+      "name": "近重复内容检测",
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/dedup-simhash/recipe.json",
-      "recipe_digest": "10f2a4b4007ba18daa0ef7e6d4427737b373451c88bf50342944cde32b365067",
+      "recipe_digest": "01005b198de103fc38b3d647fe5c01a3418ecd6195a29a273c00c3a2461e8222",
       "platforms": [
         "windows",
         "linux",
         "macos"
       ],
       "architectures": [
-        "x86_64"
+        "x86_64",
+        "aarch64"
       ],
       "python_abi": [
         "cp313"
@@ -1238,6 +1240,18 @@
         },
         {
           "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/57/06/de83b859944409bb9058bc6110581a3d7fc1f54d6df1222744911d7f6b19/numpy-2.5.5-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "ae2b8285d0b4eed24739c3ca9ec0fa424a0247489c01e1d5fe2815a599e11d33",
+          "size": 15278148
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/e6/5f/4634e9d35c68496e4e34cb6946eafab044458e6cedab42b40b6588e475b6/scipy-1.18.1-cp313-cp313-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "d416b16cccfd70fbf62400e84d0bb2f4e6af519a45557f1692c749b37f14b315",
+          "size": 33998146
+        },
+        {
+          "source": "remote",
           "url": "https://files.pythonhosted.org/packages/0f/fa/4ae71d860267f2f9eaf7640516f693acf61c9575d48157cdea459c0215aa/numpy-2.5.5-cp313-cp313-macosx_10_13_x86_64.whl",
           "sha256": "228e3d90e967495d61ddc79dd64e95267aae3bcf1b1c516a6186429106a0b444",
           "size": 14747053
@@ -1247,9 +1261,21 @@
           "url": "https://files.pythonhosted.org/packages/b6/55/4540ee0f9c42a9ad7109d0d1a8cc70de54c3572b01c6693a2b1c70e90ceb/scipy-1.18.1-cp313-cp313-macosx_10_15_x86_64.whl",
           "sha256": "3ab3523da44749156e1f68b464dc56af11ae4cbc5c739a49d05f32b982eca9f3",
           "size": 31089958
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/d4/9a/01a332ebb0899ddb14d782f86ed66d080463e5387a8778029462d1902019/numpy-2.5.5-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "7e71ac4284c700afa654e2d15b1b174166710dca932f24045e5dc92001b5bda0",
+          "size": 10744599
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/2a/f5/769f36d14922b8071a43e95d24d18b6bdafad10d7f5cf647867e1ac052bc/scipy-1.18.1-cp313-cp313-macosx_12_0_arm64.whl",
+          "sha256": "e6fb6a55cc0ba97b59a1f288fb86dc6fce8bdfc0fffcbfd015e3a954bf2a2d93",
+          "size": 28715106
         }
       ],
-      "declared_total_bytes": 146166930,
+      "declared_total_bytes": 234902929,
       "package_manifest_file": "components/extract/dedup-simhash/package.manifest.json",
       "creator_package_signature_file": "components/extract/dedup-simhash/package.manifest.creator.sig",
       "creator_identity_file": "components/extract/dedup-simhash/creator.identity",
@@ -1261,14 +1287,14 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/export/export-docx/recipe.json",
-      "recipe_digest": "c04ebf62d6a222cba0945642b7c632434a233566aba34adc4050fcaf8c5a2d7b",
+      "recipe_digest": "ddd7a576bf8c405f2fd2174a29a1ba44c36b02dfe3cbed65b61422b3c9516ac2",
       "platforms": [
         "windows",
-        "linux",
-        "macos"
+        "linux"
       ],
       "architectures": [
-        "x86_64"
+        "x86_64",
+        "aarch64"
       ],
       "python_abi": [
         "cp313"
@@ -1312,12 +1338,12 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/8c/a5/eee2fc77eee5ea68e4a4334b1def1781a3beaeefd3d98e81b4a38dc447b7/lxml-6.1.3-cp313-cp313-macosx_10_13_x86_64.whl",
-          "sha256": "887c021d9a977cff89cb273047c1352997b772a8908a25c21836861f69b92be1",
-          "size": 4632616
+          "url": "https://files.pythonhosted.org/packages/35/42/df27b56848acd29d8a720acc28977911aab36f2a09df4208d5502e887415/lxml-6.1.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+          "sha256": "611a51e61c92f62345a50b0035df6fc0d678f9299f33728826d831598862f59d",
+          "size": 4936186
         }
       ],
-      "declared_total_bytes": 14028589,
+      "declared_total_bytes": 14332159,
       "package_manifest_file": "components/export/export-docx/package.manifest.json",
       "creator_package_signature_file": "components/export/export-docx/package.manifest.creator.sig",
       "creator_identity_file": "components/export/export-docx/creator.identity",
@@ -1329,11 +1355,10 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/extract-article/recipe.json",
-      "recipe_digest": "80ab02a6f928ef5c110c739808ee8730e5898d2c287a37e3b467e3b21f4a952e",
+      "recipe_digest": "150858ae0e3e31edd35dc1e83c0b1d6dc24fca9ea0c8c4a131a48f2de613b9a5",
       "platforms": [
         "windows",
-        "linux",
-        "macos"
+        "linux"
       ],
       "architectures": [
         "x86_64"
@@ -1380,12 +1405,6 @@
         },
         {
           "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/d2/0d/07ab8eb9b7015274353eac2add4067bde1ab1b51912bbae505392905eedd/charset_normalizer-3.5.3-py3-none-any.whl",
-          "sha256": "96e268b0cbda016ac519513294fcd17032264085b600abaac58b93049477e132",
-          "size": 68878
-        },
-        {
-          "source": "remote",
           "url": "https://files.pythonhosted.org/packages/8b/59/4f564893812e0b1f2775437f43bb6b9d492e36c659dd3a1f52a29a0b189e/courlan-1.5.0-py3-none-any.whl",
           "sha256": "a5b121409f864e6ddf39a026ebafabf59c64511d11b336ae30ad4034bbd42b77",
           "size": 64860
@@ -1407,12 +1426,6 @@
           "url": "https://files.pythonhosted.org/packages/f2/ac/52f4e86d1924a7fc05af3aeb34488570eccc39b4af90530dd6acecdf16b5/justext-3.0.2-py2.py3-none-any.whl",
           "sha256": "62b1c562b15c3c6265e121cc070874243a443bfd53060e869393f09d6b6cc9a7",
           "size": 837940
-        },
-        {
-          "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/8c/a5/eee2fc77eee5ea68e4a4334b1def1781a3beaeefd3d98e81b4a38dc447b7/lxml-6.1.3-cp313-cp313-macosx_10_13_x86_64.whl",
-          "sha256": "887c021d9a977cff89cb273047c1352997b772a8908a25c21836861f69b92be1",
-          "size": 4632616
         },
         {
           "source": "remote",
@@ -1443,12 +1456,6 @@
           "url": "https://files.pythonhosted.org/packages/b6/25/564f3fc5b70c1398d706c51f2b1470d0ea0b1b2f96fee67877b6f5bdf3b6/pytz-2026.6-py2.py3-none-any.whl",
           "sha256": "7fed3fee8fd6bd4a2b7b75a8d56021d0624127bf69bd5691f115db929ac570b3",
           "size": 506321
-        },
-        {
-          "source": "remote",
-          "url": "https://files.pythonhosted.org/packages/60/c6/00b196934e0564e7e0fec5e9ddd8610a0d9dd77de9d116d12fbeee1301b3/regex-2026.11.19-cp313-cp313-macosx_10_13_x86_64.whl",
-          "sha256": "75b9cdf5147fd0a15bb346bbd60cd23ad2664267e612af416f01ecc539e9eb56",
-          "size": 297450
         },
         {
           "source": "remote",
@@ -1487,7 +1494,7 @@
           "size": 135717
         }
       ],
-      "declared_total_bytes": 18344694,
+      "declared_total_bytes": 13345750,
       "package_manifest_file": "components/extract/extract-article/package.manifest.json",
       "creator_package_signature_file": "components/extract/extract-article/package.manifest.creator.sig",
       "creator_identity_file": "components/extract/extract-article/creator.identity",
@@ -3080,18 +3087,19 @@
     },
     {
       "id": "parse-datetime",
-      "name": "多语言日期解析归一（站点常见痛点）",
+      "name": "多语言日期解析归一",
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/parse-datetime/recipe.json",
-      "recipe_digest": "6ae6d62324f5ea82294e5225e5f6e893217dd84403d0a267f9e515b08f3be9d9",
+      "recipe_digest": "d6c11288f03a6b0de9f2c488037300d20436877dad66650238f24487d4577535",
       "platforms": [
         "windows",
         "linux",
         "macos"
       ],
       "architectures": [
-        "x86_64"
+        "x86_64",
+        "aarch64"
       ],
       "python_abi": [
         "cp313"
@@ -3153,12 +3161,24 @@
         },
         {
           "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/e0/a2/ab71c53f8adfe1c330c935c0eb7dcc753bd74843f4a0c6c1f46c3a61ac1a/regex-2026.11.19-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+          "sha256": "3c916c26a235d06a4dfe717c4dd618563e373a15d0dd86085e9c8d8b1d1abd70",
+          "size": 806540
+        },
+        {
+          "source": "remote",
           "url": "https://files.pythonhosted.org/packages/60/c6/00b196934e0564e7e0fec5e9ddd8610a0d9dd77de9d116d12fbeee1301b3/regex-2026.11.19-cp313-cp313-macosx_10_13_x86_64.whl",
           "sha256": "75b9cdf5147fd0a15bb346bbd60cd23ad2664267e612af416f01ecc539e9eb56",
           "size": 297450
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/4e/b4/d3de2b971baa718a8f47b240e6051ee0c1fd95d681ce44cd18109d33141e/regex-2026.11.19-cp313-cp313-macosx_11_0_arm64.whl",
+          "sha256": "e1dfacd322bc5d76b4f65c5f7b632c89311a8c48d199c5b5b73231e4d7fb0103",
+          "size": 294869
         }
       ],
-      "declared_total_bytes": 2730647,
+      "declared_total_bytes": 3832056,
       "package_manifest_file": "components/extract/parse-datetime/package.manifest.json",
       "creator_package_signature_file": "components/extract/parse-datetime/package.manifest.creator.sig",
       "creator_identity_file": "components/extract/parse-datetime/creator.identity",
@@ -3170,14 +3190,15 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/schedule/schedule-cron/recipe.json",
-      "recipe_digest": "59a777ec6c03fe35474171deb37fb79a8beb5f205ed43610d1ea8bb5cd732069",
+      "recipe_digest": "fbc8b46791e344dbeee35a7f430bb4405edac207535c09cccae8d9fb25b7335b",
       "platforms": [
         "windows",
         "linux",
         "macos"
       ],
       "architectures": [
-        "x86_64"
+        "x86_64",
+        "aarch64"
       ],
       "python_abi": [
         "cp313"

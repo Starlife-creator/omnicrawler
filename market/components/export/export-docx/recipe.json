@@ -10,11 +10,11 @@
   ],
   "platforms": [
     "windows",
-    "linux",
-    "macos"
+    "linux"
   ],
   "architectures": [
-    "x86_64"
+    "x86_64",
+    "aarch64"
   ],
   "python_abi": [
     "cp313"
@@ -41,7 +41,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -53,7 +52,6 @@
       "extract_to": "site-packages",
       "platforms": [
         "linux",
-        "macos",
         "windows"
       ]
     },
@@ -68,13 +66,13 @@
       ]
     },
     {
-      "url": "https://files.pythonhosted.org/packages/8c/a5/eee2fc77eee5ea68e4a4334b1def1781a3beaeefd3d98e81b4a38dc447b7/lxml-6.1.3-cp313-cp313-macosx_10_13_x86_64.whl",
-      "sha256": "887c021d9a977cff89cb273047c1352997b772a8908a25c21836861f69b92be1",
-      "size": 4632616,
+      "url": "https://files.pythonhosted.org/packages/35/42/df27b56848acd29d8a720acc28977911aab36f2a09df4208d5502e887415/lxml-6.1.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+      "sha256": "611a51e61c92f62345a50b0035df6fc0d678f9299f33728826d831598862f59d",
+      "size": 4936186,
       "format": "whl",
       "extract_to": "site-packages",
       "platforms": [
-        "macos"
+        "linux"
       ]
     }
   ],
