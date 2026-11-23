@@ -413,7 +413,16 @@ def main(argv: list[str] | None = None) -> int:
         "--platform", default="windows", choices=sorted(PLATFORM_TOKENS),
         help="主平台（构建依赖闭包用）",
     )
-    parser.add_argument("--arch", default="x86_64", choices=sorted(ARCH_TOKENS))
+    parser.add_argument(
+        "--arch",
+        default="x86_64,aarch64",
+        help=(
+            "目标架构，逗号分隔（默认 x86_64,aarch64）。"
+            "**必须覆盖配方声明里出现的每个架构** —— 早先是单选、默认只解析 "
+            "x86_64，于是 macOS arm64 上装到的是 x86_64 的 .so，"
+            "运行时报 `incompatible architecture (have 'x86_64', need 'arm64')`。"
+        ),
+    )
     parser.add_argument(
         "--also-platforms", default="",
         help=(
@@ -432,18 +441,25 @@ def main(argv: list[str] | None = None) -> int:
     # **每个平台单独解析闭包**：同一份配方在不同平台要拉不同的轮子
     # （onnxruntime 的 win_amd64 与 manylinux_x86_64 是两个构件）。
     # 合并时按 (包名, 文件名) 去重 —— 同一个纯 Python 轮子在多平台共用。
+    arch_list = [a.strip() for a in str(args.arch).split(",") if a.strip()]
+    bad = [a for a in arch_list if a not in ARCH_TOKENS]
+    if bad:
+        print(f"未知架构：{bad}（可选：{sorted(ARCH_TOKENS)}）", file=sys.stderr)
+        return 2
+
     merged: dict[str, dict] = {}
     for platform in all_platforms:
-        print(f"解析依赖闭包：{args.package}（{platform}/{args.arch}）")
-        for item in resolve_closure(args.package, platform, args.arch):
-            key = f"{item['package']}|{item['filename']}"
-            if key in merged:
-                # 已在别的平台出现过：补上 platforms 标记
-                merged[key].setdefault("platforms", set()).add(platform)
-                continue
-            entry = dict(item)
-            entry["platforms"] = {platform}
-            merged[key] = entry
+        for arch in arch_list:
+            print(f"解析依赖闭包：{args.package}（{platform}/{arch}）")
+            for item in resolve_closure(args.package, platform, arch):
+                key = f"{item['package']}|{item['filename']}"
+                if key in merged:
+                    # 已在别的平台/架构出现过：补上 platforms 标记
+                    merged[key].setdefault("platforms", set()).add(platform)
+                    continue
+                entry = dict(item)
+                entry["platforms"] = {platform}
+                merged[key] = entry
         via = len([k for k, v in merged.items() if platform in v["platforms"]])
         print(f"  该平台 {via} 个构件")
 
@@ -456,7 +472,7 @@ def main(argv: list[str] | None = None) -> int:
         component_id=args.id,
         kind=args.kind,
         platforms=all_platforms,
-        architectures=[args.arch],
+        architectures=arch_list,
         engine=args.engine,
         module=args.module,
         description=args.description or f"{args.package}（{args.engine}）",
