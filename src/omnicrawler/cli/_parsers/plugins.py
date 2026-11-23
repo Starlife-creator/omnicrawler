@@ -7,7 +7,7 @@ import argparse
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     plugins = sub.add_parser("plugins", help="列出已注册插件 / 插件作者旅程（自检、脚手架）")
-    plugins.add_argument("--config", "-c")
+    plugins.add_argument("--config", "-c", help="任务配置文件路径（YAML）；部分动作需要")
     # ★ W3.5（2026-09-16）：此处必须**枚举全部**确实存在的子命令 —— 作者是照着
     #   `docs/AUTHOR_GUIDE.md` 第 1 步敲 `scaffold-contract2` 的，而此前这条 help 只写
     #   "子命令：audit"，作者读 help 会以为脚手架命令不存在（同一份 help 里却列着它的

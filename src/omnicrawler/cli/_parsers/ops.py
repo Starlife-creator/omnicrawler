@@ -8,14 +8,17 @@ import argparse
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     notices = sub.add_parser("notifications", help="查看记录变化通知及补发所选事件")
-    notices.add_argument("--config", "-c", required=True)
-    notices.add_argument("action", choices=["report", "retry"])
+    notices.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
+    notices.add_argument(
+        "action", choices=["report", "retry"],
+        help="通知动作：report=查看记录变化通知；retry=补发所选事件",
+    )
     notices.add_argument("--event-id", action="append", default=[], help="仅补发指定通知；可重复")
     notices.add_argument("--apply", "--yes", action="store_true", help="确认补发所选通知")
     server = sub.add_parser("serve", help="启动只读监控面板")
-    server.add_argument("--config", "-c", required=True)
-    server.add_argument("--host", default="127.0.0.1")
-    server.add_argument("--port", type=int, default=8765)
+    server.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
+    server.add_argument("--host", default="127.0.0.1", help="监听地址（默认仅本机 127.0.0.1）")
+    server.add_argument("--port", type=int, default=8765, help="监听端口（默认 8765）")
     sub.add_parser("workbench", help="启动从采集到PDF结果的统一桌面工作台")
     # 应用自更新（issue #88）。命名用 self-update 而不是 update：配置里已有的
     # `updates` 段是**网站变更监控**，同名会把两件事混成一件。
@@ -24,14 +27,14 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     su_check = self_update_sub.add_parser(
         "check", help="检查更新源是否有新版本（未配置信任根或更新源即报「已禁用」）"
     )
-    su_check.add_argument("--config", "-c", required=True)
+    su_check.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     su_check.add_argument("--platform", default="", help="覆盖平台键（windows/linux/macos）")
     su_check.add_argument("--edition", default="", help="覆盖版本后缀（Standard/Full）")
     su_check.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     su_apply = self_update_sub.add_parser(
         "apply", help="下载并应用签名升级包（覆盖应用文件，破坏性：需 --yes）"
     )
-    su_apply.add_argument("--config", "-c", required=True)
+    su_apply.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     su_apply.add_argument("--platform", default="", help="覆盖平台键（windows/linux/macos）")
     su_apply.add_argument("--edition", default="", help="覆盖版本后缀（Standard/Full）")
     su_apply.add_argument("--package", default="", help="离线路径：直接指定本地已签名升级包")
@@ -52,7 +55,7 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     su_ignore = self_update_sub.add_parser(
         "ignore", help="忽略当前更新源给出的版本（之后出现更新的版本会自动恢复提示）"
     )
-    su_ignore.add_argument("--config", "-c", required=True)
+    su_ignore.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     su_ignore.add_argument("--clear", action="store_true", help="清除已忽略的版本，恢复提示")
     su_ignore.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     su_cleanup = self_update_sub.add_parser(
@@ -109,38 +112,48 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     scene_cmd = sub.add_parser("scene", help="场景/槽位/基因管理（DB 单一真源，批 C）")
     scene_sub = scene_cmd.add_subparsers(dest="scene_command", required=True)
     scene_import = scene_sub.add_parser("import", help="导入场景定义（缺省 bundled 出厂默认）")
-    scene_import.add_argument("--config", "-c", required=True)
+    scene_import.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     scene_import.add_argument("--path", default="", help="用户场景 YAML 路径；缺省导入包内 scenes/*.yaml")
     scene_list = scene_sub.add_parser("list", help="列出全部场景（槽位数 / 基因数）")
-    scene_list.add_argument("--config", "-c", required=True)
+    scene_list.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     scene_show = scene_sub.add_parser("show", help="单场景体检报告")
-    scene_show.add_argument("scene")
-    scene_show.add_argument("--config", "-c", required=True)
+    scene_show.add_argument("scene", help="场景 id（见 scene candidates）")
+    scene_show.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     scene_candidates = scene_sub.add_parser("candidates", help="列出抽取候选")
-    scene_candidates.add_argument("--config", "-c", required=True)
+    scene_candidates.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     scene_candidates.add_argument("--scene", default="", help="按场景过滤")
     scene_candidates.add_argument("--pending", action="store_true", help="只看未验收候选")
     scene_candidates.add_argument("--accepted", action="store_true", help="只看已验收候选")
-    scene_candidates.add_argument("--limit", type=int, default=100)
+    scene_candidates.add_argument("--limit", type=int, default=100, help="最多返回多少个候选场景（默认 100）")
     scene_accept = scene_sub.add_parser("accept", help="验收抽取候选")
-    scene_accept.add_argument("candidate_id", type=int)
-    scene_accept.add_argument("--config", "-c", required=True)
+    scene_accept.add_argument("candidate_id", type=int, help="要接受的候选场景 id")
+    scene_accept.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     scene_maintenance = scene_sub.add_parser("maintenance", help="淘汰低适应度基因（删除操作，需 --apply）")
-    scene_maintenance.add_argument("--config", "-c", required=True)
+    scene_maintenance.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     scene_maintenance.add_argument("--scene", default="", help="按场景过滤")
-    scene_maintenance.add_argument("--min-fitness", type=float, default=0.2)
-    scene_maintenance.add_argument("--min-trials", type=int, default=3)
+    scene_maintenance.add_argument(
+        "--min-fitness", type=float, default=0.2,
+        help="维护时保留场景的最低适应度（0-1，默认 0.2）",
+    )
+    scene_maintenance.add_argument(
+        "--min-trials", type=int, default=3,
+        help="参与评估所需的最少试跑次数（默认 3）",
+    )
     scene_maintenance.add_argument("--apply", "--yes", action="store_true", help="执行淘汰；省略时只预览")
     workspace = sub.add_parser("workspace", help="管理项目工作区、体检、打包、快照和回滚")
     workspace.add_argument("--config", "-c", help="任务配置；import 操作无需提供")
-    workspace.add_argument("action", choices=["init", "health", "package", "snapshot", "rollback", "import"])
-    workspace.add_argument("--target")
+    workspace.add_argument(
+        "action", choices=["init", "health", "package", "snapshot", "rollback", "import"],
+        help="工作区动作：init=初始化；health=体检；package=打包；snapshot=快照；rollback=回滚；import=导入",
+    )
+    workspace.add_argument("--target", help="目标路径（snapshot/restore/import 用）")
     workspace.add_argument("--destination", help="工作区导入的新目录；不得覆盖已有目录")
     workspace.add_argument("--kind", choices=["full", "complete", "config", "support"], default="full", help="complete 保留历史导出，适用于搬迁")
     workspace.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（rollback 需要）")
     components = sub.add_parser("components", help="查看、验证、离线导入或卸载可选组件")
     components.add_argument(
         "action",
+        help="组件动作：见 --help 输出（install/list/verify/run 等）",
         choices=[
             "list", "inspect", "verify", "stage", "import", "uninstall", "rollback",
             # recipe 装配：市场只托管声明（几十 KB），字节从上游拉、本地组装。
@@ -212,9 +225,12 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     # 条目 4：模型一律从上游下载。本命令**不托管也不校验模型字节**，
     # 只负责配置源、触发 PaddleX 自带下载器、并按能力口径复检。
     models = sub.add_parser("models", help="从上游下载 OCR 模型（本项目不托管模型）")
-    models.add_argument("action", choices=["probe", "download"])
+    models.add_argument(
+        "action", choices=["probe", "download"],
+        help="模型动作：probe=检测本地模型；download=按需下载",
+    )
     models.add_argument("--source", default="", help="下载源：aistudio（默认）/ huggingface / modelscope / bos")
     models.add_argument("--cache-dir", default="", help="模型缓存目录；留空用运行时默认位置")
     models.add_argument("--json", dest="json_output", action="store_true", help="以 JSON 输出")
     runtime_verify = sub.add_parser("runtime-verify", help="验证便携运行时清单是否缺失或被篡改")
-    runtime_verify.add_argument("--root", default=".")
+    runtime_verify.add_argument("--root", default=".", help="要校验的运行时根目录（默认当前目录）")

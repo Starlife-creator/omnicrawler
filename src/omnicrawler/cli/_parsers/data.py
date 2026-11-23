@@ -7,18 +7,24 @@ import argparse
 
 def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     package = sub.add_parser("research-package", help="创建脱敏、带校验和的研究复现包")
-    package.add_argument("--config", "-c", required=True)
-    package.add_argument("--output", "-o", required=True)
-    package.add_argument("--include-raw", action="store_true")
+    package.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
+    package.add_argument("--output", "-o", required=True, help="研究包输出路径（.zip）")
+    package.add_argument(
+        "--include-raw", action="store_true",
+        help="同时打包原始响应（体积更大，但可离线复现）",
+    )
     backup = sub.add_parser("backup", help="创建或恢复校验和备份")
     backup_sub = backup.add_subparsers(dest="backup_command", required=True)
     backup_create = backup_sub.add_parser("create")
-    backup_create.add_argument("--config", "-c", required=True)
-    backup_create.add_argument("--output", "-o", required=True)
-    backup_create.add_argument("--include-raw", action="store_true")
+    backup_create.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
+    backup_create.add_argument("--output", "-o", required=True, help="备份包输出路径（.zip）")
+    backup_create.add_argument(
+        "--include-raw", action="store_true",
+        help="同时打包原始响应归档（体积更大，但可离线复现）",
+    )
     backup_restore = backup_sub.add_parser("restore")
-    backup_restore.add_argument("package")
-    backup_restore.add_argument("--target", required=True)
+    backup_restore.add_argument("package", help="要还原的备份包路径")
+    backup_restore.add_argument("--target", required=True, help="还原到的目标目录")
     transform_cmd = sub.add_parser(
         "transform",
         help="数据变换与后处理：--map 值级变换、--sort/--group-by/--agg 排序与分组聚合（--confirm 才写文件）",

@@ -280,8 +280,14 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"omnicrawler {__version__}")
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
-    parser.add_argument("--log-format", default="text", choices=["text", "json"])
+    parser.add_argument(
+        "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="日志级别（写 stderr；DEBUG 会输出更多排查信息）",
+    )
+    parser.add_argument(
+        "--log-format", default="text", choices=["text", "json"],
+        help="日志格式：text=人读；json=结构化（便于日志系统采集）",
+    )
     # **全局 `--json`**：机器可读输出。
     #
     # clig.dev：「Anything that is machine readable should also go to stdout」。

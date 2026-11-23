@@ -20,5 +20,5 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     migrate.add_argument("--output", "-o", required=True, help="迁移结果的输出路径")
     migrate.add_argument("--force", action="store_true", help="输出文件已存在时覆盖")
     cleanup = sub.add_parser("cleanup", help="预览或执行配置的数据保留策略")
-    cleanup.add_argument("--config", "-c", required=True)
+    cleanup.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     cleanup.add_argument("--apply", action="store_true", help="实际删除；省略时只输出计划")

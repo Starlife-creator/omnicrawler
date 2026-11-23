@@ -1,4 +1,4 @@
 {
-  "max_missing_help": 68,
+  "max_missing_help": 0,
   "note": "只许降低。补一处 help 就重跑 --update 下调一处。"
 }
