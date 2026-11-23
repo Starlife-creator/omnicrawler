@@ -50,6 +50,15 @@
   判据是「跑完测试后主仓不许多出文件」——能一次抓住所有「测试往仓库写东西」的问题
   （本会话 37 条「单独跑能过、整目录跑就失败」全属此类）。
   本地开发用 `--baseline <文件>` 记基线、`--diff-baseline <文件>` 只报增量。
+- **待签条目就绪检查**：`python tools/market/pending_signature.py --check`
+  逐条验证 `OmniCrawler-market/pending-signature/` 里的条目是否**真的就绪**：
+  配方可解析、`deps.lock.json` 新鲜（摘要与配方一致）、插件自包含（AST 扫描
+  无 `import omnicrawler`）、`plugin.yaml` 字段与样板一致。加 `--e2e` 才跑
+  真实下载装配运行（慢、需联网）。
+  `--plan` 打印入库步骤与精确命令，`--adopt <id>` 把条目移回正式目录
+  （**刻意不做签名** —— 那要创作者密码，必须由人显式执行）。
+  **为什么需要**：2026-11-23 我把 10 个条目写好了却停在「没签」，而「就绪」
+  只存在于我的口头断言里。这个工具把它变成可复现的判据（当时 12/12 就绪）。
 - **组件端到端验证**：`python tools/market/verify_component_e2e.py --recipe <配方>`
   **真下载 → 真装配 → 真运行**，约 1 分钟（纯 Python 组件）。
   这是「配方到底能不能用」的**本地判据** —— 此前只能等 CI 的 portable-smoke
