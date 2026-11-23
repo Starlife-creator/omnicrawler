@@ -206,7 +206,24 @@ def component_runner_env(spec: WheelPackSpec) -> dict[str, str]:
     # 真实 CI 踩到（组件 run 阶段 exit 1）。组件子进程只该看它自己的
     # site-packages，宿主打包用的库不该泄漏进去。
     env["LD_LIBRARY_PATH"] = os.pathsep.join(lib_dirs)
-    env["DYLD_LIBRARY_PATH"] = os.pathsep.join(lib_dirs)
+    # **macOS 不用 `DYLD_LIBRARY_PATH`，用 `DYLD_FALLBACK_LIBRARY_PATH`。**
+    #
+    # 两者语义不同：
+    # * `DYLD_FALLBACK_LIBRARY_PATH` —— 只在默认搜索失败**之后**才查这些目录（追加）；
+    # * `DYLD_LIBRARY_PATH` —— 会**改变 `@rpath` / `@loader_path` 的解析**，
+    #   而 macOS 上 CPython 的扩展模块（`.cpython-313-darwin.so`）正是靠
+    #   `@loader_path` 定位同目录的依赖库。
+    #
+    # 真实 CI（2026-11-23，macOS arm64）：
+    #
+    #     ImportError: dlopen(.../site-packages/pydantic_core/_pydantic_core...so)
+    #       tried: '.../site-packages/_pydantic_core...so' (no such file)
+    #              '.../site-packages/paddle/libs/_pydantic_core...so' (no such file)
+    #
+    # 注意 tried 列表：它**只在 `site-packages/` 根和那些子目录里找**，
+    # 完全没去模块自己所在的 `site-packages/pydantic_core/` —— 因为
+    # `DYLD_LIBRARY_PATH` 把 `@loader_path` 的解析顶掉了。
+    env["DYLD_FALLBACK_LIBRARY_PATH"] = os.pathsep.join(lib_dirs)
     return env
 
 
