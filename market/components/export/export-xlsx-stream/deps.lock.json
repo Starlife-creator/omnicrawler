@@ -1,0 +1,8 @@
+{
+  "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
+  "recipe_digest": "c7dd3b10305fa7a9ab13e98fad6b80a98eb486693d904cb16f8ec838b462c9d4",
+  "python_version": "3.13",
+  "packages": [
+    "xlsxwriter"
+  ]
+}

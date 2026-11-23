@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "id": "format-table",
+  "name": "format-table",
+  "version": "1.0.0",
+  "description": "表格文本化（把结构化数据渲染成对齐的文本/Markdown 表）",
+  "kind": "wheel-pack",
+  "provides": [
+    "ocr.format-table"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": [
+    "x86_64",
+    "aarch64"
+  ],
+  "python_abi": [
+    "cp313"
+  ],
+  "requires": [
+    "tabulate"
+  ],
+  "artifacts": [
+    {
+      "url": "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl",
+      "sha256": "f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3",
+      "size": 39814,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    }
+  ],
+  "entry": {
+    "path": "entry.json",
+    "protocol": "ocr-file-v1",
+    "engine": "generic",
+    "runner": "worker-wheelpack",
+    "module": "site-packages/tabulate/__init__.py"
+  },
+  "smoke": {
+    "expect": [
+      "ok",
+      "engine",
+      "module"
+    ],
+    "timeout_seconds": 600,
+    "description": "import tabulate，确认原生扩展可加载"
+  }
+}

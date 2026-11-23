@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-23T09:40:23+00:00",
-  "sequence": 1791080233,
+  "generated_at": "2026-11-23T10:40:57+00:00",
+  "sequence": 1791080236,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -1350,6 +1350,51 @@
       "creator_signature_file": "components/export/export-docx/creator.sig"
     },
     {
+      "id": "export-xlsx-stream",
+      "name": "流式写 Excel（XlsxWriter，大结果集低内存）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/export/export-xlsx-stream/recipe.json",
+      "recipe_digest": "c7dd3b10305fa7a9ab13e98fad6b80a98eb486693d904cb16f8ec838b462c9d4",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.export-xlsx-stream"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/xlsxwriter/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/a4/f4/42d98147a0e3e2ae905a1c51bd6fcac1e551e4223b35fbf5d9769f59ffb6/xlsxwriter-3.3.4-py3-none-any.whl",
+          "sha256": "da62fecb24fdd0f003c874c86109b9e1245ae89533052745ab85a085eb2b04d7",
+          "size": 192178
+        }
+      ],
+      "declared_total_bytes": 192178,
+      "package_manifest_file": "components/export/export-xlsx-stream/package.manifest.json",
+      "creator_package_signature_file": "components/export/export-xlsx-stream/package.manifest.creator.sig",
+      "creator_identity_file": "components/export/export-xlsx-stream/creator.identity",
+      "creator_signature_file": "components/export/export-xlsx-stream/creator.sig"
+    },
+    {
       "id": "extract-article",
       "name": "正文抽取（去导航/广告，爬虫最核心痛点）",
       "version": "1.0.0",
@@ -1499,6 +1544,51 @@
       "creator_package_signature_file": "components/extract/extract-article/package.manifest.creator.sig",
       "creator_identity_file": "components/extract/extract-article/creator.identity",
       "creator_signature_file": "components/extract/extract-article/creator.sig"
+    },
+    {
+      "id": "format-table",
+      "name": "表格文本化（把结构化数据渲染成对齐的文本/Markdown 表）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/convert/format-table/recipe.json",
+      "recipe_digest": "1a018f7c9337904847e5929314f46fd279a0f5eb4f3c36a136cf1ba6b80f09ec",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.format-table"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/tabulate/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl",
+          "sha256": "f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3",
+          "size": 39814
+        }
+      ],
+      "declared_total_bytes": 39814,
+      "package_manifest_file": "components/convert/format-table/package.manifest.json",
+      "creator_package_signature_file": "components/convert/format-table/package.manifest.creator.sig",
+      "creator_identity_file": "components/convert/format-table/creator.identity",
+      "creator_signature_file": "components/convert/format-table/creator.sig"
     },
     {
       "id": "ocr-doctr",
@@ -3110,6 +3200,57 @@
       "creator_package_signature_file": "components/extract/parse-datetime/package.manifest.creator.sig",
       "creator_identity_file": "components/extract/parse-datetime/creator.identity",
       "creator_signature_file": "components/extract/parse-datetime/creator.sig"
+    },
+    {
+      "id": "parse-feed",
+      "name": "RSS/Atom/JSON Feed 解析（订阅源采集基础能力）",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "recipe_file": "components/extract/parse-feed/recipe.json",
+      "recipe_digest": "ae9ef7f3798d76bd8924a24e4e51e1d126752b0b67480926eb2f210dfb218da3",
+      "platforms": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "architectures": [
+        "x86_64",
+        "aarch64"
+      ],
+      "python_abi": [
+        "cp313"
+      ],
+      "kind": "wheel-pack",
+      "provides": [
+        "ocr.parse-feed"
+      ],
+      "platform_architectures": {},
+      "entry": {
+        "path": "entry.json",
+        "protocol": "ocr-file-v1",
+        "engine": "generic",
+        "runner": "worker-wheelpack",
+        "module": "site-packages/feedparser/__init__.py"
+      },
+      "artifacts": [
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/7f/61/f04912e63702e73fb2a378f9c0a1ad9eb17a334a11a6b3fe1daa593903c2/feedparser-6.0.14-py3-none-any.whl",
+          "sha256": "e35e3f760151b0c3b22cac9684155cae186a233e16c49bcbc6c49e91e3131137",
+          "size": 80668
+        },
+        {
+          "source": "remote",
+          "url": "https://files.pythonhosted.org/packages/85/a0/79a31f898092e145bd66e2b338fb0656979acb2bbbcae8220940fbfcd820/feedparser_sgmllib-2.1.0-py3-none-any.whl",
+          "sha256": "2cab2d43b95a954f920f18aebce7a4dbbb3f539780b127e2aa114f579821e01d",
+          "size": 11652
+        }
+      ],
+      "declared_total_bytes": 92320,
+      "package_manifest_file": "components/extract/parse-feed/package.manifest.json",
+      "creator_package_signature_file": "components/extract/parse-feed/package.manifest.creator.sig",
+      "creator_identity_file": "components/extract/parse-feed/creator.identity",
+      "creator_signature_file": "components/extract/parse-feed/creator.sig"
     },
     {
       "id": "schedule-cron",

@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "id": "export-xlsx-stream",
+  "name": "export-xlsx-stream",
+  "version": "1.0.0",
+  "description": "流式写 Excel（XlsxWriter，大结果集低内存）",
+  "kind": "wheel-pack",
+  "provides": [
+    "ocr.export-xlsx-stream"
+  ],
+  "platforms": [
+    "windows",
+    "linux",
+    "macos"
+  ],
+  "architectures": [
+    "x86_64",
+    "aarch64"
+  ],
+  "python_abi": [
+    "cp313"
+  ],
+  "requires": [
+    "XlsxWriter"
+  ],
+  "artifacts": [
+    {
+      "url": "https://files.pythonhosted.org/packages/a4/f4/42d98147a0e3e2ae905a1c51bd6fcac1e551e4223b35fbf5d9769f59ffb6/xlsxwriter-3.3.4-py3-none-any.whl",
+      "sha256": "da62fecb24fdd0f003c874c86109b9e1245ae89533052745ab85a085eb2b04d7",
+      "size": 192178,
+      "format": "whl",
+      "extract_to": "site-packages",
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ]
+    }
+  ],
+  "entry": {
+    "path": "entry.json",
+    "protocol": "ocr-file-v1",
+    "engine": "generic",
+    "runner": "worker-wheelpack",
+    "module": "site-packages/xlsxwriter/__init__.py"
+  },
+  "smoke": {
+    "expect": [
+      "ok",
+      "engine",
+      "module"
+    ],
+    "timeout_seconds": 600,
+    "description": "import xlsxwriter，确认原生扩展可加载"
+  }
+}
