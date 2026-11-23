@@ -306,7 +306,22 @@ def _print_error_hint(exc: Exception) -> None:
         else:
             hints.append("请运行 omnicrawler doctor -c <配置> 检查配置有效性")
     elif isinstance(exc, PermissionError):
-        hints.append("请确认目标网站允许自动访问，或检查网络代理设置")
+        # **必须区分「文件权限」与「网络权限」。**
+        #
+        # 早先这条不区分解读，任何 PermissionError 都提示「检查网络代理设置」——
+        # 而真实场景里绝大多数是**本地文件不可写**（数据目录只读、
+        # `components/.registry.lock` 被占用、便携包解压到只读位置）。
+        # 2026-11-23 我就在这条上被误导过：`omnicrawler components list`
+        # 报 registry.lock 的 PermissionError，提示却是「检查网络代理」。
+        # **错误的建议比没有建议更糟** —— 它让人往完全无关的方向排查。
+        filename = getattr(exc, "filename", None)
+        if filename:
+            hints.append(
+                f"无法访问 {filename}；请确认该路径可读写"
+                "（若在便携包/只读介质中，请解压到可写位置）"
+            )
+        else:
+            hints.append("请确认目标网站允许自动访问，或检查网络代理设置")
     elif isinstance(exc, (ConnectionError, TimeoutError)):
         hints.append("网络连接失败；请检查目标网址是否可访问，或尝试降低并发数")
     else:

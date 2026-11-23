@@ -138,9 +138,18 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
             "run",
         ],
     )
-    components.add_argument("--package")
-    components.add_argument("--name")
-    components.add_argument("--sha256")
+    components.add_argument(
+        "--package",
+        help="组件包名（install / inspect / import 用；需与市场条目 id 一致或为本地包名）",
+    )
+    components.add_argument(
+        "--name",
+        help="组件显示名（import 本地包时用于登记；缺省取包内 component.json 的 name）",
+    )
+    components.add_argument(
+        "--sha256",
+        help="期望的包/制品 sha256 十六进制摘要（install 时用于校验来源，不匹配即拒绝）",
+    )
     components.add_argument("--allow-unsigned", action="store_true", help="仅用于本地开发包")
     components.add_argument("--apply", "--yes", action="store_true", help="执行破坏性操作（uninstall/rollback 需要）")
     components.add_argument("--recipe", default="", help="recipe JSON 路径（inspect-recipe / install-recipe）")

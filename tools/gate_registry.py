@@ -470,6 +470,17 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_agent_surface_help",
+        args=("tools/gates/check_agent_surface_help.py",),
+        sets=_STATIC,
+        description="CLI 选项 help 覆盖率（基线只许降低）——agent 只能靠 --help 认识命令",
+        script="tools/gates/check_agent_surface_help.py",
+        ci_note=(
+            "零网络。AGENTS.md 写「CLI 即 agent 面」，而 2026-11-23 实测"
+            "199 个选项里 71 个 help=None（含 components 这种高频命令）。"
+        ),
+    ),
+    Gate(
         name="check_walk_pruning",
         args=("tools/gates/check_walk_pruning.py",),
         sets=_STATIC,
