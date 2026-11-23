@@ -97,9 +97,33 @@ def find_release_roots(kept_dir: Path) -> dict[str, Path]:
     return roots
 
 
+#: macOS 的 `.app` 包布局：可执行文件在 `Contents/MacOS/` 里。
+#: **必须与 `portable_smoke_test._resolve_executable` 保持一致** ——
+#: 那份支持三平台布局，而本文件早先只认平铺名，于是 macOS 构建明明成功、
+#: 却报「产物里没找到可执行文件」（2026-11-20 起的 release failure 就是它）。
+_MACOS_APP_LAYOUTS: tuple[tuple[str, ...], ...] = (
+    ("OmniCrawler.app", "Contents", "MacOS", "omnicrawler-cli"),
+    ("OmniCrawler.app", "Contents", "MacOS", "OmniCrawler"),
+    ("omnicrawler-cli.app", "Contents", "MacOS", "omnicrawler-cli"),
+)
+
+
 def locate_executable(root: Path) -> Path | None:
+    """按平台布局定位打包可执行文件。
+
+    三种形状：
+    * Windows/Linux：可执行文件直接放在产物根（`omnicrawler-cli[.exe]`）；
+    * macOS：在 `OmniCrawler.app/Contents/MacOS/` 里。
+
+    早先只查平铺名，于是 macOS 的 `.app` 布局永远匹配不到 ——
+    `portable-smoke (macos)` 因此从 2026-11-20 起一直红。
+    """
     for name in _EXE_CANDIDATES:
         candidate = root / name
+        if candidate.is_file():
+            return candidate
+    for parts in _MACOS_APP_LAYOUTS:
+        candidate = root.joinpath(*parts)
         if candidate.is_file():
             return candidate
     return None
