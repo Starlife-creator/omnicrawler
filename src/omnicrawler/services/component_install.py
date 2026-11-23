@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.errors import PolicyBlockedError
-from .component_recipe import current_architecture, RecipeError, install_from_recipe, load_recipe, recipe_digest
+from .component_recipe import RecipeError, install_from_recipe, load_recipe, recipe_digest
 
 
 class RecipeInstallError(RuntimeError):
@@ -176,7 +176,7 @@ def describe_recipe(recipe_path: str | Path) -> dict[str, Any]:
 
     # 与 `install_from_recipe` 用**同一个**平台筛选：只列出本平台真要拉的构件。
     # 否则用户在 `inspect-recipe` 看到 3 个 URL、实际只拉 1 个，会以为漏装。
-    from .component_recipe import current_architecture, artifacts_for_platform, current_platform
+    from .component_recipe import artifacts_for_platform, current_architecture, current_platform
 
     artifacts = [
         {
