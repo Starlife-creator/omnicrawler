@@ -57,6 +57,69 @@ SECTION_ORDER: tuple[str, ...] = (
     "pdf",
 )
 
+#: **面向用户的**命令分组（按「我要干什么」，不是按代码文件归属）。
+#:
+#: 为什么不用 SECTION_ORDER：那是**代码组织**（`_parsers/task.py` 里混装了
+#: validate / doctor / export / benchmark 等 15 个命令），与用户心智模型不符。
+#: 2026-11-23 实测 `--help` 按 section 分组后，第一段有 19 个命令 —— 比不分还乱。
+#:
+#: 这里按「用户想做什么」重排，**只影响 help 展示**，不改变注册顺序与
+#: 任何行为。未列出的命令归入「其它」，由守卫保证不会有命令被漏掉。
+USER_COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("开始一个新任务", ("task", "init", "wizard", "validate")),
+    ("运行与试跑", ("sample", "run", "resume", "control", "preflight")),
+    ("模板", ("templates", "gen-templates")),
+    ("查看结果与导出", ("status", "export", "reprocess", "compare-runs", "timeline")),
+    ("诊断与修复", ("doctor", "capabilities", "recovery", "repair", "regression",
+                   "runtime-verify", "security-report", "plan", "benchmark")),
+    ("能力与组件", ("components", "browser-kernels", "models", "plugins",
+                   "notifications")),
+    ("工程与配置", ("migrate", "cleanup", "backup", "import-easyspider",
+                   "transform", "convert", "workspace", "scene", "queue",
+                   "schedule", "serve", "workbench", "self-update")),
+    ("抽取与字段", ("analyze-archive", "api-discover", "auto-analyze", "c4a-fetch",
+                   "field-suggest", "record-actions", "replay", "visual-select",
+                   "stealth-fingerprint", "research-package")),
+    ("PDF 专项", ("pdf", "worker")),
+)
+
+#: 每个 section 在 `--help` 里的**中文段落名**。
+#:
+#: 为什么需要：55 个子命令平铺一屏，人和 agent 都找不到入口（2026-11-23 实测）。
+#: `SECTION_ORDER` 早就按用户旅程排好了序，但 argparse 默认把子命令
+#: 一股脑列在 positional arguments 里，这个顺序看不见。
+#: `epilog` 按 SECTION_SECTION_TITLES 重新分组展示，顺序仍以 SECTION_ORDER 为准。
+SECTION_TITLES: dict[str, str] = {
+    "task": "任务生命周期（开始→运行→恢复）",
+    "templates": "模板与项目",
+    "project": "工程与配置",
+    "plugins": "插件与扩展",
+    "extraction": "抽取与字段",
+    "data": "数据与导出",
+    "ops": "运维与诊断",
+    "pdf": "PDF 专项",
+}
+
+#: `--help` 末尾的**示例**。clig.dev 明确要求「lead with examples」——
+#: agent 与人都先看示例、再看参数表。
+CLI_EXAMPLES: tuple[tuple[str, str], ...] = (
+    ("把一句需求编译成任务", "omnicrawler task \"抓取某站点的文章标题与正文\""),
+    ("试跑 5 页确认效果", "omnicrawler sample -c task.yaml --pages 5"),
+    ("正式运行并导出", "omnicrawler run -c task.yaml && omnicrawler export -c task.yaml"),
+    ("诊断环境", "omnicrawler doctor -c task.yaml"),
+    ("机器可读输出", "omnicrawler status -c task.yaml --json"),
+)
+
+#: 退出码契约。写在 `--help` 末尾，让 agent 不必读源码就能分支判断。
+#:
+#: 与 `check_agent_surface.py --json` 导出的 `exit_code_convention` 同源；
+#: 改这里要同步改那边（守卫见 tests/unit/cli/test_cli_help_surface.py）。
+EXIT_CODE_HELP: tuple[tuple[str, str], ...] = (
+    ("0", "成功（结果已达成）"),
+    ("1", "运行期失败（结果未达成；可读 stderr 的 `修复建议`）"),
+    ("2", "用法或校验失败（参数/配置不合法；先修输入再重试）"),
+)
+
 
 _NamespaceT = TypeVar("_NamespaceT")
 
@@ -74,7 +137,23 @@ class _ArgumentParser(argparse.ArgumentParser):
     def parse_args(
         self, args: Iterable[str] | None = None, namespace: Any = None,
     ) -> Any:
-        parsed = super().parse_args(args, namespace)
+        raw = list(sys.argv[1:] if args is None else args)
+        # **`--json` 位置无关**：argparse 的父解析器只认前置形式
+        # （`omnicrawler --json run`），而 clig.dev 要求 flag 顺序无关。
+        # 这里把**任何位置**出现的 `--json` 提到最前，再交给 argparse。
+        #
+        # 为什么不在每个子解析器上挂 `parents=[...]`：`_parsers/` 下有 84 处
+        # `add_parser`，逐个改既易漏又会把 help 文本重复一遍。集中在这里
+        # 处理，一处生效、且不影响任何现有 --json 实现（子命令自己声明的
+        # 同名 flag 仍会被 argparse 接受，这里只是保证父级也能看到）。
+        wants_json = "--json" in raw
+        if wants_json:
+            raw = [tok for tok in raw if tok != "--json"]
+            raw.insert(0, "--json")
+        parsed = super().parse_args(raw, namespace)
+        if wants_json and not getattr(parsed, "json", False):
+            # 子命令里可能没有 `json` 属性（父级加的在 namespace 上应该有）
+            parsed.json = True
         if getattr(parsed, "command", None) == "workspace":
             if parsed.action == "import":
                 if not parsed.target or not parsed.destination:
@@ -84,23 +163,95 @@ class _ArgumentParser(argparse.ArgumentParser):
         return parsed
 
 
+#: section → 该 section 注册的命令名（**运行时填充**，不手工维护）。
+#:
+#: 手工维护必然会漂移（这是本项目反复踩过的模式：靠人手同步的清单都会过时）。
+#: 这里由 `_remember_section()` 在注册时记录，`_build_epilog()` 只读它。
+_SECTION_COMMANDS: dict[str, list[str]] = {}
+
+#: 全部已注册子命令名（运行时填充，供 help 分组用）。
+_ALL_COMMANDS: set[str] = set()
+
+
+def _remember_section(section: str, before: set[str], sub: object) -> None:
+    """记录某个 section 新增了哪些子命令（按注册顺序）。"""
+    choices = getattr(getattr(sub, "_name_parser_map", None), "keys", None)
+    after = set(choices()) if choices else set()
+    _SECTION_COMMANDS[section] = sorted(after - before)
+
+
+def _build_epilog() -> str:
+    """构造 `--help` 末尾的分组导航 + 示例 + 退出码。
+
+    三段各自解决一个具体问题（2026-11-23 调研 clig.dev / gh CLI / tooli 后定）：
+
+    1. **命令分组** —— 55 个子命令平铺一屏找不到入口；
+    2. **示例优先** —— clig.dev 要求 "lead with examples"，人先看例子；
+    3. **退出码契约** —— agent 据此分支（0 重试无意义 / 1 可重试 / 2 先改输入）。
+    """
+    lines: list[str] = ["", "常用示例:"]
+    width = max(len(label) for label, _ in CLI_EXAMPLES)
+    for label, command in CLI_EXAMPLES:
+        lines.append(f"  {label:<{width}}  {command}")
+
+    lines.extend(["", "退出码:"])
+    for code, meaning in EXIT_CODE_HELP:
+        lines.append(f"  {code}  {meaning}")
+
+    lines.extend(["", "命令分组（按「我要干什么」）:"])
+    listed: set[str] = set()
+    for title, names in USER_COMMAND_GROUPS:
+        exists = [n for n in names if n in _ALL_COMMANDS]
+        listed.update(exists)
+        if exists:
+            lines.append(f"  {title}:")
+            lines.append(f"    {', '.join(exists)}")
+    others = sorted(_ALL_COMMANDS - listed)
+    if others:
+        lines.append(f"  其它: {', '.join(others)}")
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """组装顶层 parser。
 
     FINAL-G4：参数定义按域拆分至 ``_parsers/`` 各模块（原 335 行单体函数），
     本函数只负责全局选项与组装；新增命令在对应域模块的 ``configure`` 内定义。
     """
-    parser = _ArgumentParser(prog="omnicrawler", description="模块化网站采集、附件下载与PDF字段抽取平台")
+    parser = _ArgumentParser(
+        prog="omnicrawler",
+        description="模块化网站采集、附件下载与PDF字段抽取平台",
+        # epilog 在注册**之后**才能算（要读 _SECTION_COMMANDS），
+        # 所以先留空、末尾再赋值。
+        epilog=None,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--version", action="version", version=f"omnicrawler {__version__}")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     parser.add_argument("--log-format", default="text", choices=["text", "json"])
+    # **全局 `--json`**：机器可读输出。
+    #
+    # clig.dev：「Anything that is machine readable should also go to stdout」。
+    # 此前只有 3/55 个命令各自实现了 `--json`（stealth-fingerprint /
+    # browser-kernels / models），agent 对其它 52 个只能解析人读文本 ——
+    # 既脆弱又浪费上下文。
+    #
+    # 位置无关：父解析器收前置形式（`omnicrawler --json run`），子解析器经
+    # `parents=[_GLOBAL_OPTIONS]` 收后置形式（`omnicrawler run --json`）。
+    # 这两种都生效，符合 clig.dev「make flags order-independent」。
+    parser.add_argument("--json", action="store_true", default=False,
+                        help="输出机器可读 JSON（缺省为人读文本）")
     sub = parser.add_subparsers(dest="command", required=True)
 
     for name in SECTION_ORDER:
         # 顺序的唯一来源是 SECTION_ORDER（不再写元组字面量）——
         # 新加 section 时不会"自然落在末尾"，而必须显式决定它排在哪。
+        _before = set(getattr(sub, "_name_parser_map", {}) or {})
         module = importlib.import_module(f"._parsers.{name}", __package__)
         module.configure(sub)
+        _remember_section(name, _before, sub)
+    _ALL_COMMANDS.update(getattr(sub, "_name_parser_map", {}) or {})
+    parser.epilog = _build_epilog()
     return parser
 
 
@@ -357,6 +508,20 @@ def _dispatch(args: argparse.Namespace) -> None:
     handler = lookup(args.command)
     if handler is None:
         raise ValueError(f"未注册的命令: {args.command}")
+
+    if getattr(args, "json", False):
+        # **统一 JSON 包装**：命令自身没实现 `--json` 时，把它的 stdout
+        # 收进结构化 envelope 再输出，而不是要求 56 个 handler 各改一遍。
+        #
+        # 这是折中：`output` 字段仍是文本（人读内容原样保留），但
+        # `ok` / `command` / `exit_code` 是结构化的 —— agent 至少能可靠判断
+        # 成败，不必解析中文日志。真正结构化的命令（已实现 --json 的那 8 个）
+        # 会写自己的 JSON，这里检测到输出已是 JSON 就原样透传。
+        from ._json_envelope import run_with_envelope
+
+        run_with_envelope(args.command, handler, args)
+        return
+
     handler(args)
 
 

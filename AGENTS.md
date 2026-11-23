@@ -33,6 +33,26 @@
 **成效表述**：**禁用**工作量、文件行数、文件个数、测试数量、抽象层数量。
 改用：用户影响 / 证据强度 / 发生场景 / 改动风险 / 维护成本；结构性工作用「定位与改动成本」。
 
+**agent 面（2026-11-23 调研 clig.dev / GitHub CLI / tooli 后重构）**：
+- **`--json` 全局可用且位置无关**：`omnicrawler --json <cmd>` 与 `omnicrawler <cmd> --json`
+  等价。输出统一 envelope：
+
+  ```json
+  {"ok": false, "command": "status", "exit_code": 1, "output": "...",
+   "error": {"type": "FileNotFoundError", "message": "...",
+             "suggestion": "确认路径存在，或运行 omnicrawler init 创建配置",
+             "is_retryable": false}}
+  ```
+
+  **`is_retryable` 是给 agent 的关键字段**：`false` = 原样重试不会成功（改输入）；
+  `true` = 可重试（网络/超时）。实现见 `cli/_json_envelope.py`。
+  stdout 保证是**单行纯净 JSON**（日志走 stderr），守卫
+  `tests/unit/cli/test_json_envelope.py`。
+- **`--help` 现在含三段**：常用示例（clig.dev 要求 "lead with examples"）、
+  退出码契约（0 成功 / 1 运行期失败 / 2 用法校验失败）、
+  按「我要干什么」分组的 55 个命令（不是按代码文件归属）。
+  守卫 `tests/unit/cli/test_cli_help_surface.py` 保证「每个命令都在某个分组里」。
+
 **门禁**：
 - 本地轻量自证：`python tools/self_verify.py --set static`（清单真源 `tools/gate_registry.py`）。
 - **改代码时的秒级自检**：`python tools/fast_check.py`（约 2 秒，只查改动的文件）。
