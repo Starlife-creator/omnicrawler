@@ -31,6 +31,7 @@ import sys
 import pytest
 
 from omnicrawler.cli import _json_envelope as env
+from tools.child_env import utf8_env
 
 
 def test_build_payload_success_shape() -> None:
@@ -89,7 +90,7 @@ def test_cli_json_stdout_is_pure_json() -> None:
     completed = subprocess.run(
         [sys.executable, "-m", "omnicrawler", "--json", "status", "-c", "__no_such__.yaml"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
-        check=False, timeout=120,
+        check=False, timeout=120, env=utf8_env(),
     )
     stdout = (completed.stdout or "").strip()
     assert stdout, "stdout 为空 —— envelope 没输出"
@@ -104,9 +105,49 @@ def test_cli_json_reports_retryable_false_for_missing_file() -> None:
     completed = subprocess.run(
         [sys.executable, "-m", "omnicrawler", "--json", "status", "-c", "__no_such__.yaml"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
-        check=False, timeout=120,
+        check=False, timeout=120, env=utf8_env(),
     )
     payload = json.loads((completed.stdout or "").strip().splitlines()[0])
     assert payload["ok"] is False
     assert payload["error"]["is_retryable"] is False
     assert payload["error"]["suggestion"]
+
+def test_command_own_json_is_passed_through_not_nested() -> None:
+    """**穿透**：handler 自己输出 JSON 时不许再套一层 envelope。
+
+    早先 `capabilities` 的整段 JSON 被塞进 `output` 字符串里，
+    agent 得多解析一层。根因是 `SystemExit(0)` 分支没走透传判断。
+    """
+    completed = subprocess.run(
+        [sys.executable, "-m", "omnicrawler", "--json", "capabilities"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False, timeout=180, env=utf8_env(),
+    )
+    # 透传的是**多行** JSON（原样），所以整体解析而不是取首行。
+    payload = json.loads((completed.stdout or "").strip())
+    assert "command" not in payload, (
+        f"被套了 envelope（应透传命令自己的 JSON）：{sorted(payload)[:6]}"
+    )
+    assert "ok" in payload, "命令自己的 JSON 里应有 ok 字段"
+
+
+def test_argparse_error_also_emits_json() -> None:
+    """**参数错误也要是 JSON**：这是最常见的失败，agent 同样需要结构化输出。
+
+    此前只打 usage 文本，`--json` 模式下 `json.loads` 直接失败。
+    """
+    completed = subprocess.run(
+        [sys.executable, "-m", "omnicrawler", "--json", "run"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False, timeout=120, env=utf8_env(),
+    )
+    assert completed.returncode == 2, f"参数错误应以 2 退出，实际 {completed.returncode}"
+    stdout = (completed.stdout or "").strip()
+    assert stdout, "--json 模式下参数错误没有输出 JSON"
+    payload = json.loads(stdout.splitlines()[0])
+    assert payload["ok"] is False
+    assert payload["exit_code"] == 2
+    assert payload["error"]["type"] == "UsageError"
+    assert payload["error"]["is_retryable"] is False
+    # usage 文本仍要在 stderr（保持人读行为不变）
+    assert "usage" in (completed.stderr or "").lower()

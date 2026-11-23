@@ -162,6 +162,36 @@ class _ArgumentParser(argparse.ArgumentParser):
                 self.error("workspace requires --config except for import")
         return parsed
 
+    def error(self, message: str) -> Any:
+        """参数错误。`--json` 时输出 envelope，而不是 usage 文本。
+
+        **为什么要覆盖**：argparse 默认把用法 + 错误打到 stderr 再 `exit(2)`。
+        对 agent 来说，`--json` 模式下它期待 stdout 是合法 JSON —— 而参数
+        错误恰恰是最常见的失败（缺 `--config`、拼错子命令），此时却只拿到
+        一段人读 usage，`json.loads` 直接失败。
+
+        保留原行为（仍 exit 2、仍打 usage 到 stderr），只**额外**在 stdout
+        给一份结构化错误。
+        """
+        if "--json" in (sys.argv[1:] if not hasattr(self, "_seen_argv") else ()):
+            import json as _json
+
+            payload = {
+                "ok": False,
+                "command": (getattr(self, "prog", "") or "").split()[-1],
+                "exit_code": 2,
+                "output": "",
+                "error": {
+                    "type": "UsageError",
+                    "message": message,
+                    "suggestion": "检查参数拼写与必填项；用 --help 查看用法",
+                    "is_retryable": False,
+                },
+            }
+            print(_json.dumps(payload, ensure_ascii=False))
+        super().error(message)
+        return None
+
 
 #: section → 该 section 注册的命令名（**运行时填充**，不手工维护）。
 #:

@@ -92,6 +92,23 @@ def _is_retryable(exc: BaseException) -> bool:
     return True
 
 
+def _passthrough(captured: str) -> bool:
+    """若 `captured` 本身已是合法 JSON 对象，原样打到 stdout 并返回 True。
+
+    判定放宽到「以 `{` 开头」即可 —— `json.loads` 自己容忍首尾空白。
+     早先要求 `endswith("}")`，遇到带尾随换行的输出就判不过。
+    """
+    stripped = (captured or "").strip()
+    if not stripped.startswith("{"):
+        return False
+    try:
+        json.loads(stripped)
+    except json.JSONDecodeError:
+        return False
+    print(stripped)
+    return True
+
+
 def build_payload(
     command: str,
     *,
@@ -131,6 +148,12 @@ def run_with_envelope(command: str, handler: Any, args: argparse.Namespace) -> i
     except SystemExit as stop:
         code = stop.code if isinstance(stop.code, int) else (0 if stop.code is None else 1)
         captured = buffer.getvalue()
+        # **同样先试透传**：很多 handler 正常结束时会 `raise SystemExit(0)`，
+        # 而它们可能已经输出了自己的 JSON。早先这里直接套 envelope，
+        # 结果把 `capabilities` 的整段 JSON 塞进了 `output` 字符串
+        # （agent 得多解析一层）。
+        if _passthrough(captured):
+            raise
         if not captured and code == 0:
             payload = build_payload(command, ok=True, output="", exit_code=0)
         else:
@@ -144,16 +167,14 @@ def run_with_envelope(command: str, handler: Any, args: argparse.Namespace) -> i
         exc = error
 
     captured = buffer.getvalue()
-    # 若 handler 自己已经输出了 JSON（那 8 个已实现 --json 的命令），原样透传。
-    stripped = captured.strip()
-    if stripped.startswith("{") and stripped.endswith("}"):
-        try:
-            json.loads(stripped)
-            print(stripped)
-            return 0 if exc is None else 1
-        except json.JSONDecodeError:
-            pass
-
+    if _passthrough(captured):
+        return 0 if exc is None else 1
+    # 命令自己已输出结构化 JSON ⇒ **原样透传**，不再套一层 envelope。
+    #
+    # 判定要宽松：`json.loads` 本身就能容忍首尾空白，所以只要求「以 { 开头」，
+    # 不要求 `endswith("}")` —— 早先用了后者，遇到带尾随换行/空格的输出就
+    # 判不过，把整段 JSON 塞进了 envelope 的 `output` 字符串里（2026-11-23
+    # 实测 `capabilities` 就是这样，agent 得多解析一层）。
     if exc is None:
         print(json.dumps(
             build_payload(command, ok=True, output=captured, exit_code=0),
