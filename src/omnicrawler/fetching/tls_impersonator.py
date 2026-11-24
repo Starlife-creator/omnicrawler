@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 from ..core.config import AppConfig
 from ..core.errors import ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
-from ..core.utils import user_agent
+from ..core.utils import human_bytes, user_agent
 from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
 
@@ -169,7 +169,7 @@ class TLSImpersonator:
                 )
                 body = response.content
                 if len(body) > maximum:
-                    raise ResponseTooLargeError(f"响应超过大小限制: > {maximum}")
+                    raise ResponseTooLargeError(f"响应超过大小限制: > {human_bytes(maximum)}")
                 final_url = str(getattr(response, "url", "") or request.url)
                 self._egress.record_response(len(body), url=final_url)
                 return FetchResult(

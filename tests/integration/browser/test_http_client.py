@@ -106,7 +106,10 @@ def test_fetch_success_gzip_headers_and_final_url(tmp_path: Path) -> None:
 def test_response_declared_streamed_and_decompressed_size_limits(tmp_path: Path) -> None:
     fetcher = HTTPFetcher(_config(tmp_path))
     fetcher.opener = _Opener([_Response(b"small", headers={"Content-Length": "2048"})])
-    with pytest.raises(ResponseTooLargeError, match="2048"):
+    # ★ 2026-11-24：错误消息改为人类可读读数（`2.0 KiB > 1.0 KiB`）后，
+    # 原先 match="2048"（裸字节数）不再成立。**断言的是展示形态，不是行为** ——
+    # 行为由「抛出 ResponseTooLargeError」这一条保证，这里改为断言两个量都出现。
+    with pytest.raises(ResponseTooLargeError, match=r"2\.0 KiB > 1\.0 KiB"):
         fetcher.fetch(CrawlRequest("https://example.org"))
 
     fetcher.opener = _Opener([_Response(b"x" * 1025)])

@@ -22,7 +22,7 @@ from ..core.config import AppConfig
 from ..core.errors import EgressBudgetExceededError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
 from ..core.safe_data import safe_json_loads
-from ..core.utils import canonicalize_url
+from ..core.utils import canonicalize_url, human_bytes
 from ..security.egress import EgressBroker
 from ..security.policy import NetworkTargetPolicy
 from . import session_crypto, session_state
@@ -236,7 +236,7 @@ class PlaywrightPool:
                 self.egress.authorize(final_url, purpose="browser", count_request=False)
                 maximum = int(self.config.section("http").get("max_response_bytes", 50_000_000))
                 if len(body) > maximum:
-                    raise ResponseTooLargeError(f"浏览器页面超过大小限制: {len(body)} > {maximum}")
+                    raise ResponseTooLargeError(f"浏览器页面超过大小限制: {human_bytes(len(body))} > {human_bytes(maximum)}")
                 self.egress.record_response(len(body), url=final_url)
                 self._save_context(context, context_key)
                 headers = {

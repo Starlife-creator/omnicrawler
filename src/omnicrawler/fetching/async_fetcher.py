@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from ..core.config import AppConfig
 from ..core.errors import PermanentFetchError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
-from ..core.utils import user_agent
+from ..core.utils import human_bytes, user_agent
 from ..security.egress import EgressBroker
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
 from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
@@ -419,13 +419,15 @@ class HTTPXAsyncFetcher:
                                 response.raise_for_status()
                             declared = response.headers.get("content-length", "")
                             if declared.isdigit() and int(declared) > maximum:
-                                raise ResponseTooLargeError(f"响应超过大小限制: {declared} > {maximum}")
+                                raise ResponseTooLargeError(
+                                        f"响应超过大小限制: {human_bytes(int(declared))} > {human_bytes(maximum)}"
+                                    )
                             chunks: list[bytes] = []
                             size = 0
                             async for chunk in response.aiter_bytes():
                                 size += len(chunk)
                                 if size > maximum:
-                                    raise ResponseTooLargeError(f"响应超过大小限制: > {maximum}")
+                                    raise ResponseTooLargeError(f"响应超过大小限制: > {human_bytes(maximum)}")
                                 chunks.append(chunk)
                             self.egress.record_response(size, url=str(response.url))
                             if auth_error:

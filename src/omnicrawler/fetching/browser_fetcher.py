@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from ..core.config import AppConfig
 from ..core.errors import ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
+from ..core.utils import human_bytes
 from ..runtime.resource_profiles import effective_browser_pool
 from ..security.egress import EgressBroker
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
@@ -329,7 +330,7 @@ class BrowserFetcher:
                 driver.quit()
         maximum = int(self.config.section("http").get("max_response_bytes", 50_000_000))
         if len(body) > maximum:
-            raise ResponseTooLargeError(f"浏览器页面超过大小限制: {len(body)} > {maximum}")
+            raise ResponseTooLargeError(f"浏览器页面超过大小限制: {human_bytes(len(body))} > {human_bytes(maximum)}")
         self.egress.record_response(len(body), url=final_url)
         return FetchResult(request, final_url, 200, {"content-type": "text/html; charset=utf-8"}, body, time.monotonic() - started,
                            {"data_readiness": readiness, "collection": collection_status})

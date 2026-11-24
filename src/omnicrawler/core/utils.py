@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import mimetypes
 import os
 import re
@@ -23,6 +24,36 @@ _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 def utcnow() -> str:
     # S4.5 P3#128：微秒级精度——同秒多条记录不再无法区分
     return datetime.now(UTC).isoformat(timespec="microseconds")
+
+
+def human_bytes(size: int | float) -> str:
+    """字节数 → 人类可读（`B` / `KiB` / `MiB` / `GiB`），**向下取整**。
+
+    存在的理由：限额类错误消息此前直接打印裸字节数，例如
+
+    ```
+    响应超过大小限制: 21000000 > 20971520
+    ```
+
+    用户要自己算才知道上限是 20 MiB。而 `fetching` 层不能 import
+    `services.component_install`（会形成反向依赖），所以放在 `core` 这一层
+    作为共享实现。
+
+    **向下取整**而不是四舍五入：这是「上限」读数，四舍五入会给出乐观答案
+    （`2 GiB - 1` 不许显示成 `2.0GiB`）。同一纪律见
+    `commands/self_update._human_bytes` 与 `gui/update_check._human_bytes`。
+
+    用二进制单位（KiB/MiB/GiB）而不是 KB/MB：这里的限额都以 1024 为基数，
+    写 `MB` 会让人按 1000 换算，差 4.8%。
+    """
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if value < 1024 or unit == "GiB":
+            if unit == "B":
+                return f"{int(value)} B"
+            return f"{math.floor(value * 10) / 10:.1f} {unit}"
+        value /= 1024
+    return f"{math.floor(value * 10) / 10:.1f} GiB"
 
 
 def expand_env(value: Any) -> Any:

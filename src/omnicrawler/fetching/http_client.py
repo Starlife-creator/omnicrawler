@@ -17,7 +17,7 @@ from typing import Any
 from ..core.config import AppConfig
 from ..core.errors import LoginFailedError, PermanentFetchError, ResponseTooLargeError
 from ..core.models import CrawlRequest, FetchResult
-from ..core.utils import user_agent
+from ..core.utils import human_bytes, user_agent
 from ..security.egress import EgressBroker, NetworkCapability
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
 from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
@@ -293,10 +293,10 @@ class HTTPFetcher:
                         response_headers = _flatten_headers(response.headers)
                         declared = response_headers.get("content-length", "")
                         if declared.isdigit() and int(declared) > max_bytes:
-                            raise ResponseTooLargeError(f"响应超过大小限制: {declared} > {max_bytes}")
+                            raise ResponseTooLargeError(f"响应超过大小限制: {human_bytes(int(declared))} > {human_bytes(max_bytes)}")
                         wire_body = response.read(max_bytes + 1)
                         if len(wire_body) > max_bytes:
-                            raise ResponseTooLargeError(f"响应超过大小限制: > {max_bytes}")
+                            raise ResponseTooLargeError(f"响应超过大小限制: > {human_bytes(max_bytes)}")
                         self.egress.record_response(len(wire_body), url=response.geturl())
                         self.egress.record_success(response.geturl())
                         body = self._decode_content(
@@ -445,7 +445,7 @@ class HTTPFetcher:
                 if piece:
                     total += len(piece)
                     if total > max_bytes:
-                        raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
+                        raise ResponseTooLargeError(f"解压后响应超过大小限制: > {human_bytes(max_bytes)}")
                     chunks.append(piece)
             if not bool(getattr(decompressor, "is_finished", lambda: True)()):
                 raise ValueError("压缩响应不完整")

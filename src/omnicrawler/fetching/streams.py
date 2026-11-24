@@ -11,6 +11,7 @@ from ..core.config import AppConfig
 from ..core.errors import ResponseTooLargeError
 from ..core.models import CrawlRequest, ExtractedRecord
 from ..core.safe_data import safe_float, safe_int, safe_json_loads
+from ..core.utils import human_bytes
 from ..security.egress import EgressBroker
 from .http_client import build_safe_opener
 
@@ -63,7 +64,7 @@ def collect_sse(
                 line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
                 consumed += len(line_bytes)
                 if consumed > maximum_bytes:
-                    raise ResponseTooLargeError(f"SSE数据超过大小限制: > {maximum_bytes}")
+                    raise ResponseTooLargeError(f"SSE数据超过大小限制: > {human_bytes(maximum_bytes)}")
                 if not line:
                     if event:
                         data = {key: "\n".join(values) for key, values in event.items()}
@@ -130,7 +131,7 @@ async def _websocket_collect(
                     break
                 consumed += len(message) if isinstance(message, bytes) else len(message.encode("utf-8"))
                 if consumed > maximum_bytes:
-                    raise ResponseTooLargeError(f"WebSocket数据超过大小限制: > {maximum_bytes}")
+                    raise ResponseTooLargeError(f"WebSocket数据超过大小限制: > {human_bytes(maximum_bytes)}")
                 if isinstance(message, bytes):
                     data: Any = {"binary_hex": message.hex(), "size": len(message)}
                 else:
