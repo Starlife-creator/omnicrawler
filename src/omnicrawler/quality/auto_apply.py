@@ -264,7 +264,7 @@ def auto_apply_if_safe(
         return None
 
     # L1/L2/L3：自动应用，内部走 approve_repair 确保审计链完整
-    reason = _tier_reason(tier, candidate, comparison)
+    reason = _tier_reason(tier, candidate, comparison, policy)
     approved_by = f"{actor}:L{tier.value}"
 
     try:
@@ -301,14 +301,28 @@ def _tier_reason(
     tier: AutomationTier,
     candidate: RepairCandidate,
     comparison: ShadowComparison,
+    policy: AutoApplyPolicy,
 ) -> str:
     """生成选择该等级的人类可读原因（用于审计日志）。"""
     if tier == AutomationTier.L3:
         return f"连续 {candidate.observation_rounds} 轮稳定，误报风险 {candidate.false_positive_risk}"
     if tier == AutomationTier.L2:
-        return f"置信度 {candidate.confidence} ≥ 阈值，质量 {comparison.old_quality}→{comparison.new_quality} 安全改善"
+        # ★ 2026-11-24：原来直接插值 float，实测会输出
+        #   `置信度 0.9500000000000001 ≥ 阈值，质量 0.5→0.75`
+        #   `置信度 0.3333333333333333 ≥ 阈值，...`
+        # 后者更糟：0.33 < 默认阈值 0.85，「≥ 阈值」是**假话**——读者会以为该值达标。
+        # 现改为：显示实际阈值 + 用百分比渲染（`:.1%`），并确保「≥ 阈值」只在
+        # 真的成立时出现（本分支由 `should_automate` 的判定进入，条件必然成立，
+        # 但仍显式带上阈值，让读者能自己核对）。
+        return (
+            f"置信度 {candidate.confidence:.1%} ≥ 阈值 {policy.l2_confidence_threshold:.0%}，"
+            f"质量 {comparison.old_quality:.1%}→{comparison.new_quality:.1%} 安全改善"
+        )
     if tier == AutomationTier.L1:
-        return f"幂等修复（{candidate.rule_type} 选择器替换），质量改善 {comparison.old_quality}→{comparison.new_quality}"
+        return (
+            f"幂等修复（{candidate.rule_type} 选择器替换），"
+            f"质量改善 {comparison.old_quality:.1%}→{comparison.new_quality:.1%}"
+        )
     return "需人工批准"
 
 
