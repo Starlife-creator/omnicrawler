@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..core.utils import human_bytes
+
 
 def _utc_date_key() -> str:
     return datetime.now(UTC).date().isoformat()
@@ -78,7 +80,8 @@ class DailyNetworkQuota:
             )
         if bytes_limit > 0 and used_bytes >= bytes_limit:
             raise QuotaExceededError(
-                f"插件 {plugin_id} 今日网络字节已达配额 {bytes_limit}"
+                f"插件 {plugin_id} 今日网络字节已达配额 {human_bytes(bytes_limit)}"
+                f"（已用 {human_bytes(used_bytes)}）"
             )
 
     def account(self, plugin_id: str, *, requests: int = 1, bytes_: int = 0) -> None:

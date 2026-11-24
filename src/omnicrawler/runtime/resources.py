@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from ..core.config import AppConfig
+from ..core.utils import human_bytes
 
 
 class ResourceLimitError(RuntimeError):
@@ -36,8 +37,8 @@ class ResourceGuard:
         usage = shutil.disk_usage(self.workspace)
         if self.minimum_free_disk_bytes and usage.free < self.minimum_free_disk_bytes:
             raise ResourceLimitError(
-                f"Free disk space {usage.free} bytes is below safety reserve "
-                f"{self.minimum_free_disk_bytes} bytes"
+                f"Free disk space {human_bytes(usage.free)} is below safety reserve "
+                f"{human_bytes(self.minimum_free_disk_bytes)}"
             )
         workspace_bytes = _directory_size(self.workspace) if self.maximum_workspace_bytes else 0
         if self.maximum_workspace_bytes and workspace_bytes >= self.maximum_workspace_bytes:

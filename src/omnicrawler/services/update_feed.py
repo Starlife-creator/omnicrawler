@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ..core.utils import human_bytes
 from ..core.versions import is_newer, version_key
 from .component_manager import _verify_ed25519
 
@@ -542,7 +543,7 @@ def check_feed(
         )
     return UpdateCheck(
         status="update-available",
-        detail=f"可更新到 {feed.version}（{asset.name}，{asset.size} 字节）",
+        detail=f"可更新到 {feed.version}（{asset.name}，{human_bytes(asset.size)}）",
         current_version=current_version,
         latest_version=feed.version,
         asset=asset,
