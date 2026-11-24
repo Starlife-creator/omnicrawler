@@ -26,8 +26,10 @@ ctypes 误用（vtable 槽位错、签名错）是 **AV 崩进程**，不是 Pyt
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import logging
+import os
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -251,21 +253,22 @@ def _write_link_via_com(  # pragma: no cover - 只有 Windows 能执行（见模
 
     shell_link: Any = None
     persist: Any = None
-    try:
-        shell_link = _new_shell_link()
-        _write_fields(
-            shell_link, target, working_dir=working_dir, icon=icon, description=description
-        )
-        persist = _persist_file_of(shell_link)
-        save = _method(persist, _VT_PERSIST_SAVE, ctypes.c_wchar_p, ctypes.c_int)
-        hr = save(persist, str(link_path), 1)  # fRemember = TRUE
-        if hr != _S_OK:
-            raise OSError(f"IPersistFile::Save failed: {hr:#x}")
-    finally:
-        _release(persist)
-        _release(shell_link)
-        if co_initialized:
-            ole32.CoUninitialize()
+    with _shell_windows_process_environment():
+        try:
+            shell_link = _new_shell_link()
+            _write_fields(
+                shell_link, target, working_dir=working_dir, icon=icon, description=description
+            )
+            persist = _persist_file_of(shell_link)
+            save = _method(persist, _VT_PERSIST_SAVE, ctypes.c_wchar_p, ctypes.c_int)
+            hr = save(persist, str(link_path), 1)  # fRemember = TRUE
+            if hr != _S_OK:
+                raise OSError(f"IPersistFile::Save failed: {hr:#x}")
+        finally:
+            _release(persist)
+            _release(shell_link)
+            if co_initialized:
+                ole32.CoUninitialize()
 
 
 def create_shortcut(
@@ -323,46 +326,47 @@ def read_back(link_path: Path) -> dict[str, str]:  # pragma: no cover - Windows 
 
     shell_link: Any = None
     persist: Any = None
-    try:
-        shell_link = _new_shell_link()
-        persist = _persist_file_of(shell_link)
-        load = _method(persist, _VT_PERSIST_LOAD, ctypes.c_wchar_p, ctypes.c_ulong)
-        hr = load(persist, str(link_path), _STGM_READ)
-        if hr != _S_OK:
-            raise OSError(f"IPersistFile::Load failed for {link_path}: {hr:#x}")
+    with _shell_windows_process_environment():
+        try:
+            shell_link = _new_shell_link()
+            persist = _persist_file_of(shell_link)
+            load = _method(persist, _VT_PERSIST_LOAD, ctypes.c_wchar_p, ctypes.c_ulong)
+            hr = load(persist, str(link_path), _STGM_READ)
+            if hr != _S_OK:
+                raise OSError(f"IPersistFile::Load failed for {link_path}: {hr:#x}")
 
-        path_buf = ctypes.create_unicode_buffer(_LONG_PATH)
-        get_path = _method(
-            shell_link, _VT_GET_PATH,
-            ctypes.c_wchar_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong,
-        )
-        # pfd 传 NULL（该参数可选）；fFlags=SLGP_RAWPATH(4) 要原始路径，不要 8.3 短名
-        hr = get_path(shell_link, path_buf, _LONG_PATH, None, 4)
-        if hr != _S_OK:
-            raise OSError(f"IShellLinkW::GetPath failed: {hr:#x}")
+            path_buf = ctypes.create_unicode_buffer(_LONG_PATH)
+            get_path = _method(
+                shell_link, _VT_GET_PATH,
+                ctypes.c_wchar_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong,
+            )
+            # pfd 传 NULL（该参数可选）；fFlags=SLGP_RAWPATH(4) 要原始路径，不要 8.3 短名
+            hr = get_path(shell_link, path_buf, _LONG_PATH, None, 4)
+            if hr != _S_OK:
+                raise OSError(f"IShellLinkW::GetPath failed: {hr:#x}")
 
-        dir_buf = ctypes.create_unicode_buffer(_LONG_PATH)
-        get_dir = _method(
-            shell_link, _VT_GET_WORKING_DIRECTORY, ctypes.c_wchar_p, ctypes.c_int
-        )
-        hr = get_dir(shell_link, dir_buf, _LONG_PATH)
-        if hr != _S_OK:
-            raise OSError(f"IShellLinkW::GetWorkingDirectory failed: {hr:#x}")
+            dir_buf = ctypes.create_unicode_buffer(_LONG_PATH)
+            get_dir = _method(
+                shell_link, _VT_GET_WORKING_DIRECTORY, ctypes.c_wchar_p, ctypes.c_int
+            )
+            hr = get_dir(shell_link, dir_buf, _LONG_PATH)
+            if hr != _S_OK:
+                raise OSError(f"IShellLinkW::GetWorkingDirectory failed: {hr:#x}")
 
-        icon_buf = ctypes.create_unicode_buffer(_LONG_PATH)
-        icon_index = ctypes.c_int(0)
-        get_icon = _method(
-            shell_link, _VT_GET_ICON_LOCATION,
-            ctypes.c_wchar_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int),
-        )
-        hr = get_icon(shell_link, icon_buf, _LONG_PATH, ctypes.byref(icon_index))
-        if hr != _S_OK:
-            raise OSError(f"IShellLinkW::GetIconLocation failed: {hr:#x}")
-    finally:
-        _release(persist)
-        _release(shell_link)
-        if co_initialized:
-            ole32.CoUninitialize()
+            icon_buf = ctypes.create_unicode_buffer(_LONG_PATH)
+            icon_index = ctypes.c_int(0)
+            get_icon = _method(
+                shell_link, _VT_GET_ICON_LOCATION,
+                ctypes.c_wchar_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int),
+            )
+            hr = get_icon(shell_link, icon_buf, _LONG_PATH, ctypes.byref(icon_index))
+            if hr != _S_OK:
+                raise OSError(f"IShellLinkW::GetIconLocation failed: {hr:#x}")
+        finally:
+            _release(persist)
+            _release(shell_link)
+            if co_initialized:
+                ole32.CoUninitialize()
 
     return {
         "target": path_buf.value,
@@ -370,6 +374,44 @@ def read_back(link_path: Path) -> dict[str, str]:  # pragma: no cover - Windows 
         "icon": icon_buf.value,
         "icon_index": str(icon_index.value),
     }
+
+
+@contextlib.contextmanager
+def _shell_windows_process_environment() -> Any:
+    """Fill in shell variables the COM server expands against the **current directory**.
+
+    Why this exists (2026-11-24, reproduced): ``IPersistFile::Load``/``Save`` make the
+    shell expand paths such as ``%SystemDrive%\\ProgramData\\Microsoft\\Windows\\Caches``.
+    When ``SystemDrive`` is absent from the environment, the expansion treats
+    ``%SystemDrive%`` as a **relative** path and the shell writes its font cache into
+    the process working directory. Running the test suite from a checkout therefore
+    created a directory literally named ``%SystemDrive%`` inside the repository.
+
+    The shell variables are derived from the OS rather than hard-coded, and only the
+    missing ones are filled in, so an environment that already sets them is untouched.
+    """
+    missing: dict[str, str] = {}
+    if not os.environ.get("SystemDrive"):
+        drive = os.environ.get("SystemRoot") or os.environ.get("windir") or ""
+        letter = os.path.splitdrive(drive)[0]
+        if letter:
+            missing["SystemDrive"] = letter
+            missing.setdefault("SystemRoot", drive)
+    if not os.environ.get("SystemRoot") and missing.get("SystemDrive"):
+        missing["SystemRoot"] = f"{missing['SystemDrive']}\\Windows"
+    if not missing:
+        yield
+        return
+    previous: dict[str, str | None] = {key: os.environ.get(key) for key in missing}
+    os.environ.update(missing)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _known_folder(csidl: int) -> Path | None:  # pragma: no cover - Windows only

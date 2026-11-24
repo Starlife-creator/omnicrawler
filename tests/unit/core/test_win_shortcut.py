@@ -17,6 +17,7 @@ ctypes 误用（vtable 槽位错、签名错）是 **AV 崩进程**，不是 Pyt
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -157,3 +158,44 @@ def test_create_shortcut_for_app_aggregates_outcomes(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(win_shortcut, "resolve_target", lambda: None)
     assert win_shortcut.create_shortcut_for_app(destinations).status == "unsupported"
+
+
+# ── 进程环境：shell 变量缺失时不许把文件写进当前目录 ──────────────────────
+# 实测事故（2026-11-24）：`SystemDrive` 不在环境里时，shell COM 把
+# `%SystemDrive%\ProgramData\...\Caches` 当成**相对路径**展开，于是字体缓存被写进
+# 进程 cwd —— 在仓库里跑全量单测就在仓库根造出一个名为 `%SystemDrive%` 的目录。
+
+
+def test_shell_environment_is_filled_in_when_system_drive_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """缺失的 shell 变量必须补上；已存在的一律不动。"""
+    monkeypatch.delenv("SystemDrive", raising=False)
+    monkeypatch.setenv("SystemRoot", "Q:\\Windows")
+    monkeypatch.setenv("windir", "Q:\\Windows")
+    with win_shortcut._shell_windows_process_environment():
+        assert os.environ["SystemDrive"] == "Q:"
+        assert os.environ["SystemRoot"] == "Q:\\Windows"
+    assert "SystemDrive" not in os.environ, "退出后必须还原，不能污染进程环境"
+
+
+def test_shell_environment_leaves_an_existing_value_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """已经有值时不做任何改动 —— 补默认值不是改写用户环境。"""
+    monkeypatch.setenv("SystemDrive", "Z:")
+    monkeypatch.setenv("SystemRoot", "Z:\\Windows")
+    with win_shortcut._shell_windows_process_environment():
+        assert os.environ["SystemDrive"] == "Z:"
+    assert os.environ["SystemDrive"] == "Z:"
+
+
+def test_shell_environment_derives_drive_from_system_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """盘符从 SystemRoot 派生，而不是写死 C:。"""
+    monkeypatch.delenv("SystemDrive", raising=False)
+    monkeypatch.setenv("SystemRoot", "R:\\Windows")
+    monkeypatch.delenv("windir", raising=False)
+    with win_shortcut._shell_windows_process_environment():
+        assert os.environ["SystemDrive"] == "R:"

@@ -222,35 +222,89 @@ PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&modul
 '''
 
 
-def _helper_build_dir() -> Path:
-    """Create the build directory for the native shim, never inside the source tree.
+_PACKAGE_DIR = Path(__file__).resolve().parent
 
-    Why this exists: a bare ``tempfile.mkdtemp()`` falls back to ``cwd`` when no temp root is
-    usable. A plugin host started from the source tree therefore compiled in
-    ``src/omnicrawler/plugins/``, which is how 60+ empty ``omnicrawler-landlock-*`` directories
-    accumulated inside the repository. They are git-ignored, so ``git status`` never showed them.
 
-    The silent ``cwd`` fallback is checked rather than trusted: a sandbox whose temp
-    root is unwritable produces directories in the current directory without
-    raising, so "it worked" is not evidence that it worked *outside* the repo.
+def _candidate_roots() -> tuple[Path, ...]:
+    """Writable temp roots to try, most preferred first.
+
+    ``tempfile.gettempdir()`` alone is not enough: when no temp root is writable, the
+    stdlib silently falls back to ``cwd``. A plugin host started from the source tree
+    then compiled inside ``src/omnicrawler/plugins/``, which is how 65 empty
+    ``omnicrawler-landlock-*`` directories accumulated — invisible to ``git status``
+    because they were git-ignored.
+
+    Candidates are ordered so an explicitly configured root wins, and the fallback
+    is never the process working directory.
+    """
+    roots: list[Path] = []
+    for name in ("OMNICRAWL_TEMP_ROOT", "TMPDIR", "TEMP", "TMP"):
+        value = os.environ.get(name)
+        if value:
+            roots.append(Path(value))
+    roots.append(Path(tempfile.gettempdir()))
+    unique: list[Path] = []
+    for root in roots:
+        try:
+            resolved = root.expanduser().resolve()
+        except OSError:
+            continue
+        if resolved not in unique:
+            unique.append(resolved)
+    return tuple(unique)
+
+
+def _is_inside_source_tree(directory: Path) -> bool:
+    """True when ``directory`` is the plugin package or below it."""
+    return directory == _PACKAGE_DIR or _PACKAGE_DIR in directory.parents
+
+
+def _probe_writable(root: Path) -> Path | None:
+    """Create a directory under ``root`` and write in it; ``None`` when unusable.
+
+    Writing a file inside the new directory is what separates "the root exists"
+    from "this process may write here": a root can accept the directory through an
+    inherited ACE that then denies file creation (observed on a locked-down
+    Windows temp profile).
     """
     try:
-        created = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
-    except OSError as exc:
-        raise RuntimeError(
-            f"{E_UNSUPPORTED_ENV}: the native Landlock shim needs a writable temp "
-            f"directory to compile in, and none is available: {exc}"
-        ) from exc
-    directory = Path(created).resolve()
-    package_dir = Path(__file__).resolve().parent
-    if directory == package_dir or package_dir in directory.parents:
-        shutil.rmtree(directory, ignore_errors=True)
-        raise RuntimeError(
-            f"{E_UNSUPPORTED_ENV}: refusing to compile the native Landlock shim inside "
-            f"the source tree ({directory}); point TEMP/TMPDIR at a writable directory "
-            f"outside the repository or set OMNICRAWL_LANDLOCK_HELPER to a prebuilt shim"
-        )
-    return directory
+        created = Path(tempfile.mkdtemp(prefix="omnicrawler-landlock-", dir=root))
+    except OSError:
+        return None
+    try:
+        probe = created / ".write-probe"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except OSError:
+        shutil.rmtree(created, ignore_errors=True)
+        return None
+    return created
+
+
+def _helper_build_dir() -> Path:
+    """Return a writable build directory that is never inside the source tree.
+
+    The previous version called a bare ``mkdtemp()`` and trusted it. A sandbox whose
+    temp root is unwritable makes that call fall back to ``cwd`` **without raising**,
+    so "it worked" was never evidence that it worked outside the repository.
+    """
+    rejected: list[str] = []
+    for root in _candidate_roots():
+        created = _probe_writable(root)
+        if created is None:
+            rejected.append(f"{root}: not writable")
+            continue
+        if _is_inside_source_tree(created):
+            shutil.rmtree(created, ignore_errors=True)
+            rejected.append(f"{root}: resolves inside the source tree")
+            continue
+        return created
+    raise RuntimeError(
+        f"{E_UNSUPPORTED_ENV}: the native Landlock shim needs a writable temp "
+        f"directory outside the source tree, and none is available "
+        f"({chr(59).join(rejected)}); set OMNICRAWL_TEMP_ROOT (or TEMP/TMPDIR) "
+        f"to a writable directory, or set OMNICRAWL_LANDLOCK_HELPER to a prebuilt shim"
+    )
 
 
 def _native_helper():
@@ -265,6 +319,10 @@ def _native_helper():
     if cached is not None:
         return cached
     import sysconfig
+
+    # Bound on every path: the prebuilt-shim branch never creates a build directory,
+    # so leaving this unbound made the success path raise UnboundLocalError.
+    build_directory: Path | None = None
     supplied = os.environ.get("OMNICRAWL_LANDLOCK_HELPER")
     if supplied:
         extension = Path(supplied)
