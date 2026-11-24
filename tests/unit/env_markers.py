@@ -52,6 +52,8 @@ import os
 import shutil
 import socket
 import subprocess
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -176,6 +178,66 @@ requires_network = pytest.mark.skipif(
 requires_bash = pytest.mark.skipif(
     not bash_usable(),
     reason="bash 不可执行（受限沙箱或未安装）：脚本类测试无法验证",
+)
+
+
+def local_git_remote_available() -> bool:
+    """能否对**本地** git 仓库做 clone/fetch。
+
+    与 :func:`network_available` **不是一回事**：这里完全不触网，只是让 git
+    从临时目录里的上游仓库取数据。但 Windows + MSYS 环境下，
+    `git clone <本地路径>` 会 fork `sh.exe`，而受限沙箱禁止它创建命名管道：
+
+    ```
+    sh.exe: *** fatal error - NtCreateDirectoryObject(
+        \\BaseNamedObjects\\msys-2.0S5-...): 0xC0000022
+    fatal: Could not read from remote repository.
+    ```
+
+    实测（2026-11-24）：`test_checkout_market` 里 3 个用例因此失败，
+    而**另外 8 个**（不碰 git 远端：pin 校验、env 传递、workflow 断言）完全正常。
+    此前整个文件挂 `requires_network` ⇒ 8 个不需要网络的用例也被跳过，
+    而且理由写错了（说是网络问题，实际是本地 fork 受限）。
+    """
+    if "local_git" in _cache:
+        return _cache["local_git"]
+    ok = False
+    try:
+        with tempfile.TemporaryDirectory() as raw:
+            base = Path(raw)
+            upstream = base / "upstream"
+            upstream.mkdir()
+            env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+            def run(*args: str, cwd: Path) -> bool:
+                return subprocess.run(
+                    ["git", *args],
+                    cwd=str(cwd),
+                    env=env,
+                    capture_output=True,
+                    timeout=60,
+                ).returncode == 0
+
+            if run("init", "--quiet", "--initial-branch=main", cwd=upstream):
+                (upstream / "probe.txt").write_bytes(b"probe\n")
+                run("config", "core.autocrlf", "false", cwd=upstream)
+                run("add", "probe.txt", cwd=upstream)
+                run("-c", "user.name=probe", "-c", "user.email=p@e.invalid",
+                    "commit", "--quiet", "-m", "probe", cwd=upstream)
+                ok = run("clone", "--quiet", str(upstream), str(base / "clone"), cwd=base)
+    except Exception:  # noqa: BLE001 - 判定失败按不可用处理
+        ok = False
+    _cache["local_git"] = ok
+    return ok
+
+
+#: 需要对**本地** git 仓库做 clone/fetch（不触网，但受限沙箱会禁掉 MSYS 的 fork）。
+requires_local_git_remote = pytest.mark.skipif(
+    not local_git_remote_available(),
+    reason=(
+        "本地 git clone/fetch 不可用（受限沙箱禁止 MSYS 创建命名管道）；"
+        "该用例验证的是 checkout_market 与 git 远端的交互，不涉及外网。"
+    ),
 )
 
 #: 需要可用的 Qt 字体（像素级快照测试的前提）。

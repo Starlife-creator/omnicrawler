@@ -26,9 +26,19 @@ from omnicrawler.commands import self_update as cmd_self_update
 from omnicrawler.core.safe_action import ConfirmationRequiredError
 from omnicrawler.services import update_feed as uf
 from omnicrawler.services import updater as up
-from tests.unit.env_markers import requires_network
 
-pytestmark = requires_network  # 本文件所有测试都需要真实外网
+# ★ 2026-11-24：**不要再挂 `requires_network`**。
+#
+# 此前这个文件整体标记「需要真实外网」，于是本机（外网不可用）**45 个用例全被跳过**。
+# 实测去掉标记后 45 个全过 —— 它们根本不触网：
+#
+#   * 取数路径都走 tmp_path 下的**本地 feed 目录**；
+#   * 唯一的 URL 字符串（`https://mirror.example.com/omnicrawler`）只用于断言 `_resolve`
+#     的配置解析结果，不发起请求；
+#   * 网络失败路径用 `monkeypatch.setattr(cmd_self_update, "_fetch", ...)` 模拟。
+#
+# 全局挂一个过宽的标记，代价是**整批测试长期不被执行** —— 而它们恰好覆盖了
+# 验签、增量落地、平台/版本选择这些最该守的逻辑。
 
 
 def _keypair() -> tuple[ed25519.Ed25519PrivateKey, bytes]:

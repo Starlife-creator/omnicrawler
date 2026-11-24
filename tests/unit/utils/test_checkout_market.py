@@ -8,12 +8,18 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.unit.env_markers import requires_network
+from tests.unit.env_markers import requires_local_git_remote
 from tools import checkout_market
 from tools.child_env import utf8_env
 
-# 本文件所有测试都要真的访问 git 远端（本机 DNS 被劫持时无从验证）
-pytestmark = requires_network
+# ★ 2026-11-24：原先是 `requires_network`，理由写的是「要真的访问 git 远端」——
+# **不准确**：这些用例的远端是 `tmp_path` 下的本地仓库，根本不触网。
+# 真实限制在别处：Windows + MSYS 下 `git clone <本地路径>` 会 fork `sh.exe`，
+# 受限沙箱禁止它创建命名管道 ⇒ clone 失败（exit 128）。
+#
+# 换用 `requires_local_git_remote` 后语义准确了；但要**逐用例挂**而不是整文件挂 ——
+# 11 个用例里有 8 个根本不碰 git 远端（pin 校验、env 传递、workflow 断言），
+# 整文件挂标记会把它们一起跳过。
 
 
 def git(repo: Path, *args: str) -> str:
@@ -44,6 +50,7 @@ def upstream(tmp_path, monkeypatch):
     return repo, hashes
 
 
+@requires_local_git_remote
 def test_pinned_checkout_keeps_exact_revision_and_lf_bytes(upstream, tmp_path, monkeypatch):
     repo, hashes = upstream
     global_config = tmp_path / "gitconfig"
@@ -60,6 +67,7 @@ def test_pinned_checkout_keeps_exact_revision_and_lf_bytes(upstream, tmp_path, m
     assert detached.returncode == 1
 
 
+@requires_local_git_remote
 def test_latest_is_explicit_and_report_records_actual_sha(upstream, tmp_path, monkeypatch):
     repo, hashes = upstream
     report = tmp_path / "report.json"
@@ -85,6 +93,7 @@ def test_unavailable_pin_fails_instead_of_using_main(upstream, tmp_path):
     assert not (destination / "signed.txt").exists()
 
 
+@requires_local_git_remote
 def test_existing_checkout_is_never_changed(upstream, tmp_path):
     repo, hashes = upstream
     destination = tmp_path / "existing"
