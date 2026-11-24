@@ -94,13 +94,35 @@ class SecretsStoreError(RuntimeError):
     """secrets 存储不可用（keyring 与密码派生均不可用、文件损坏等）。"""
 
 
+#: PBKDF2 派生结果按 ``(password, salt)`` 记忆化。
+#:
+#: 为什么必须有这一层：``PBKDF2_ITERATIONS = 600_000`` 在本机实测**单次 74ms**，
+#: 而 ``encrypt`` / ``decrypt`` 每次都要取主密钥。``CookieSession.save()`` 每次落盘
+#: 都要构造 ``SecretsStore`` 并加密一次 —— 于是「存一次 cookie」的代价是 74ms。
+#: 实测（2026-11-24）：6 线程 × 20 次保存 = 120 次派生 = **8.8 秒**，占该用例
+#: 全部耗时的 95%。派生结果对同一 (password, salt) 恒定，缓存不改变任何语义。
+#:
+#: 缓存按密码字符串本身分键（而不是只按 salt）：改了 ``OMNICRAWL_MASTER_PASSWORD``
+#: 就自然换一条缓存，不会用旧密钥去解新文件。
+_DERIVED_KEY_CACHE: dict[tuple[str, bytes], bytes] = {}
+_DERIVED_KEY_LOCK = threading.Lock()
+
+
 def _derived_key(password: str, salt: bytes = DERIVE_SALT) -> bytes:
+    cache_key = (password, bytes(salt))
+    cached = _DERIVED_KEY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     _ensure_crypto()
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(), length=KEY_LENGTH, salt=salt, iterations=PBKDF2_ITERATIONS
     )
     # 同上：`cryptography` 可选 ⇒ 类型层面是 Any，用 `bytes(...)` 收窄（严格档不再靠 ignore）
-    return bytes(kdf.derive(password.encode("utf-8")))
+    key = bytes(kdf.derive(password.encode("utf-8")))
+    with _DERIVED_KEY_LOCK:
+        # 并发首取时可能重复派生一次（代价 74ms），但不会写出不一致的值。
+        _DERIVED_KEY_CACHE.setdefault(cache_key, key)
+        return _DERIVED_KEY_CACHE[cache_key]
 
 
 class SecretsStore:

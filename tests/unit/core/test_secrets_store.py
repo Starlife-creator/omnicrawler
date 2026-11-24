@@ -165,3 +165,50 @@ def test_v2_file_uses_random_salt(tmp_path: Path) -> None:
     store.set("other", "v2")
     raw2 = (tmp_path / "secrets.bin").read_bytes()
     assert raw1 != raw2  # 盐+nonce 随机
+
+
+def test_key_derivation_is_memoised_but_never_reuses_a_stale_password(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """派生结果可以缓存，但**换密码必须换密钥**。
+
+    背景（2026-11-24 实测）：`PBKDF2_ITERATIONS = 600_000` 单次 74ms，而
+    `encrypt` / `decrypt` 每次都取主密钥 —— `CookieSession.save()` 因此每次落盘
+    多付 74ms，一条并发用例跑了 8.8 秒纯派生。缓存是必要的；但缓存键必须
+    包含密码本身，否则改 `OMNICRAWL_MASTER_PASSWORD` 之后会拿旧密钥去解新文件。
+    """
+    from omnicrawler.core import secrets_store as module
+
+    module._DERIVED_KEY_CACHE.clear()
+    first = module._derived_key("pw-one")
+    second = module._derived_key("pw-one")
+    assert first == second, "同一密码同一盐必须得到同一密钥"
+    assert len(module._DERIVED_KEY_CACHE) == 1, "第二次不应再派生（缓存命中）"
+
+    other = module._derived_key("pw-two")
+    assert other != first, "换密码必须换密钥 —— 否则旧密钥会去解新文件"
+    assert len(module._DERIVED_KEY_CACHE) == 2
+
+    # 不同盐同样必须分键（v2 文件头是随机盐）
+    salted = module._derived_key("pw-one", salt=b"another-salt-16b")
+    assert salted != first
+    assert len(module._DERIVED_KEY_CACHE) == 3
+
+
+def test_encrypt_is_fast_after_the_first_derivation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """重复加密不得反复付 PBKDF2 的代价（这是实测 8.8 秒的来源）。"""
+    import time
+
+    from omnicrawler.core import secrets_store as module
+
+    module._DERIVED_KEY_CACHE.clear()
+    monkeypatch.setenv(module.ENV_PASSWORD, "speed-check-password")
+    monkeypatch.setenv("OMNICRAWL_KEYRING_DISABLE", "1")
+    store = module.SecretsStore()
+
+    store.encrypt(b"warm")  # 首次含一次派生
+    started = time.perf_counter()
+    for _ in range(20):
+        store.encrypt(b"payload")
+    elapsed = time.perf_counter() - started
+    assert elapsed < 1.0, f"20 次加密耗时 {elapsed:.2f}s，派生缓存未生效"
