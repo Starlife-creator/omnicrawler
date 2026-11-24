@@ -82,15 +82,19 @@ def test_import_disabled_until_compatible_preview(panel) -> None:
 
 
 def test_uninstall_requires_selection(panel) -> None:
-    """有注册表但没选中行时，卸载按钮仍应禁用。"""
+    """有注册表但没选中行时，卸载按钮仍应禁用。
+
+    合并列表后不再有独立的「已安装列表」，改查唯一的组件列表：
+    已装条目会渲染成 "✓ [已安装] ocr-demo 1.0.0"，且**未选中**时卸载应禁用。
+    """
     panel._apply("list", {
         "registry_sha256": "c" * 64,
         "components": [{"name": "ocr-demo", "version": "1.0.0"}],
     })
-    assert panel._list.count() == 1
+    assert panel._market_list.count() == 1
     assert panel._uninstall_btn.isEnabled() is False, "未选中行却允许卸载"
 
-    panel._list.setCurrentRow(0)
+    panel._market_list.setCurrentRow(0)
     assert panel._uninstall_btn.isEnabled() is True
 
 
@@ -107,9 +111,13 @@ def test_rollback_only_after_uninstall_in_session(panel) -> None:
 
 
 def test_no_fake_download_list_when_nothing_installed(panel) -> None:
-    """未安装任何组件时：列表为空 + 提示语，不画空的可下载列表。"""
+    """未安装任何组件、也没有市场条目时：列表为空 + 提示语。
+
+    合并后列表同时承载「市场条目」与「本地已装」，所以空列表的判据是
+    「两者都没有」——本用例的 panel 没有 catalog，故只有本地已装这一路。
+    """
     panel._apply("list", {"registry_sha256": "e" * 64, "components": []})
-    assert panel._list.count() == 0
+    assert panel._market_list.count() == 0
     text = panel._status.text()
     assert "尚未安装" in text or "未安装" in text, f"提示语不可读：{text!r}"
 

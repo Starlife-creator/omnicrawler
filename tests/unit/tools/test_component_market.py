@@ -166,15 +166,25 @@ def test_panel_shows_market_section_only_with_catalog() -> None:
 
     from omnicrawler.gui.views.component_manager import ComponentManagerPanel
 
+    # ★ 2026-11-24（用户第二轮反馈）：不再单列「已安装组件」，改成**一份**列表。
+    # 所以「有没有 catalog」不再决定**列表是否存在**，而是决定：
+    #
+    #   * 有 catalog ⇒ 列表里有市场条目（可搜索、可安装）；
+    #   * 无 catalog ⇒ 列表仍在（用来承载本地已装/离线导入的条目，仍可卸载），
+    #     只是没有市场内容，也不画搜索框。
     without = ComponentManagerPanel(None)
     try:
-        assert without._market_list is None, "无 catalog 时不该画空的市场列表"
+        assert without._market_list is not None, "列表应始终存在（承载本地已装条目）"
+        assert without._market_search is None, "无 catalog 时不该有市场搜索框"
+        assert without._market_install is None, "无 catalog 时不该有市场安装按钮"
     finally:
         without.deleteLater()
 
     with_catalog = ComponentManagerPanel(None, catalog_url="https://example.invalid/")
     try:
         assert with_catalog._market_list is not None, "有 catalog 时应显示市场区"
+        assert with_catalog._market_search is not None, "有 catalog 时应有搜索框"
+        assert with_catalog._market_install is not None, "有 catalog 时应有安装按钮"
     finally:
         with_catalog.deleteLater()
 
