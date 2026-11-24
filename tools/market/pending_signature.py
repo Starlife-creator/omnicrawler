@@ -306,7 +306,19 @@ def main(argv: list[str] | None = None) -> int:
         return print_plan(market)
     if args.check:
         ready, total = check_all(market, run_e2e=args.e2e, max_mb=args.max_mb)
-        return 0 if total and ready == total else 1
+        if total == 0:
+            # 空集不是失败，但也不能静默算通过：说清楚为什么是 0。
+            # 此前 `total and ready == total` 让「没有待签条目」恒定返回 1，
+            # 于是待签清空之后这个工具永远报错 —— 判据把「做完了」当成「做坏了」。
+            print(
+                f"{OK_MARK} 没有待签条目（pending-signature/ 为空）—— "
+                "这不是失败：全部条目都已入库并签名",
+            )
+        elif ready == total:
+            print(f"{OK_MARK} 结论：{ready} / {total} 就绪")
+        else:
+            print(f"{BAD_MARK} 结论：{ready} / {total} 就绪")
+        return 0 if ready == total else 1
 
     parser.print_help()
     return 2
