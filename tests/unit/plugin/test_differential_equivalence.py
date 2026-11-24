@@ -40,7 +40,11 @@ def state(tmp_path: Path) -> StateStore:
     ]
     store.save_records(run_id, request, records)
     store._diff_run_id = run_id  # 供测试读取真实 run_id
-    return store
+    try:
+        yield store
+    finally:
+        # 关连接：否则 `-W error::ResourceWarning` 会报「unclosed database」。
+        store.close()
 
 
 @pytest.fixture()

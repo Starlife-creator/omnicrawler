@@ -30,7 +30,12 @@ def store(tmp_path: Path) -> StateStore:
             },
         )
     state._diff_run_id = run_id
-    return state
+    try:
+        yield state
+    finally:
+        # 关连接：否则 `-W error::ResourceWarning` 会抓到「unclosed database」
+        # （sqlite3.Connection 在 GC 时才暴露，定位成本很高）。
+        state.close()
 
 
 def test_export_writes_jsonl_with_whitelisted_fields(store: StateStore, tmp_path: Path) -> None:
@@ -49,11 +54,11 @@ def test_export_writes_jsonl_with_whitelisted_fields(store: StateStore, tmp_path
 
 def test_export_empty_when_no_cooccurrence(tmp_path: Path) -> None:
     # 全新 store，仅写入无关审计事件 → 共现导出为空
-    fresh = StateStore(tmp_path / "empty_state.sqlite3")
-    run_id = fresh.start_run("egress-empty", "<test>")
-    fresh.add_audit_event("plugin.subprocess.call", run_id=run_id, actor="system")
     out = tmp_path / "empty.jsonl"
-    count = export_egress_cooccurrence(fresh, out)
+    with StateStore(tmp_path / "empty_state.sqlite3") as fresh:
+        run_id = fresh.start_run("egress-empty", "<test>")
+        fresh.add_audit_event("plugin.subprocess.call", run_id=run_id, actor="system")
+        count = export_egress_cooccurrence(fresh, out)
     assert count == 0
     assert out.read_text(encoding="utf-8").strip() == ""
 
