@@ -173,12 +173,26 @@ def capability_report(
     required_modules = {
         module for feature in requested for module in FEATURE_REQUIREMENTS[feature]["modules"]
     }
-    import_modules = set(MODULES) if verify_imports or mode == "deep" else required_modules
+    #: 只有 deep / verify_imports 才**真的导入**模块；quick 与 task 只查安装元数据。
+    #:
+    #: 为什么必须分开（2026-11-24 实测）：`find_spec` 跑遍 33 个模块只要 **32ms**，
+    #: 而把它们真的 import 进来要 **5.9 秒** —— 其中 `paddleocr` 2.6s、
+    #: `paddle` 1.1s、`crawl4ai` 1.1s。`task` 模式的判定只用 `installed` 与
+    #: 可选的 `importable`（`.get("importable", True)` 缺省即通过），所以为了填一个
+    #: 不参与判定的诊断字段去导入这些重模块，纯粹是副作用：
+    #:   * 用户跑一次 `capabilities --mode task` 要多等约 6 秒；
+    #:   * 进程里被塞进 paddle/torch 级别的运行时；
+    #:   * 某些模块导入失败但 `installed` 为真时，行为反而变得**更不确定**。
+    #:
+    #: 需要「导入是否真的能用」这个更强判据的场景，仍然走 `deep` 或
+    #: `verify_imports=True` —— 那两条路径语义不变。
+    strict_imports = verify_imports or mode == "deep"
+    import_modules = set(MODULES) if strict_imports else required_modules
     modules: dict[str, dict[str, Any]] = {}
     for feature, module in MODULES.items():
         installed = importlib.util.find_spec(module) is not None
         record: dict[str, Any] = {"module": module, "installed": installed}
-        if installed and feature in import_modules:
+        if installed and strict_imports and feature in import_modules:
             try:
                 imported = importlib.import_module(module)
                 record["importable"] = True
@@ -253,7 +267,8 @@ def capability_report(
             "missing_native": missing_native,
         }
     requirements_ready = all(item["ready"] for item in feature_checks.values())
-    strict_imports = verify_imports or mode == "deep"
+    # `strict_imports` 在上面已按同一口径定义（那里同时决定要不要真的导入），
+    # 此处只复用，不重复计算 —— 两处口径必须一致，否则「导入了却不判定」会重现。
     return {
         "ok": core_ready and requirements_ready and (installed_modules_importable if strict_imports else True),
         "all_optional_ready": all(

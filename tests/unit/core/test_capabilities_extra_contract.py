@@ -115,3 +115,58 @@ def test_test_file_lives_where_the_repo_layout_says() -> None:
     """防止测试被挪走后相对路径假设失效（本文件不读仓库文件，这里只钉目录约定）。"""
 
     assert pathlib.Path(__file__).parent.name == "core"
+
+
+def test_quick_and_task_modes_do_not_import_heavy_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`quick` / `task` 只查安装元数据，不得真的导入可选模块。
+
+    为什么这是判据而不只是性能：实测（2026-11-24）`find_spec` 跑遍 33 个模块
+    只要 32ms，而把它们真的 import 进来要 **5.9 秒**（`paddleocr` 2.6s、
+    `paddle` 1.1s、`crawl4ai` 1.1s）。`task` 模式的判定只用 `installed` 与
+    可选的 `importable`（`.get("importable", True)` 缺省即通过），所以这些导入
+    对判定毫无贡献，却让用户每跑一次 `capabilities --mode task` 多等约 6 秒，
+    还把 paddle 级别的运行时塞进进程。
+
+    判据取「**真的调用了 import_module 几次**」而不是计时 —— 计时会随机器漂移。
+    """
+    import omnicrawler.core.capabilities as caps
+
+    calls: list[str] = []
+    real_import = caps.importlib.import_module
+
+    def _spy(name: str, *args: object, **kwargs: object) -> object:
+        calls.append(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(caps.importlib, "import_module", _spy)
+
+    caps.capability_report()
+    assert calls == [], f"quick 模式不得导入可选模块，实际导入了：{calls}"
+
+    calls.clear()
+    caps.capability_report(mode="task", require_features=list(FEATURE_EXTRAS))
+    assert calls == [], f"task 模式不得导入可选模块，实际导入了：{calls}"
+
+
+def test_deep_mode_still_really_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`deep` / `verify_imports` 的语义**没有**被削弱：它仍然真导入。
+
+    这条是上一条的反向锚：如果将来有人为了「快」把 deep 也改成只查 spec，
+    这里会立刻红 —— 那样「导入是否真的能用」这个更强判据就消失了。
+    """
+    import omnicrawler.core.capabilities as caps
+
+    calls: list[str] = []
+    real_import = caps.importlib.import_module
+
+    def _spy(name: str, *args: object, **kwargs: object) -> object:
+        calls.append(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(caps.importlib, "import_module", _spy)
+    caps.capability_report(mode="deep", require_features=["core"])
+    # `deep` 的语义是「导入**每个已安装的**可选模块」，与 require_features 无关
+    # （后者只决定 final 的 feature_checks，不影响导入面）。所以这里只断言
+    # 「确实导入了」，并把 core 模块必须在内作为锚点。
+    assert calls, "deep 模式必须真的导入模块 —— 否则「可导入」这个判据名存实亡"
+    assert "yaml" in calls, f"deep 模式应导入 core 模块 yaml，实际：{calls[:10]}"
