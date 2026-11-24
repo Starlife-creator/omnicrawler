@@ -75,7 +75,17 @@ def configure_logging(level: str, log_format: str = "text", *, file_logging: boo
     stderr_handler.setFormatter(JsonFormatter() if log_format == "json" else _text_formatter())
 
     root = logging.getLogger()
-    root.handlers.clear()
+    # ★ 先 `close()` 再移除。`handlers.clear()` **只丢引用、不关文件**：
+    # `RotatingFileHandler` 在构造时就打开了文件，于是每次重新配置日志都泄漏一个
+    # 句柄（实测 2026-11-24：连续 configure 三次后，前两次的 stream 仍 `closed=False`）。
+    # 桌面端每切一次日志级别 / 改一次配置就会调到这里；Windows 上被占用的日志文件
+    # 还会挡住轮转与删除。
+    for _handler in list(root.handlers):
+        root.removeHandler(_handler)
+        try:
+            _handler.close()
+        except Exception:  # noqa: BLE001 - 关闭一个 handler 失败不该阻断重新配置
+            pass
     root.addHandler(stderr_handler)
     root.setLevel(effective)
 

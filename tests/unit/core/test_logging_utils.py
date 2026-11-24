@@ -15,7 +15,12 @@ def clean_root() -> None:
     root = logging.getLogger()
     before = list(root.handlers)
     yield
-    root.handlers.clear()
+    # ★ 用例期间新加的 handler 必须**关闭**再移除：`RotatingFileHandler` 构造时就
+    # 打开了文件，只 `clear()` 会留下未关闭的句柄（`-W error::ResourceWarning`
+    # 下判红）。生产侧的同类问题已在 `configure_logging` 修掉，测试侧同样要付。
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+        handler.close()
     for handler in before:
         root.addHandler(handler)
 
