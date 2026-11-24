@@ -71,3 +71,60 @@ def test_s222_scan_reports_all_findings() -> None:
     report = scan_config_text(text)
     assert report["ok"] is False
     assert len(report["findings"]) == 2
+
+
+# ── 导出前扫描的两处真实缺陷（2026-11-24）──────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 键名可疑（api_key/password/token）但值已密封 ⇒ 不得判红
+        "ai: {providers: {openai: {api_key: 'secret://ai.openai.api_key'}}}",
+        "proxy: {list: 'secret://settings.proxy_list'}",
+        "password: secret://p.q",
+        "webhook: {token: 'secret://x.y'}",
+    ],
+)
+def test_sealed_references_are_never_reported_as_plaintext(text: str) -> None:
+    """已密封的 `secret://` 引用必须放行。
+
+    实测缺陷：遮蔽前，`secret://settings.proxy_list` 里的 `secret` 被**当成键名**
+    （键名正则没加词边界），于是正确密封的配置被判成「明文凭据」、拒绝导出 ——
+    安全措施反而挡住了正确做法。
+    """
+    report = scan_config_text(text)
+    assert report["ok"] is True, f"{text!r} 被误判：{report['findings']}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 代理把凭据放在**值**里，键名（list/enabled）毫无可疑之处
+        "proxy: {list: 'http://user:pass@proxy:8080'}",
+        "proxy: {list: 'user:pass@proxy:8080'}",
+        "proxy: {list: 'socks5://u:p@h:1080'}",
+    ],
+)
+def test_proxy_credentials_inside_a_value_are_caught(text: str) -> None:
+    """代理地址里内嵌的 `user:pass@host` 必须被判出来。
+
+    实测缺陷：键名规则只看「字段名像不像凭据」，而 `list` / `enabled` 都不可疑
+    ⇒ 整条被放行，导出包会带着代理密码出门。含/不含 scheme 两种形态都漏。
+    """
+    report = scan_config_text(text)
+    assert report["ok"] is False, f"{text!r} 没被抓到"
+    assert any(item["key"] == "proxy_credentials" for item in report["findings"]), report["findings"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "proxy: {list: 'http://proxy1:8080'}",
+        "note: 'see http://host/path?a=b@c'",
+        "name: demo",
+    ],
+)
+def test_plain_proxies_and_at_signs_in_paths_are_not_flagged(text: str) -> None:
+    """无凭据的代理、以及出现在路径里的 `@` 都不该判红。"""
+    assert scan_config_text(text)["ok"] is True, text
