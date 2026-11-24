@@ -75,10 +75,12 @@ def _pinned(constraints: Path) -> dict[str, str]:
 def _installed_version(tool: str) -> str:
     """本机装的版本；没装返回空串。"""
     try:
+        from tools.child_env import utf8_env
+
         completed = subprocess.run(
             [sys.executable, "-m", "pip", "show", tool],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            check=False, timeout=60,
+            check=False, timeout=60, env=utf8_env(),
         )
     except (OSError, subprocess.SubprocessError):
         return ""
