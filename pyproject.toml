@@ -207,7 +207,10 @@ python_version = "3.13"
 platform = "linux"
 ignore_missing_imports = true
 check_untyped_defs = true
-exclude = "^src/omnicrawler/apps/"
+# 排除项除 apps/ 外还必须挡住**编译期残留目录**：原生 shim 的构建目录曾被
+# 漏进 src/omnicrawler/plugins/（权限受限 ⇒ mypy 扫描时 PermissionError 直接崩，
+# 整条 static 门禁报「mypy 失败」而真实原因与类型无关）。
+exclude = ["^src/omnicrawler/apps/", "^src/omnicrawler/plugins/omnicrawler-landlock-"]
 disable_error_code = ["import-untyped"]
 
 # Gradual GUI mypy inclusion — 已完成（2026-09-11）。

@@ -24,6 +24,21 @@
 
 这是极强的判据且**零误报**：测试本来就不该污染仓库。
 
+## 为什么除了 `git status` 还要扫被忽略的残留
+
+只看 `git status` 会漏掉最关键的一类：**测试往仓库里写了东西，而 `.gitignore`
+恰好把那个形态忽略了**。实测（2026-11-24）仓库里已经躺着 65 个
+`src/omnicrawler/plugins/omnicrawler-landlock-*/` 与 37 个根目录 `tmp*/` 空目录，
+`git status` 一个都没报 —— 因为 `.gitignore` 为它们各写了一条规则。
+
+忽略规则的用意是「不入库」，不是「可以被生产代码不断制造」。所以本守卫另扫两条
+**被忽略的产物形态**（`--ignored=matching` 只列命中的那个目录、不递归，开销可忽略）：
+
+| 形态 | 由谁产生 | 为什么算污染 |
+|---|---|---|
+| `src/omnicrawler/plugins/omnicrawler-landlock-*` | `plugin_unix_enforcement` 编译原生 shim | 落在源码树里，且 `mypy` 扫 `src/` 时会 `PermissionError` 直接崩 |
+| 仓库根 `tmp*` | `tempfile.mkdtemp()` 在临时根不可用时回退到 `cwd` | 同属「跑一次就多一个」，且曾被误提交过 `evil.exe` |
+
 ## 为什么放在 tests/ 下而不是 gates/
 
 它需要跑测试才能判定，属于测试基础设施；放进 `--set static` 会让门禁
@@ -66,6 +81,68 @@ from tools.child_env import utf8_env  # noqa: E402
 #: `.pytest_cache` / `.ruff_cache` 是工具缓存，与测试正确性无关。
 #: `artifacts/` 与 `coverage.json` 是 CI 的构建产物（`.gitignore` 已忽略），
 #: 它们由工作流显式生成，不属于「测试偷偷写文件」。
+#: 被忽略但**仍在仓库里**的残留形态：`(前缀, 说明)`。
+#:
+#: 这些路径不会被 `git status` 报出来（被 `.gitignore` 忽略），但它们是「跑一次就多一个」
+#: 的产物，且落在源码树 / 仓库根。判据是「一个都不许有」—— 容忍它们等于容忍下一次累积。
+_IGNORED_LEAK_SHAPES: tuple[tuple[str, str], ...] = (
+    (
+        "src/omnicrawler/plugins/omnicrawler-landlock-",
+        "原生 Landlock shim 的编译目录落在源码树里（plugin_unix_enforcement）",
+    ),
+    (
+        "tmp",
+        "仓库根的 ad-hoc 临时目录（mkdtemp 在临时根不可用时回退到 cwd）",
+    ),
+)
+
+
+def _git_ignored_entries() -> list[str]:
+    """列出被 `.gitignore` 忽略的条目（不递归）。
+
+    `--ignored=matching` 只报「被哪条规则直接命中的那个目录」，而不是像
+    `traditional` 那样递归列出其下每个被忽略的条目 —— 后者在本仓会输出上千行。
+    """
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all", "--ignored=matching"],
+        cwd=_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=utf8_env(),
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    entries: list[str] = []
+    for line in result.stdout.splitlines():
+        if not line.startswith("!! "):
+            continue
+        path = line[3:].strip().strip("\"")
+        if path:
+            entries.append(path.replace(chr(92), "/").rstrip("/"))
+    return entries
+
+
+def ignored_leaks() -> list[str]:
+    """返回仓库里被忽略、但属于「跑一次就多一个」的残留路径。
+
+    判据是**形态匹配**而不是已见名字的白名单：新的 `tmpXXX/` 与
+    `omnicrawler-landlock-xxxx/` 都要被抓到，不能只认见过的那些。
+    """
+    found: set[str] = set()
+    for path in _git_ignored_entries():
+        head, _, _rest = path.partition("/")
+        for prefix, _why in _IGNORED_LEAK_SHAPES:
+            if prefix.startswith("src/"):
+                if path.startswith(prefix):
+                    found.add(path)
+            elif head.startswith(prefix):
+                found.add(path)
+    return sorted(found)
+
+
 _ALLOWED_PREFIXES = (
     ".pytest_cache",
     ".ruff_cache",
@@ -149,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.baseline:
-        current = filter_allowed(dirty_paths(_git_status()))
+        current = filter_allowed(dirty_paths(_git_status())) + ignored_leaks()
         Path(args.baseline).write_text(
             "\n".join(sorted(current)) + "\n", encoding="utf-8"
         )
@@ -163,6 +240,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     paths = filter_allowed(dirty_paths(_git_status()))
+    # 被 .gitignore 忽略的残留**也要判红**：忽略规则管的是「不入库」，
+    # 不是「可以被生产代码不断制造」—— 只看 git status 时它们完全不可见。
+    leaks = ignored_leaks()
 
     # 基线比对：本地开发时工作区本来就有未提交改动（我自己的编辑），
     # 那些不是「测试污染」。CI 上工作区是干净的，不需要基线。
@@ -177,14 +257,27 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{BAD_MARK} 读不到基线 {args.diff_baseline}：{exc}")
             return 2
         paths = [p for p in paths if p not in known]
+        leaks = [p for p in leaks if p not in known]
 
-    if not paths:
-        print(f"{OK_MARK} 工作区干净：测试没有往仓库里写文件")
+    if not paths and not leaks:
+        print(f"{OK_MARK} 工作区干净：测试没有往仓库里写文件，也没有被忽略的残留")
         return 0
 
-    print(f"{BAD_MARK} 工作区有 {len(paths)} 处改动/新增：")
-    for path in paths:
-        print(f"  - {path}")
+    if leaks:
+        print(f"{BAD_MARK} 仓库里有 {len(leaks)} 处被忽略的残留（git status 看不见）：")
+        for path in leaks:
+            print(f"  - {path}")
+        print(
+            "\n这些目录通常是「跑一次就多一个」，且被 .gitignore 覆盖，所以常规检查全看不见。\n"
+            "  * `omnicrawler-landlock-*` ⇒ 原生 Landlock shim 的编译目录落进了源码树\n"
+            "  * 仓库根 `tmp*` ⇒ tempfile.mkdtemp 在临时根不可用时回退到了 cwd\n"
+            "清理后仍需确保产生它们的代码不再复发，否则下次照旧累积。"
+        )
+
+    if paths:
+        print(f"{BAD_MARK} 工作区有 {len(paths)} 处改动/新增：")
+        for path in paths:
+            print(f"  - {path}")
     print(
         "\n测试不得往仓库里写文件。常见原因：\n"
         "  * 测试配置写 `workspace: work`（相对路径）⇒ 落到项目根，"

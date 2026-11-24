@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -232,6 +233,49 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="requires Linux Landlock ABI")
+def test_native_helper_refuses_to_compile_inside_source_tree(monkeypatch: pytest.MonkeyPatch) -> None:
+    """编译目录绝不允许落在源码树里。
+
+    实测事故（2026-11-24）：临时根不可写时，``mkdtemp`` 会静默回退到 ``cwd``。
+    从源码树启动的插件宿主因此把 shim 编译进了 ``src/omnicrawler/plugins/`` 里，
+    累积出 65 个空目录 —— 它们被 .gitignore 覆盖，``git status`` 一个都看不见，
+    而 mypy 扫 ``src/`` 时会 ``PermissionError`` 直接崩。
+    """
+    package_dir = Path(enforcement.__file__).resolve().parent
+    leaked = package_dir / "omnicrawler-landlock-selftest"
+    monkeypatch.setattr(enforcement.tempfile, "mkdtemp", lambda **kwargs: str(leaked))
+    monkeypatch.setattr(enforcement, "_native_module", None, raising=False)
+    monkeypatch.delenv("OMNICRAWL_LANDLOCK_HELPER", raising=False)
+    removed: list[Path] = []
+    monkeypatch.setattr(
+        enforcement.shutil,
+        "rmtree",
+        lambda path, **kwargs: removed.append(Path(path)),
+    )
+
+    with pytest.raises(RuntimeError, match="inside the source tree"):
+        enforcement._native_helper()
+    assert removed == [leaked], "拒绝之后必须把已建出的目录删掉，不能只报错"
+
+
+def test_native_helper_wipes_build_dir_when_compilation_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """编译失败不许留下孤儿目录 —— 这正是 65 个空目录的成因。"""
+    build_dir = tmp_path / "omnicrawler-landlock-build"
+    build_dir.mkdir()
+    monkeypatch.setattr(enforcement, "_helper_build_dir", lambda: build_dir)
+    monkeypatch.setattr(enforcement, "_native_module", None, raising=False)
+    monkeypatch.delenv("OMNICRAWL_LANDLOCK_HELPER", raising=False)
+    monkeypatch.setattr(
+        enforcement.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, "", "compiler unavailable"),
+    )
+
+    with pytest.raises(RuntimeError, match="native Landlock shim compilation failed"):
+        enforcement._native_helper()
+    assert not build_dir.exists(), "编译失败后构建目录必须被清掉"
+
+
 def test_landlock_abi_below_4_refuses_to_load() -> None:
     """Landlock network rules need ABI >= 4; older kernels must fail closed."""
     import ctypes

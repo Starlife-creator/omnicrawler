@@ -96,6 +96,50 @@ def test_local_user_name_in_comment_is_red(monkeypatch: pytest.MonkeyPatch, tmp_
     assert "local-user-name" in _rules(findings), [f.describe() for f in findings]
 
 
+def test_user_name_falls_back_to_environment_when_getpass_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`getpass` 解不出账户名时，环境变量是同一事实的第二个来源。
+
+    为什么必须补：这个门禁防的是「注释里出现本机账户名」，而受限沙箱里
+    `getpass.getuser()` 恰好解不出来。此前它直接判 `unknown-user` 红 ——
+    于是**越受限的环境越报「未知用户」**，真正该看的泄漏反而被淹没。
+    两者都拿不到时才 fail-closed（见下一个用例）。
+    """
+    monkeypatch.setattr(hygiene.getpass, "getuser", lambda: (_ for _ in ()).throw(KeyError("no pwd")))
+    monkeypatch.setenv("USERNAME", "someone-local")
+    monkeypatch.delenv("USER", raising=False)
+    monkeypatch.delenv("LOGNAME", raising=False)
+    assert hygiene._user_names() == ["someone-local"]
+
+
+def test_user_names_fail_closed_when_no_source_is_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """两个来源都拿不到时必须判红 —— 「不知道」不是跳过检查的借口。"""
+    monkeypatch.setattr(hygiene.getpass, "getuser", lambda: (_ for _ in ()).throw(KeyError("no pwd")))
+    for variable in ("USERNAME", "USER", "LOGNAME"):
+        monkeypatch.delenv(variable, raising=False)
+    assert hygiene._user_names() == []
+    _write(tmp_path, "# 注释无害\nbuild/\n")
+    monkeypatch.setattr(hygiene, "_check_tracked", lambda root: [])
+    findings = hygiene.check(tmp_path)
+    assert "unknown-user" in _rules(findings), [f.describe() for f in findings]
+
+
+def test_environment_name_is_used_for_the_leak_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """回退取值同样参与判红：否则「取到名字」只是摆设。"""
+    monkeypatch.setattr(hygiene.getpass, "getuser", lambda: (_ for _ in ()).throw(KeyError("no pwd")))
+    monkeypatch.setenv("USERNAME", "someone-local")
+    monkeypatch.delenv("USER", raising=False)
+    monkeypatch.delenv("LOGNAME", raising=False)
+    _write(tmp_path, "# pytest 兜底目录 pytest-of-someone-local/\npytest-of-*/\n")
+    findings = _check_with_tracking_ok(monkeypatch, tmp_path)
+    assert "local-user-name" in _rules(findings), [f.describe() for f in findings]
+
+
 def test_user_name_match_is_case_insensitive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     name = getpass.getuser()
     if not name:

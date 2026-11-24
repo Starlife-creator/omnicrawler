@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 import re
 import subprocess
 import sys
@@ -82,10 +83,17 @@ def _user_names() -> list[str]:
     names: set[str] = set()
     try:
         name = getpass.getuser().strip()
-    except Exception:  # noqa: BLE001 - any failure must fail closed, not crash
+    except Exception:  # noqa: BLE001 - any failure must fall through to the env sources
         name = ""
     if name:
         names.add(name)
+    # 受限沙箱里 `getpass` 解不出账户名（读不到令牌上下文），而它**恰恰是**
+    # 这个门禁要防的东西：此时若直接判红，门禁在越受限的环境里越报「未知用户」，
+    # 真正的泄漏反而没人看。环境变量是同一事实的第二个来源，两者都拿不到才 fail closed。
+    for variable in ("USERNAME", "USER", "LOGNAME"):
+        value = os.environ.get(variable, "").strip()
+        if value:
+            names.add(value)
     return sorted(names, key=len, reverse=True)
 
 
@@ -140,6 +148,7 @@ def _git(root: Path, *args: str) -> tuple[int, str]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
             check=False,
         )
     except OSError as exc:

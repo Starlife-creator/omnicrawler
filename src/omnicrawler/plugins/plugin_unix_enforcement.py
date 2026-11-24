@@ -37,6 +37,15 @@ _BPF_K = 0x00  # immediate constant in BPF_LD/JMP/RET, not the RET register clas
 _BPF_RET = 6
 
 
+def _utf8_env() -> dict[str, str]:
+    """Child environment forced to UTF-8; this module must stay standalone.
+
+    The shim compiler is an external program (cc), so its stderr is decoded
+    the same way everywhere instead of following the Windows console code page.
+    """
+    return {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
+
 def _syscall_number(name: str) -> int:
     machine = os.uname().machine
     if machine not in ("x86_64", "aarch64"):
@@ -213,8 +222,45 @@ PyMODINIT_FUNC PyInit_omnicrawler_landlock(void) { return PyModule_Create(&modul
 '''
 
 
+def _helper_build_dir() -> Path:
+    """Create the build directory for the native shim, never inside the source tree.
+
+    Why this exists: a bare ``tempfile.mkdtemp()`` falls back to ``cwd`` when no temp root is
+    usable. A plugin host started from the source tree therefore compiled in
+    ``src/omnicrawler/plugins/``, which is how 60+ empty ``omnicrawler-landlock-*`` directories
+    accumulated inside the repository. They are git-ignored, so ``git status`` never showed them.
+
+    The silent ``cwd`` fallback is checked rather than trusted: a sandbox whose temp
+    root is unwritable produces directories in the current directory without
+    raising, so "it worked" is not evidence that it worked *outside* the repo.
+    """
+    try:
+        created = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
+    except OSError as exc:
+        raise RuntimeError(
+            f"{E_UNSUPPORTED_ENV}: the native Landlock shim needs a writable temp "
+            f"directory to compile in, and none is available: {exc}"
+        ) from exc
+    directory = Path(created).resolve()
+    package_dir = Path(__file__).resolve().parent
+    if directory == package_dir or package_dir in directory.parents:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise RuntimeError(
+            f"{E_UNSUPPORTED_ENV}: refusing to compile the native Landlock shim inside "
+            f"the source tree ({directory}); point TEMP/TMPDIR at a writable directory "
+            f"outside the repository or set OMNICRAWL_LANDLOCK_HELPER to a prebuilt shim"
+        )
+    return directory
+
+
 def _native_helper():
-    """Build once before irreversible file confinement; ctypes is not ABI-safe here."""
+    """Build once before irreversible file confinement; ctypes is not ABI-safe here.
+
+    The compiled shim outlives this call (the module is cached for the process),
+    so its build directory is kept only for the duration of the build and wiped
+    on every failure. Leaving it behind was the leak: a failed compile left an
+    ownerless directory wherever the process happened to be running.
+    """
     cached = globals().get("_native_module")
     if cached is not None:
         return cached
@@ -225,21 +271,53 @@ def _native_helper():
         if not extension.is_file():
             raise RuntimeError(f"{E_UNSUPPORTED_ENV}: prebuilt native Landlock shim is unavailable")
     else:
-        directory = tempfile.mkdtemp(prefix="omnicrawler-landlock-")
-        source = Path(directory) / "landlock.c"
-        extension = Path(directory) / "omnicrawler_landlock.so"
-        source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
-        includes = sysconfig.get_paths()["include"]
-        command = [os.environ.get("CC", "cc"), "-shared", "-fPIC", str(source), "-I", includes, "-o", str(extension)]
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
-        if result.returncode:
-            raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim compilation failed: {result.stderr[-500:]}")
+        build_directory = _helper_build_dir()
+        try:
+            source = build_directory / "landlock.c"
+            extension = build_directory / "omnicrawler_landlock.so"
+            source.write_text(_NATIVE_LANDLOCK_SOURCE, encoding="utf-8")
+            includes = sysconfig.get_paths()["include"]
+            command = [
+                os.environ.get("CC", "cc"),
+                "-shared",
+                "-fPIC",
+                str(source),
+                "-I",
+                includes,
+                "-o",
+                str(extension),
+            ]
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=_utf8_env(),
+                check=False,
+            )
+            if result.returncode:
+                raise RuntimeError(
+                    f"{E_UNSUPPORTED_ENV}: native Landlock shim compilation failed: "
+                    f"{result.stderr[-500:]}"
+                )
+        except BaseException:
+            # No shim means no reason to keep the scratch directory behind;
+            # every failure path used to leave exactly such an orphan.
+            shutil.rmtree(build_directory, ignore_errors=True)
+            raise
     import importlib.util
     spec = importlib.util.spec_from_file_location("omnicrawler_landlock", extension)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"{E_UNSUPPORTED_ENV}: native Landlock shim cannot load")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    if build_directory is not None:
+        # The mapping stays valid after the file is unlinked, so the shim is
+        # released when the process that needed it exits.
+        import atexit
+
+        atexit.register(shutil.rmtree, build_directory, ignore_errors=True)
     globals()["_native_module"] = module
     return module
 

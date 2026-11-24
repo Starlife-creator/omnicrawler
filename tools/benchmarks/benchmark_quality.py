@@ -18,12 +18,14 @@ import argparse
 import json
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from omnicrawler.services.quality_benchmark import TASKS, run_task  # noqa: E402
+from tools.gate_registry import SKIP_EXIT_CODE  # noqa: E402
 
 _COLUMNS = (
     ("task", 24),
@@ -38,6 +40,41 @@ _COLUMNS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _WorkdirProbe:
+    """工作目录是否可建。``error`` 非空即「环境缺能力」，不是代码缺陷。"""
+
+    target: Path
+    error: str | None
+
+
+def _probe_workdir(workdir: str | None) -> _WorkdirProbe:
+    """第一次真正的失败发生在哪里，就在这里判定 —— 不做静态推断。
+
+    为什么值得单独一层：判据只有「任务是否满足交付契约」这一条时才可复核。
+    此前临时目录不可建会在任务中途抛 ``PermissionError``，与「抽取不准」
+    混成同一个红，读报告的人无从区分是环境坏了还是代码坏了。
+    """
+    if workdir:
+        target = Path(workdir)
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            probe = target / ".write-probe"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            return _WorkdirProbe(target, f"{type(exc).__name__}: {exc}")
+        return _WorkdirProbe(target, None)
+
+    temp_root = Path(tempfile.gettempdir())
+    try:
+        with tempfile.TemporaryDirectory(dir=temp_root):
+            pass
+    except OSError as exc:
+        return _WorkdirProbe(temp_root, f"{type(exc).__name__}: {exc}")
+    return _WorkdirProbe(temp_root, None)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="在本地固定任务上测量数据完整性与准确性")
     parser.add_argument("--task", action="append", help="只跑指定任务（可重复；默认全部）")
@@ -50,12 +87,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"没有匹配的任务；可用：{[task.name for task in TASKS]}", file=sys.stderr)
         return 2
 
+    # 先确认「能不能跑」，再打印任何东西：临时目录不可建时 stdout 不该留下半张表。
+    probe = _probe_workdir(args.workdir)
+    if probe.error is not None:
+        # 能力缺失 ⇒ 跳过码 + 末行原因，而不是把环境崩溃混成「代码判红」。
+        # 判红应当只留给「任务不满足交付契约」这一件事。
+        print(f"无法创建工作目录 {probe.target}：{probe.error}", file=sys.stderr)
+        print(
+            "跳过原因：临时目录不可写，质量基准需要可写的中间产物目录"
+            f"（尝试过 {probe.target}；用 --workdir 指定一个可写目录）",
+            file=sys.stderr,
+        )
+        return SKIP_EXIT_CODE
+
     header = "".join(name.ljust(width) for name, width in _COLUMNS)
     print(header)
     print("-" * len(header))
 
     scores = []
-    with tempfile.TemporaryDirectory() as temp:
+    with tempfile.TemporaryDirectory(dir=probe.target) as temp:
         base = Path(args.workdir) if args.workdir else Path(temp)
         for task in selected:
             score = run_task(task, workdir=base / task.name)

@@ -66,7 +66,6 @@ ALLOWED: dict[str, str] = {
     "tools/releasing/bump_version.py:265": "子进程是 git log；git 输出固定 UTF-8，源码注释亦已注明。",
     "tools/releasing/bump_version.py:289": "子进程是 git rev-parse；git 输出固定 UTF-8。",
     "tools/releasing/bump_version.py:296": "子进程是 git tag；git 输出固定 UTF-8。",
-    "tools/gates/check_gitignore_hygiene.py:136": "子进程是 git；输出固定 UTF-8。",
     "tools/gates/check_shell_scripts.py:126": "子进程是 Git bash；MSYS bash 的 err 输出按 UTF-8 写。",
     "tools/gates/check_shell_scripts.py:146": "子进程是 Git bash -n；同上。",
     "tools/gates/check_shell_scripts.py:168": "子进程是 Git bash -n；同上。",
