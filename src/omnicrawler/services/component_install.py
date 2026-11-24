@@ -38,6 +38,7 @@ CLI:  omnicrawler components install-recipe <recipe.json>
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -153,11 +154,25 @@ def estimate_installed_bytes(recipe: dict[str, Any], download_bytes: int) -> int
 
 
 def format_bytes(value: int) -> str:
-    """人类可读的字节数（MiB / GiB）。"""
+    """人类可读的字节数（MiB / GiB）。
+
+    **向下取整，不四舍五入** —— 与 `commands/self_update._human_bytes` 同一条纪律：
+    体积是用来判断「装不装得下 / 超没超限额」的读数，四舍五入会给出**乐观**答案。
+
+    实测（2026-11-24）修复前：
+
+    ```
+    1_048_575 bytes（1 MiB - 1）-> "1 MiB"    # 说大了
+    1_073_741_823 bytes（1 GiB - 1）-> "1024 MiB"  # 过不了单位切换，读数像另一个量级
+    ```
+
+    改为截断后：`1048575 -> "0 MiB"`（诚实：不到 1 MiB）；
+    `GiB - 1 -> "1023 MiB"`（仍在 MiB 档，且不虚报）。
+    """
     mib = 1024 * 1024
     if value >= 1024 * mib:
-        return f"{value / (1024 * mib):.1f} GiB"
-    return f"{value / mib:.0f} MiB"
+        return f"{math.floor(value / (1024 * mib) * 10) / 10:.1f} GiB"
+    return f"{int(value) // mib} MiB"
 
 
 def describe_recipe(recipe_path: str | Path) -> dict[str, Any]:
