@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -30,19 +32,34 @@ from PySide6.QtWidgets import (
 from ..i18n import _
 from ..settings import AppSettings
 
+_PROXY_CREDENTIAL_RE = re.compile(r"\b[^\s:/@]+:[^\s/@]+@[^\s/]+")
+
+
+def _has_proxy_credentials(text: str) -> bool:
+    """文本里是否出现 ``user:pass@host`` 形态的凭据。
+
+    **不能靠 ``"://" in text`` 判断**（2026-11-24 实测的泄漏）：用户手写代理池时
+    经常省略 scheme，直接写 ``user:pass@proxy:8080``。旧实现因为找不到 ``://``
+    就认为「没有凭据」，把整串**原样**写进 INI —— 密码明文落盘。
+
+    判定取「``user:pass@`` 这种带冒号的授权段」本身，与有没有 scheme 无关；
+    同时要求 ``@`` 前不出现斜杠，避免把 ``http://host/path?a=b@c`` 这类误判成凭据。
+    """
+    return bool(_PROXY_CREDENTIAL_RE.search(text))
+
 
 def _seal_proxy_list(text: str) -> str:
     """代理池出口加密（S2.2.2）。
 
-    空文本、无凭据代理（不含 user:pass@）与已密封引用原样返回；
-    含凭据（``scheme://user:pass@host``）加密入 secrets_store 并返回
-    ``secret://settings.proxy_list`` 引用；secrets_store 不可用抛异常，
-    绝不回退写明文。
+    空文本、无凭据代理（不含 ``user:pass@``）与已密封引用原样返回；
+    含凭据（``[scheme://]user:pass@host``，**scheme 可省略**）加密入
+    secrets_store 并返回 ``secret://settings.proxy_list`` 引用；
+    secrets_store 不可用抛异常，绝不回退写明文。
     """
     text = text.strip()
     if not text or text.startswith("secret://"):
         return text
-    if "://" not in text or "@" not in text:
+    if not _has_proxy_credentials(text):
         return text
     from ...core.credentials import seal_secret
 
