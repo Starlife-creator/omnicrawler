@@ -40,9 +40,15 @@ def load_timeline(
 
     Returns:
         ``(run, events, stages)``；未匹配到运行时 ``run`` 为 None。
+
+    ``db_path`` 不存在时直接返回空三元组，**不打开 Store**：
+    ``StateStore.__init__`` 会建库建表，于是「看一眼详情页」这件事会凭空
+    在磁盘上造出一个状态库 —— 对纯只读的检视入口，这是不该有的副作用。
     """
     from ...state import StateStore
 
+    if not db_path.is_file():
+        return None, [], []
     with StateStore(db_path) as state:
         run = next((r for r in state.list_runs(500) if r["run_id"] == run_id), None)
         events = state.run_events(run_id)
