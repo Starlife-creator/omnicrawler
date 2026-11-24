@@ -166,6 +166,12 @@ class _ArgumentParser(argparse.ArgumentParser):
         # 处理，一处生效、且不影响任何现有 --json 实现（子命令自己声明的
         # 同名 flag 仍会被 argparse 接受，这里只是保证父级也能看到）。
         wants_json = "--json" in raw
+        # 记录**本次解析**用到的 argv：`error()` 需要据此判断要不要出 envelope。
+        # 只认 `sys.argv` 会让库调用（argv 里没有 --json）失效。
+        self._seen_argv = list(raw)
+        # ★ 子解析器是**独立对象**，`error()` 在子命令层触发时它的 `_seen_argv` 为空。
+        # 把本次 argv 下发给所有子解析器，避免「父级有 JSON、子级没有」的不一致。
+        self._propagate_seen_argv(raw)
         if wants_json:
             raw = [tok for tok in raw if tok != "--json"]
             raw.insert(0, "--json")
@@ -181,6 +187,22 @@ class _ArgumentParser(argparse.ArgumentParser):
                 self.error("workspace requires --config except for import")
         return parsed
 
+    def _propagate_seen_argv(self, argv: list[str]) -> None:
+        """把本次 argv 下发给所有子解析器（含多层的）。
+
+        `error()` 依赖它判断「要不要输出 JSON envelope」。子解析器没有自己的
+        argv 来源，只能从父级拿 —— 否则 `omnicrawler components install x --json`
+        这种**子命令层**的错误永远不会产出 envelope。
+        """
+        for action in self._actions:
+            if not isinstance(action, argparse._SubParsersAction):
+                continue
+            for child in action.choices.values():
+                if isinstance(child, _ArgumentParser):
+                    child._seen_argv = argv  # noqa: SLF001 - 同类内部状态
+                    child._propagate_seen_argv(argv)  # noqa: SLF001
+
+
     def error(self, message: str) -> Any:
         """参数错误。`--json` 时输出 envelope，而不是 usage 文本。
 
@@ -192,7 +214,13 @@ class _ArgumentParser(argparse.ArgumentParser):
         保留原行为（仍 exit 2、仍打 usage 到 stderr），只**额外**在 stdout
         给一份结构化错误。
         """
-        if "--json" in (sys.argv[1:] if not hasattr(self, "_seen_argv") else ()):
+        # ★ 判据取 `parse_args` 实际收到的 argv，而不是 `sys.argv`：
+        # 库调用（`build_parser().parse_args([...])`）时 `sys.argv` 里没有 `--json`，
+        # 于是「`--json` 时输出 envelope」的承诺在那种用法下失效 —— 实测确认为空。
+        # `_seen_argv` 由 `parse_args` 在解析前记录，进程内随之更新。
+        seen = getattr(self, "_seen_argv", None)
+        argv = list(seen) if seen is not None else sys.argv[1:]
+        if "--json" in argv:
             import json as _json
 
             payload = {
