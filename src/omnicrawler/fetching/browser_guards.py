@@ -50,12 +50,21 @@ class _Watchdog:
             except Exception:  # noqa: BLE001
                 LOGGER.exception("watchdog on_timeout 清理失败")
 
+#: 跨来源时必须剔除的凭据头。
+#:
+#: ★ 2026-11-24：与 `security.egress._SENSITIVE_HEADER`、
+#: `plugins.plugin_subprocess_adapter._SENSITIVE_HEADERS` 是**同一件事的三份实现**，
+#: 此前本份缺 `set-cookie` 与 `x-auth-token`（实测：它们不会被剔除）。
+#:
+#: 三份必须同口径，由 `tests/unit/security/test_header_lists_parity.py` 守着。
 _SENSITIVE_HEADER_NAMES = {
     "authorization",
     "proxy-authorization",
     "cookie",
+    "set-cookie",
     "x-api-key",
     "api-key",
+    "x-auth-token",
 }
 
 

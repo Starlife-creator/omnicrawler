@@ -54,8 +54,25 @@ def _is_host_lifecycle_operation(operation: str) -> bool:
     return operation.startswith(_HOST_LIFECYCLE_OPERATION_PREFIXES)
 
 
+#: 传给插件子进程前必须遮蔽的请求头。
+#:
+#: ★ 2026-11-24：本表与 `security.egress._SENSITIVE_HEADER`、
+#: `fetching.browser_guards._SENSITIVE_HEADER_NAMES` 是**同一件事的三份实现**，
+#: 此前漏了 `api-key` 与 `x-auth-token` —— 实测这两个头会**原样**进入生命周期
+#: JSON（`_redact_headers` 是真实出口）。三份名单必须同口径。
+#:
+#: 改动这份时请同时核对另外两份；`tests/unit/security/test_header_lists_parity.py`
+#: 会拦下不一致。
 _SENSITIVE_HEADERS = frozenset(
-    {"authorization", "cookie", "proxy-authorization", "set-cookie", "x-api-key"}
+    {
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "set-cookie",
+        "x-api-key",
+        "api-key",
+        "x-auth-token",
+    }
 )
 
 
