@@ -407,7 +407,9 @@ class HTTPXAsyncFetcher:
                         ) as response:
                             if response.status_code in {301, 302, 303, 307, 308} and response.headers.get("location"):
                                 if redirect_count >= max_redirects:
-                                    raise PermanentFetchError(f"重定向次数超过上限: {max_redirects}")
+                                    raise PermanentFetchError(
+                                        f"重定向次数超过上限: {redirect_count} > {max_redirects}"
+                                    )
                                 current_url = urllib.parse.urljoin(str(response.url), response.headers["location"])
                                 if response.status_code == 303 or (
                                     response.status_code in {301, 302} and method.upper() not in {"GET", "HEAD"}

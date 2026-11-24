@@ -320,7 +320,9 @@ class HTTPFetcher:
                     with exc:
                         wire_body = exc.read(max_bytes + 1)
                     if len(wire_body) > max_bytes:
-                        raise ResponseTooLargeError(f"响应超过大小限制: > {max_bytes}") from exc
+                        raise ResponseTooLargeError(
+                            f"响应超过大小限制: > {human_bytes(max_bytes)}"
+                        ) from exc
                     self.egress.record_response(len(wire_body), url=exc.geturl() or request.url)
                     check_authentication(self.config, FetchResult(
                         request, exc.geturl() or request.url, exc.code, response_headers,
@@ -465,7 +467,7 @@ class HTTPFetcher:
         except zstandard.ZstdError as exc:
             raise ValueError(f"zstd 解压失败: {exc}") from exc
         if len(result) > max_bytes:
-            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
+            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {human_bytes(max_bytes)}")
         return result
 
     @staticmethod
@@ -473,10 +475,10 @@ class HTTPFetcher:
         decompressor = zlib.decompressobj(window_bits)
         result = decompressor.decompress(body, max_bytes + 1)
         if len(result) > max_bytes or decompressor.unconsumed_tail:
-            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
+            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {human_bytes(max_bytes)}")
         result += decompressor.flush(max_bytes + 1 - len(result))
         if len(result) > max_bytes:
-            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {max_bytes}")
+            raise ResponseTooLargeError(f"解压后响应超过大小限制: > {human_bytes(max_bytes)}")
         if not decompressor.eof:
             try:
                 raise ValueError("压缩响应不完整")

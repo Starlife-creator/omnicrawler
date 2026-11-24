@@ -26,6 +26,11 @@ from ._common import (
     register_writer,
 )
 
+#: 单元格字符上限（Excel 单元格上限 32767，留 67 字符余量给制表符转义）。
+#: 抽成常量是为了让「超过字符上限」的提示能把**上限值本身**写出来 ——
+#: 只说「超过上限」而不给上限，用户无法判断要不要调大。
+_MAX_CELL_CHARS = 32700
+
 
 def _file_decodes_strictly(path: Path, encoding: str, options: dict[str, Any]) -> bool:
     """Validate a candidate incrementally so late bad bytes cannot corrupt output."""
@@ -128,7 +133,7 @@ def _write_csv_iter(
 
     def safe_cell(value: Any) -> Any:
         nonlocal truncated_cells
-        if isinstance(value, str) and len(value) > 32700:
+        if isinstance(value, str) and len(value) > _MAX_CELL_CHARS:
             truncated_cells += 1
         return excel_safe(value)
 
@@ -151,7 +156,11 @@ def _write_csv_iter(
                 written += len(buf)
                 buf.clear()
         pe.flush(written=written, total=total or 0)
-    warnings = [f"CSV 有 {truncated_cells} 个单元格超过应用字符上限，内容已截断"] if truncated_cells else []
+    warnings = (
+        [f"CSV 有 {truncated_cells} 个单元格超过应用字符上限（{_MAX_CELL_CHARS} 字符），内容已截断"]
+        if truncated_cells
+        else []
+    )
     return {"rows": written, "columns": columns, "encoding": encoding, "truncated_cells": truncated_cells, "warnings": warnings}
 
 
