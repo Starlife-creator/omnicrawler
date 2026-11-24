@@ -29,7 +29,15 @@ _SENSITIVE_HEADER = re.compile(
     re.IGNORECASE,
 )
 _SENSITIVE_QUERY = re.compile(
-    r"(token|key|secret|password|passwd|signature|credential|auth|session|cookie)",
+    # ★ 2026-11-24 补：`sig` / `hmac` 是**预签名 URL**的标准参数名（下载链接、图床 CDN），
+    # 而本仓是爬虫 —— 抓到的 URL 里带第三方签名是常态。此前只认 `signature`，
+    # 于是 `?sig=...` 的整段签名原样进 append-only 审计链（永久留存，不可撤）。
+    # `bearer` / `jwt` 同理：它们是凭据本身，不是「像凭据的普通参数」。
+    #
+    # 刻意**不**加：`nonce`（一次性随机数，不是凭据）、`code`（授权码要看场景，
+    # 误拦会损失诊断价值）、`sp` / `se` / `sv`（Azure SAS 的权限/过期/版本位，
+    # 不含密钥；密钥在 `sig` 里，已覆盖）。
+    r"(token|key|secret|password|passwd|signature|sig|hmac|bearer|jwt|credential|auth|session|cookie)",
     re.IGNORECASE,
 )
 LOGGER = logging.getLogger(__name__)
