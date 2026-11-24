@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import zipfile
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
@@ -402,13 +403,24 @@ def _retire_inplace_entries(root: Path, *, platform: str) -> list[str]:
 
 
 def _human_bytes(size: int) -> str:
-    """人类可读体积（照 B 站弹窗的形态：一位小数）。"""
+    """人类可读体积（一位小数）。
+
+    ★ 舍入必须**向下截断**而不是四舍五入：本函数用来向用户解释「这个包多大 /
+    为什么没随发布」。GitHub Release 的单资产上限正好是 2 GiB，而
+    `2 GiB - 1` 四舍五入后会显示成 `2.0GB` —— 与真正达到上限的数字完全一样，
+    用户据此判断「没超限吧」会得到相反的结论。同样是 1 字节之差，
+    `1048575` 曾被显示成 `1024.0KB` 而不是 `1.0MB`，看着像另一个量级。
+
+    截断后的语义是「至少这么大、未达下一个单位」，不会给出乐观的读数。
+    """
     value = float(size)
     for unit in ("B", "KB", "MB", "GB"):
         if value < 1024 or unit == "GB":
-            return f"{int(value)}{unit}" if unit == "B" else f"{value:.1f}{unit}"
+            if unit == "B":
+                return f"{int(value)}B"
+            return f"{math.floor(value * 10) / 10:.1f}{unit}"
         value /= 1024
-    return f"{value:.1f}GB"
+    return f"{math.floor(value * 10) / 10:.1f}GB"
 
 
 class _ApplyHardFailError(RuntimeError):
