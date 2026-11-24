@@ -428,13 +428,25 @@ def test_mixed_pass_and_skip_is_a_pass(tmp_path: Path) -> None:
     assert report.verdict == "passed"
 
 
-def test_missing_prerequisite_is_reported_with_reason(tmp_path: Path) -> None:
-    """缺前置文件的覆盖率门禁应被跳过并说明缺的是哪个文件。"""
+def test_missing_prerequisite_is_reported_with_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺前置文件的覆盖率门禁应被跳过并说明缺的是哪个文件。
+
+    ★ 必须把「缺少前置」这件事**造出来**，不能依赖仓库当前状态：
+    本机跑过一次 `coverage run` 之后仓库里就有 `coverage.json`，
+    于是门禁不再跳过、而是真跑并判红 —— 表现为「开发机红、CI 绿」，
+    而真正的原因与门禁逻辑无关。此前这条用例正是这样假红的。
+    """
+    from tools import self_verify
+
+    # 在**空目录**里跑：把「前置产物不存在」变成确定事实，而不是环境巧合。
+    monkeypatch.setattr(self_verify, "REPO_ROOT", tmp_path)
     report_path = tmp_path / "evidence.json"
     main(["--set", "coverage", "--json", str(report_path)])
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     coverage = next(gate for gate in payload["gates"] if gate["name"] == "check_coverage_gates")
-    assert coverage["status"] == "skipped"
+    assert coverage["status"] == "skipped", coverage
     assert "coverage.json" in coverage["detail"]
 
 
