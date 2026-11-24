@@ -281,8 +281,14 @@ class ConfigManager(_BaseDelegate):
                 _("该历史版本配置无效，未覆盖当前文件：\n") + "\n".join(errors),
             )
             return
+        # 先备份再恢复；`restore` 自己会拒绝「覆盖前没有对应备份」的情况
+        # （判据在 services/config_history.py，可脱 GUI 测试）。
         mw._config_history.snapshot(mw._config_path, reason="before_restore")
-        mw._config_history.restore(version_path, mw._config_path)
+        try:
+            mw._config_history.restore(version_path, mw._config_path)
+        except ValueError as exc:
+            QMessageBox.critical(mw, _("恢复失败"), str(exc))
+            return
         mw._config = load_yaml(mw._config_path)
         mw._install_plugin_ui(notify=True)
         mw._refresh_canvas()
