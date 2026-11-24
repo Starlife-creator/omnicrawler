@@ -33,7 +33,14 @@ def _mask_sealed_references(line: str) -> str:
     但键名正则看到 `secret:` 就当成「凭据字段」⇒ 已正确密封的引用被判成明文泄露，
     导出被拦（2026-11-24 实测）。遮掉之后，剩下的才是真正需要判定的内容。
     """
-    return re.sub(r"secret://[\w.\-]+", lambda m: " " * len(m.group(0)), line)
+    # ★ 引用名**可以含斜杠**：`seal_secret("research/api", ...)` 实测产出
+    # `secret://research/api`（`credentials.seal_secret` 的校验正则不许斜杠，
+    # 但它是先 `set` 再回拼字符串，所以斜杠引用真实存在）。
+    # 只遮 `[\w.\-]+` 会漏掉斜杠之后的部分，那一段里若出现 `user:pass@` 形态
+    # 就会被当成明文凭据 —— 2026-11-24 由集成用例
+    # `test_security_audit_and_pii_summary` 抓到（`api_key: secret://research/api`
+    # 被误报）。
+    return re.sub(r"secret://[\w.\-/]+", lambda m: " " * len(m.group(0)), line)
 
 
 def _only_placeholder(value: str) -> bool:

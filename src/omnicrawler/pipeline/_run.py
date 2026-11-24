@@ -26,6 +26,7 @@ from ..plugins.plugin_runtime import prepare_request, transform_record
 from ..runtime.live_concurrency import DomainAdmission, local_resource_pressure
 from ..runtime.resource_profiles import effective_concurrency
 from ..runtime.resources import ResourceLimitError
+from ..security.paths import require_workspace_path
 from ..security.policy import is_private_target
 from ..services.progress import ProgressTracker, StageSpec, TaskProgressEvent
 from ._mixin_base import _PipelineBase
@@ -585,8 +586,19 @@ class _PipelineRun(_PipelineBase):
         prepared: list[tuple[dict[str, Any], Path]] = []
         workspace = self.workspace.resolve()
         for row in rows:
-            path = Path(str(row["raw_path"])).resolve()
-            if workspace not in path.parents or not path.is_file() or path.is_symlink():
+            # 复用统一的工作区包含性判据（`security.paths.require_workspace_path`）：
+            # 相对 `raw_path` 必须按 **workspace** 解析，而不是进程 cwd。
+            # 这里额外保留两条本地的强判据（文件必须存在、不得是链接）——
+            # 它们不是「路径包含性」，统一工具不管，所以仍在此处判。
+            try:
+                path = require_workspace_path(
+                    str(row["raw_path"]), root=workspace, what="归档响应"
+                )
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"Archived response is unavailable or outside workspace: {row['raw_path']}"
+                ) from exc
+            if not path.is_file() or path.is_symlink():
                 raise RuntimeError(f"Archived response is unavailable or outside workspace: {path}")
             digest = hashlib.sha256()
             with path.open("rb") as archived_file:

@@ -128,3 +128,25 @@ def test_proxy_credentials_inside_a_value_are_caught(text: str) -> None:
 def test_plain_proxies_and_at_signs_in_paths_are_not_flagged(text: str) -> None:
     """无凭据的代理、以及出现在路径里的 `@` 都不该判红。"""
     assert scan_config_text(text)["ok"] is True, text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # 引用名**可以含斜杠**：seal_secret("research/api", ...) 实测产出
+        # secret://research/api（校验正则不许斜杠，但函数先 set 再回拼字符串）。
+        "api_key: secret://research/api",
+        "token: secret://a/b/c",
+        "password: secret://x/y",
+    ],
+)
+def test_sealed_references_with_slashes_are_not_reported(text: str) -> None:
+    r"""带斜杠的 `secret://` 引用同样是**已密封**，不得判成明文。
+
+    实测缺陷（2026-11-24）：遮蔽正则只认 `[\w.\-]+`，于是 `secret://research/api`
+    只遮到 `secret://research`，剩下的 `/api` 留在视野里 —— 一旦它恰好含
+    `user:pass@` 形态就会被误报。集成用例
+    `test_security_audit_and_pii_summary` 抓到了这个回归。
+    """
+    report = scan_config_text(text)
+    assert report["ok"] is True, f"{text!r} 被误判：{report['findings']}"
