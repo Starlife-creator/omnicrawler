@@ -12,6 +12,7 @@ from typing import Any
 
 from ..core.safe_data import safe_json_loads
 from ..core.utils import atomic_write, utcnow
+from ..security.paths import require_workspace_path
 from ..state import StateStore
 
 
@@ -38,12 +39,20 @@ def write_pdf_source_manifest(
     items: list[dict[str, Any]] = []
     missing = 0
     for row in rows:
-        # B06-004：DB 内 local_path 不应含 `~`；去掉 expanduser 防止 DB 数据污染时
-        # 意外展开到用户目录。resolve() 保留用于相对路径规范化。
-        original = Path(str(row["local_path"]))
-        path = original.resolve()
-        if original.is_symlink() or workspace.resolve() not in path.parents:
-            raise ValueError("PDF 交付路径越界或使用链接")
+        # B06-004：DB 内 local_path 不应含 `~`；不走 expanduser，防止 DB 数据污染时
+        # 意外展开到用户目录。
+        #
+        # ★ 改为复用 `require_workspace_path`（2026-11-24）：这里原先自己写了一遍
+        # 「Path(str(...)) + resolve + parents 包含判定」，而那份实现有两个毛病：
+        #   1. 相对 local_path 会按**进程 cwd** 解析（`Path(str)` 不挂基准目录），
+        #      于是合法记录在 cwd ≠ workspace 时被误判越界；
+        #   2. 判定用 `workspace.resolve() not in path.parents`——路径**等于**
+        #      workspace 时 parents 不含它，判定与 `require_workspace_path` 不一致。
+        # 全仓已有统一工具，就不该在这里再造一份口径。
+        # 符号链接由 `resolve()` + `relative_to` 覆盖（解析后就落在链接目标上）。
+        path = require_workspace_path(
+            str(row["local_path"]), root=workspace, what="PDF 交付路径"
+        )
         if not path.is_file():
             missing += 1
             continue
