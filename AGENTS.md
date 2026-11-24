@@ -46,8 +46,21 @@
 
   **`is_retryable` 是给 agent 的关键字段**：`false` = 原样重试不会成功（改输入）；
   `true` = 可重试（网络/超时）。实现见 `cli/_json_envelope.py`。
-  stdout 保证是**单行纯净 JSON**（日志走 stderr），守卫
+
+  **stdout 上是「一个完整的 JSON 文档」**，日志一律走 stderr。守卫
   `tests/unit/cli/test_json_envelope.py`。
+
+  ★ 2026-11-24 更正：原文写的是「**单行**纯净 JSON」，**不准确**。实际有两种：
+
+  | 情形 | stdout 形态 |
+  |---|---|
+  | 失败 / envelope 包装 | **单行**（`json.dumps` 默认无缩进）|
+  | 命令自己输出结构化结果（`validate` / `plan` / `status` / `doctor`…）| **多行**（`indent=2`，原样透传）|
+
+  两种都是**合法 JSON 文档**，对 agent 同样友好（`json.loads(stdout)` 都成立）。
+  「单行」那条只针对 envelope，是为「一行一条记录」的日志式消费；命令自身的结构化
+  输出保留缩进更好读。**解析方请整体 `json.loads`，不要取首行**——
+  取首行对多行 JSON 只会得到 `{`。
 - **`--help` 现在含三段**：常用示例（clig.dev 要求 "lead with examples"）、
   退出码契约（0 成功 / 1 运行期失败 / 2 用法校验失败）、
   按「我要干什么」分组的 55 个命令（不是按代码文件归属）。
