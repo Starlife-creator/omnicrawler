@@ -55,6 +55,10 @@ def build_report(
     profile = "核心本地链路 + 本地 Chromium 扩展" if browser_enabled else "核心本地链路"
     return "\n".join([
         f"# OmniCrawler {version} E2E 测试结果", "",
+        # ★ 版本元数据行：`check_docs_consistency` 要求 `docs/` 下每份现状文档都带它。
+        # 此前本生成器**不输出这一行**，于是「跑一次 e2e」就会让文档门禁判红
+        # （报告已被 git 跟踪，跑完即 dirty 且缺标记）。2026-11-24 实测踩到。
+        f"> 适用版本：{version} · 配置协议：v5 · 维护状态：现行", "",
         f"- 生成时间（UTC）：{datetime.now(UTC).isoformat(timespec='seconds')}",
         f"- 执行配置：{profile}",
         "- 覆盖范围：`e2e.harness` 与 `e2e.render_report`；不把 E2E 结果伪装为全源码覆盖率。",

@@ -116,8 +116,15 @@ def build_payload(
     output: str,
     exit_code: int,
     exc: BaseException | None = None,
+    is_retryable: bool | None = None,
 ) -> dict[str, Any]:
-    """构造 envelope。失败时带 `error` 三件套（message / suggestion / is_retryable）。"""
+    """构造 envelope。失败时带 `error` 三件套（message / suggestion / is_retryable）。
+
+    ``is_retryable`` 可显式覆盖：类型推断对**通用异常类型**（``RuntimeError`` 之类）
+    只能说「默认可重试」，而有些具体原因明明不可重试 —— 例如「插件未安装」，
+    原样重试永远不会成功。那种情形由调用方显式指定 ``False``，
+    比让 agent 照着类型名猜要可靠。
+    """
     payload: dict[str, Any] = {
         "ok": ok,
         "command": command,
@@ -130,7 +137,7 @@ def build_payload(
             "type": type(exc).__name__,
             "message": str(exc) or type(exc).__name__,
             "suggestion": _suggest(exc),
-            "is_retryable": _is_retryable(exc),
+            "is_retryable": _is_retryable(exc) if is_retryable is None else is_retryable,
         }
     return payload
 

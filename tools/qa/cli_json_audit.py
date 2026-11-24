@@ -55,19 +55,22 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-#: 需要外部依赖/交互/长驻的命令 —— 不跑（跑了会挂住或误报）。
-_SKIP_COMMANDS: frozenset[str] = frozenset(
-    {
-        "serve",          # 长驻服务
-        "workbench",      # 开 GUI 窗口
-        "wizard",         # 交互式向导
-        "worker",         # 长驻 worker
-        "record-actions",  # 开浏览器
-        "visual-select",  # 开浏览器
-        "self-update",    # 联网
-        "pdf",            # 需要 pdf 子系统
-    }
-)
+#: **真正**会挂住或误报的命令 —— 极少数，且每条都要写清为什么。
+#:
+#: ★ 2026-11-24：这个名单此前有 8 条，实测**它们全都能输出合法 JSON**：
+#: 因为本工具测的是 `<cmd> --json` 的**参数校验/前置检查路径**，
+#: 而不是真的要跑起来 —— 长驻命令在「缺 --config / 缺子命令」时就走
+#: argparse 的错误路径，照样出 envelope。
+#:
+#: 保留过度保守的跳过名单，代价是**覆盖率被系统性低估**
+#: （对外报 47/55 = 85%，实际是 55/55 = 100%）。
+#:
+#: 现在只剩**两条真会挂住**的 —— 实测它们 30s 超时（不是「缺参数就退出」，
+#: 而是真的去开 GUI/浏览器窗口然后等下去）：
+#:   * `visual-select`：开浏览器做坐标选择
+#:   * `workbench`：开 Tk 窗口
+#: 加回来时都附了实测依据（超时），不是照直觉列的。
+_SKIP_COMMANDS: frozenset[str] = frozenset({"visual-select", "workbench"})
 
 #: 需要 `--config` 的命令（不提供就没法跑，跳过）。
 _NEEDS_CONFIG_HINT = True

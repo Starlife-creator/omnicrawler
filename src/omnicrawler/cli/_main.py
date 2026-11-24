@@ -432,12 +432,34 @@ def main(argv: list[str] | None = None) -> None:
             message = str(exc).strip()
             if "插件" not in message and "plugin" not in message.lower():
                 raise
-            print(f"omnicrawler {' '.join(argv)}: {message}", file=sys.stderr)
-            print(
-                "\n提示：PDF 工作台的子命令与选项由插件提供。"
-                "装好 document-workbench 后\n  omnicrawler pdf --help   即可看到完整子命令列表。",
-                file=sys.stderr,
+            hint = (
+                "提示：PDF 工作台的子命令与选项由插件提供。"
+                "装好 document-workbench 后\n  omnicrawler pdf --help   即可看到完整子命令列表。"
             )
+            print(f"omnicrawler {' '.join(argv)}: {message}", file=sys.stderr)
+            print(f"\n{hint}", file=sys.stderr)
+            # ★ `--json` 时 stdout 也必须有 envelope（2026-11-24 实测：此前这条分支
+            # 只往 stderr 打文本，stdout 完全为空 ⇒ agent 拿不到任何结构化结果）。
+            # 这条路径绕过了 `_handlers` 注册表，所以也绕过了 `run_with_envelope`；
+            # 需要在这里补上，否则「`--json` 时 stdout 是合法 JSON」对 `pdf` 不成立。
+            if "--json" in argv:
+                from ._json_envelope import build_payload
+
+                print(
+                    json.dumps(
+                        build_payload(
+                            "pdf",
+                            ok=False,
+                            output=f"{message}\n\n{hint}",
+                            exit_code=1,
+                            exc=RuntimeError(message),
+                            # 插件未安装是**配置/安装问题**：原样重试永远不会成功，
+                            # 必须装插件。默认按类型推断会把 RuntimeError 判成可重试。
+                            is_retryable=False,
+                        ),
+                        ensure_ascii=False,
+                    )
+                )
             raise SystemExit(1) from None
         return
     if not argv:

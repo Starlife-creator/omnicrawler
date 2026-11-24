@@ -84,3 +84,22 @@ def test_seen_argv_is_recorded_on_the_parser(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(SystemExit):
         parser.parse_args(["export", "--json"])
     assert getattr(parser, "_seen_argv", None) == ["export", "--json"]
+
+
+def test_build_payload_accepts_an_explicit_retryable_override() -> None:
+    """通用异常类型上，调用方要能覆盖 `is_retryable`。
+
+    类型推断只能回答「这类异常一般可否重试」：`RuntimeError` 默认可重试，
+    而「插件未安装」这种具体原因**原样重试永远不会成功**。
+    让调用方显式指定，比让 agent 照着类型名猜可靠。
+    """
+    from omnicrawler.cli._json_envelope import build_payload
+
+    exc = RuntimeError("插件未安装")
+    default = build_payload("pdf", ok=False, output="", exit_code=1, exc=exc)
+    assert default["error"]["is_retryable"] is True, "RuntimeError 的默认推断是可重试"
+
+    pinned = build_payload(
+        "pdf", ok=False, output="", exit_code=1, exc=exc, is_retryable=False
+    )
+    assert pinned["error"]["is_retryable"] is False, "显式指定必须生效"
