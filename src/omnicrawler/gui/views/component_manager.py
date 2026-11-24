@@ -48,6 +48,7 @@ from typing import Any
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -138,105 +139,139 @@ class ComponentManagerPanel(WorkerOwnedWidget):
 
     # ── UI ────────────────────────────────────────────────────────────────
     def _build_ui(self) -> None:
+        """按**插件页同形态**重建：顶部状态栏 + 左列表 / 右详情 + 底部状态。
+
+        为什么重写（2026-11-24，用户实测反馈「组件市场还是没优化得和插件一样好」）：
+
+        此前是**竖排 11 块**：简介 / 可下载列表 / 刷新行 / 选包行 / 状态 / 4 个按钮 /
+        已安装列表 / 详情框 / 2 个按钮 / 内核面板。用户要滚很长，且「可下载」与
+        「已安装」两套东西混在一条竖线上，分不清哪些按钮作用于哪一份列表。
+
+        插件页（`market.py:275`）是**左右分栏**：左边是「能装什么」，右边是选中项
+        的详情与操作按钮。两边职责清楚，用户不会点错。这里照它做。
+
+        三处刻意保留的差异（不是没对齐）：
+
+        * 组件页多一个「浏览器内核」子面板 —— 内核本身就是 `kind: native` 的组件，
+          放进同一页比另开入口好（用户找「能装什么」时不该记两个地方）；
+        * 离线 `.ocp` 导入通道是组件**独有**的，放在右侧详情区底部；
+        * 已安装列表与可下载列表**分栏共存**（插件页只有一份列表）。
+        """
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(10)
+        root.setSpacing(12)
 
         intro = QLabel(_INTRO)
+        intro.setObjectName("sectionSubtitle")
         intro.setWordWrap(True)
         root.addWidget(intro)
 
-        # ── 可下载（市场）────────────────────────────────────────────────
-        # 与插件/模板页同形态：从已验签的 catalog 取条目。
-        # **组件条目不含字节**，只声明"从哪拉、多大、什么哈希"——
-        # 所以这里展示的是上游域名与下载量，不是包签名。
+        # ── 顶部状态栏（与插件页同：状态点 + 文本 + 右侧动作）──────────
+        top_bar = QHBoxLayout()
+        self._status = QLabel(_("正在读取组件注册表…"))
+        self._status.setWordWrap(True)
+        self._status.setAccessibleName(_("组件状态"))
+        top_bar.addWidget(self._status, 1)
         if self._catalog_url:
-            self._market_label = QLabel(_("可下载组件（来自 OmniCrawler 市场）"))
-            self._market_label.setAccessibleName(_("可下载组件"))
-            root.addWidget(self._market_label)
+            self._market_refresh = QPushButton(_("刷新"))
+            self._market_refresh.clicked.connect(self._reload_catalog)
+            top_bar.addWidget(self._market_refresh)
+        else:
+            self._market_refresh = None  # type: ignore[assignment]
+        root.addLayout(top_bar)
 
-            # 与插件/模板页对齐：组件也要能搜索（按 id/名称/发布者/上游域名）。
+        # ── 主体：左列表 + 右详情（与插件页 QSplitter 同形态）──────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # 左栏：可下载（市场）+ 已安装，两个分组竖排在同一个可滚动区里
+        left = QFrame()
+        left.setProperty("card", True)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(8)
+
+        market_header = QLabel(_("可下载组件"))
+        market_header.setObjectName("sectionSubtitle")
+        left_layout.addWidget(market_header)
+
+        if self._catalog_url:
             self._market_search = QLineEdit()
-            self._market_search.setPlaceholderText(_("按名称、ID、发布者或上游域名搜索…"))
+            self._market_search.setPlaceholderText(_("搜索名称、ID、发布者或上游域名"))
             self._market_search.setClearButtonEnabled(True)
             self._market_search.textChanged.connect(self._reload_catalog_filtered)
-
-            # ★ 2026-11-24：这里原先写死 `setMaximumHeight(160)`，于是列表**永远只有约 3 行**，
-            # 用户必须先滚动才看得到其余组件 —— 而同一页的「已安装」「详情」「内核」三块
-            # 都在抢 `stretch=1`，可下载列表只拿到那 160px。
-            #
-            # 改成**左右分栏（QSplitter）+ 撑满**，与插件页 `market.py:316` 同形态：
-            # 左侧是可滚动列表，右侧是选中项的下载前须知。这样列表能吃到整块高度，
-            # 也不会因为下面还有三块而互相挤。
-            splitter = QSplitter(Qt.Orientation.Horizontal)
-
-            left = QWidget()
-            left_layout = QVBoxLayout(left)
-            left_layout.setContentsMargins(0, 0, 0, 0)
-            left_layout.setSpacing(6)
             left_layout.addWidget(self._market_search)
+
             self._market_list = QListWidget()
             self._market_list.setAccessibleName(_("可下载组件列表"))
             self._market_list.setAlternatingRowColors(True)
             self._market_list.currentItemChanged.connect(self._show_market_selected)
-            left_layout.addWidget(self._market_list, 1)
-
-            right = QWidget()
-            right_layout = QVBoxLayout(right)
-            right_layout.setContentsMargins(0, 0, 0, 0)
-            right_layout.setSpacing(6)
-            self._market_detail = QLabel(_("选择一个组件查看下载前须知。"))
-            self._market_detail.setWordWrap(True)
-            self._market_detail.setAlignment(Qt.AlignmentFlag.AlignTop)
-            self._market_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            right_layout.addWidget(self._market_detail, 1)
-
-            splitter.addWidget(left)
-            splitter.addWidget(right)
-            splitter.setStretchFactor(0, 3)
-            splitter.setStretchFactor(1, 2)
-            # ★ `stretch` 只分配**剩余**空间；`QSplitter` 自身的 sizeHint 很小，
-            # 实测 700px 高的面板里它只拿到 98px（比下面的内核面板还矮）。
-            # 所以还要把它标成**可扩展**并给一个下限，才不会被子控件挤扁。
-            splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            splitter.setMinimumHeight(260)
-            # ★ 四块原先都是 `stretch=1`，于是市场区只分到 1/4 高度（实测 700px 窗口下
-            # 列表仅 70px ≈ 2 行）。给它更高权重，让「可下载组件」成为本页主区域。
-            root.addWidget(splitter, 3)
-
-            market_row = QHBoxLayout()
-            self._market_refresh = QPushButton(_("刷新市场组件列表"))
-            self._market_refresh.clicked.connect(self._reload_catalog)
-            self._market_install = QPushButton(_("下载并安装所选组件"))
-            self._market_install.clicked.connect(self._install_from_market)
-            self._market_status = QLabel(_("尚未拉取市场目录。"))
-            self._market_status.setWordWrap(True)
-            market_row.addWidget(self._market_refresh)
-            market_row.addWidget(self._market_install)
-            market_row.addWidget(self._market_status, 1)
-            root.addLayout(market_row)
+            left_layout.addWidget(self._market_list, 3)
         else:
             # 没有 catalog 上下文时不画空列表——那比没有更糟。
-            # mypy 需要显式标注：这两条分支给同一个属性赋不同类型。
             self._market_search = None  # type: ignore[assignment]
             self._market_list = None  # type: ignore[assignment]
-            self._market_install = None  # type: ignore[assignment]
-            self._market_status = None  # type: ignore[assignment]
-            self._market_refresh = None  # type: ignore[assignment]
 
-        row = QHBoxLayout()
-        self._package = QLabel(_("未选择组件包"))
-        self._package.setWordWrap(True)
+        installed_header = QLabel(_("已安装组件"))
+        installed_header.setObjectName("sectionSubtitle")
+        left_layout.addWidget(installed_header)
+
+        self._list = QListWidget()
+        self._list.setAccessibleName(_("已安装的可选组件"))
+        self._list.setAlternatingRowColors(True)
+        self._list.currentItemChanged.connect(self._show_selected)
+        left_layout.addWidget(self._list, 2)
+
+        splitter.addWidget(left)
+
+        # 右栏：详情 + 操作按钮
+        right = QFrame()
+        right.setProperty("card", True)
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(14, 14, 14, 14)
+        right_layout.setSpacing(8)
+
+        self._detail_title = QLabel(_("未选择组件"))
+        self._detail_title.setObjectName("detailTitle")
+        self._detail_title.setWordWrap(True)
+        right_layout.addWidget(self._detail_title)
+
+        # 组件页的「下载前须知 / 已装组件属性」共用这一个可选中文本区，
+        # 与插件页 `_detail_meta` 的位置对应。
+        self._market_detail = QLabel(_("选择一个组件查看下载前须知。"))
+        self._market_detail.setObjectName("mutedLabel")
+        self._market_detail.setWordWrap(True)
+        self._market_detail.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._market_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        right_layout.addWidget(self._market_detail)
+
+        self._details = QPlainTextEdit()
+        self._details.setReadOnly(True)
+        self._details.setAccessibleName(_("组件用途、兼容与卸载影响"))
+        right_layout.addWidget(self._details, 1)
+
+        # 市场安装按钮（只在有 catalog 时出现，但对象要一致地存在）
+        if self._catalog_url:
+            self._market_install = QPushButton(_("下载并安装所选组件"))
+            self._market_install.setProperty("primary", True)
+            self._market_install.clicked.connect(self._install_from_market)
+        else:
+            self._market_install = None  # type: ignore[assignment]
+
+        # 操作按钮：与插件页一样**放在右侧详情底部**（作用于当前选中的那个组件）
+        market_btn_row = QHBoxLayout()
+        if self._market_install is not None:
+            market_btn_row.addWidget(self._market_install)
+        market_btn_row.addStretch(1)
+        right_layout.addLayout(market_btn_row)
+
+        offline_row = QHBoxLayout()
         self._choose = QPushButton(_("选择离线组件包…"))
         self._choose.clicked.connect(self._pick_package)
-        row.addWidget(self._choose)
-        row.addWidget(self._package, 1)
-        root.addLayout(row)
-
-        self._status = QLabel(_("正在读取组件注册表…"))
-        self._status.setWordWrap(True)
-        self._status.setAccessibleName(_("组件状态"))
-        root.addWidget(self._status)
+        offline_row.addWidget(self._choose)
+        self._package = QLabel(_("未选择组件包"))
+        self._package.setWordWrap(True)
+        offline_row.addWidget(self._package, 1)
+        right_layout.addLayout(offline_row)
 
         actions = QHBoxLayout()
         self._inspect_btn = QPushButton(_("检查所选包"))
@@ -245,30 +280,11 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._import_btn.clicked.connect(lambda: self._run("import"))
         self._reload_btn = QPushButton(_("刷新已安装列表"))
         self._reload_btn.clicked.connect(self.refresh)
-        # 与插件/模板页对齐：三分支都应有「校验已安装」。
         self._verify_btn = QPushButton(_("校验所选组件"))
         self._verify_btn.clicked.connect(lambda: self._run("verify"))
         for button in (self._inspect_btn, self._import_btn, self._reload_btn, self._verify_btn):
             actions.addWidget(button)
-        root.addLayout(actions)
-
-        self._list = QListWidget()
-        self._list.setAccessibleName(_("已安装的可选组件"))
-        self._list.currentItemChanged.connect(self._show_selected)
-        # ★ 让「已安装」不参与 sizeHint 竞争：它的默认 sizeHint 是 192px，
-        # 与市场区、详情、内核的 sizeHint 相加（1056）超过常见窗口高度，
-        # 导致整个布局进入「空间不足」态，所有项都被压到 minimum ——
-        # 市场区的 QSplitter 因此永远停在它自己的 minimumHeight。
-        self._list.setMaximumHeight(150)
-        self._list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
-        root.addWidget(self._list)
-
-        self._details = QPlainTextEdit()
-        self._details.setReadOnly(True)
-        self._details.setAccessibleName(_("组件用途、兼容与卸载影响"))
-        self._details.setMaximumHeight(140)
-        self._details.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
-        root.addWidget(self._details)
+        right_layout.addLayout(actions)
 
         write_actions = QHBoxLayout()
         self._uninstall_btn = QPushButton(_("卸载所选组件"))
@@ -277,26 +293,33 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._rollback_btn.clicked.connect(lambda: self._run("rollback"))
         write_actions.addWidget(self._uninstall_btn)
         write_actions.addWidget(self._rollback_btn)
-        root.addLayout(write_actions)
+        right_layout.addLayout(write_actions)
 
-        self._set_write_enabled(False)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        splitter.setMinimumHeight(280)
+        root.addWidget(splitter, 1)
 
-    # ── 市场（可下载组件）────────────────────────────────────────────────
-        # ── 浏览器内核（§15.16.7）────────────────────────────────────────
-        # 内核本身就是一个组件（`kind: native`），所以放在组件页而不是
-        # 另开一个页面 —— 用户找「能装什么」时不该记住两个入口。
+        # ── 浏览器内核（组件的一种，留在本页）──────────────────────────
         self._kernel_label = QLabel(_("浏览器内核"))
         self._kernel_label.setAccessibleName(_("浏览器内核"))
+        self._kernel_label.setObjectName("sectionSubtitle")
         root.addWidget(self._kernel_label)
         self._kernel_panel = BrowserKernelPanel(self)
-        # 把面板的选择意图向上转发：保存配置是主窗口/市场页的职责，
-        # 组件面板只做中转（它不知道 config_path 与 dirty 标记）。
         self._kernel_panel.kernel_selected.connect(self.kernel_selected.emit)
-        # ★ 内核面板原先 `stretch=1` 且没有上限，会抢走剩余空间，
-        # 导致市场列表在常见窗口高度下固定在 232px 不再增长。
-        # 给它合理上限，把剩余高度让给「可下载组件」。
-        self._kernel_panel.setMaximumHeight(240)
+        # 内核面板给一个上限：它是「附属区域」，不该和市场列表抢高度。
+        self._kernel_panel.setMaximumHeight(220)
         root.addWidget(self._kernel_panel)
+
+        # ── 底部状态（市场拉取结果 / 失败源 / 索引新鲜度）──────────────
+        self._market_status = QLabel("")
+        self._market_status.setObjectName("mutedLabel")
+        self._market_status.setWordWrap(True)
+        root.addWidget(self._market_status)
+
+        self._set_write_enabled(False)
 
     def _reload_catalog(self) -> None:
         """拉取并聚合全部市场源，填充可下载列表。
@@ -429,6 +452,16 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         # 用于报告**操作级**状态（如「目录已刷新 / 下载失败」），两者语义不同。
         if getattr(self, "_market_detail", None) is not None:
             self._market_detail.setText(" — ".join(parts))
+        if getattr(self, "_detail_title", None) is not None:
+            self._detail_title.setText(f"{entry.name} {entry.version}")
+        if getattr(self, "_details", None) is not None:
+            # 右栏详情区在选中「可下载」条目时改为展示上游/体积等下载前信息，
+            # 避免与「已安装」的 `_describe` 混在一起。
+            self._details.setPlainText(
+                _("上游域名：{0}\n声明体积：{1}\n安装通道：市场 recipe 装配").format(
+                    ", ".join(entry.hosts) or _("无上游"), human_bytes(entry.declared_total_bytes)
+                )
+            )
         if self._market_status is not None:
             self._market_status.setText(" — ".join(parts))
         if self._market_install is not None:
@@ -657,7 +690,14 @@ class ComponentManagerPanel(WorkerOwnedWidget):
     def _show_selected(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None = None) -> None:
         info = current.data(Qt.ItemDataRole.UserRole) if current is not None else None
         if isinstance(info, dict):
+            self._detail_title.setText(
+                f'{info.get("name", "")} {info.get("version", "")}'.strip()
+                or _("未选择组件")
+            )
             self._details.setPlainText(_describe(info))
+        else:
+            self._detail_title.setText(_("未选择组件"))
+            self._details.clear()
         self._set_write_enabled()
 
     def shutdown(self) -> None:
