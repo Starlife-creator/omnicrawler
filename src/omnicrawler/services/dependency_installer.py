@@ -151,11 +151,27 @@ _NETWORK_ERROR_MARKERS: tuple[str, ...] = (
 
 
 class PipFailureKind:
-    """pip 失败的归因类别（三分类，决定是否摘流）。"""
+    """pip 失败的归因类别（三分类，决定是否摘流）。
+
+    ★ 2026-11-24：这三个值是**内部归因**，但 `reason_chain()` 会把它们原样写进
+    给用户看的「逐源原因链」（`失败[network]`）—— 中文用户读不出「摘流/换源」的
+    区别。现由 `PIP_FAILURE_LABELS` 提供人读标签，消费者应优先用它。
+    """
 
     NETWORK = "network"      # 网络/传输故障 ⇒ 摘流（record_failure）
     VERSION = "version"      # 源可达但无满足版本 ⇒ 不摘流，仅换源
     CONFLICT = "conflict"    # 约束自相冲突 ⇒ 不摘流，报用户（换源无用）
+
+
+#: `PipFailureKind` 的人读标签。给用户看的文案用这里，不要直接插值枚举值。
+#: 标签同时说明**该怎么办**，因为三类的处置完全不同（等网络 / 换源 / 改约束）。
+PIP_FAILURE_LABELS: dict[str, str] = {
+    PipFailureKind.NETWORK: "网络故障（稍后重试或换镜像）",
+    PipFailureKind.VERSION: "该源无匹配版本（已换源重试）",
+    PipFailureKind.CONFLICT: "依赖约束冲突（需调整版本要求）",
+    # 这个大包加时重试的临时归因也出现在原因链里，一并给标签。
+    "timeout-retry": "超时后已加时重试",
+}
 
 
 def classify_pip_error(text: str) -> str:
@@ -410,7 +426,11 @@ class InstallResult:
         """逐源原因链（给"详情"对话框用，可复制）。"""
         lines = [f"包: {self.package}{self.spec}", f"结果: {'成功' if self.ok else '失败'}"]
         for attempt in self.attempts:
-            status = "成功" if attempt.ok else f"失败[{attempt.kind}]"
+            status = (
+                "成功"
+                if attempt.ok
+                else f"失败[{PIP_FAILURE_LABELS.get(attempt.kind, attempt.kind)}]"
+            )
             lines.append(f"  - {attempt.host} ({attempt.index_url}): {status} {attempt.detail}".rstrip())
         if self.detail:
             lines.append(f"结论: {self.detail}")
