@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -120,6 +121,42 @@ def check(pyproject_path: Path = PYPROJECT, lock_path: Path = LOCKFILE) -> list[
             "以下 extras 组在锁文件里没有任何依赖记录（可能是空组或锁未跟上）: "
             + ", ".join(empty_extras)
         )
+
+    # 6) **extras 的版本约束值必须一致**。
+    #
+    # 前 5 项只比对「名称集合」，看不到**约束值**的变化。实证（2026-11-24）：
+    # 采纳 dependabot 把 pyproject 的 `pypdf>=4,<7` 改成 `<8` 后没重跑
+    # `uv lock` —— 名称集合没变，本门禁通过，而 CI 的 `uv lock --check` 报
+    # 「lockfile needs to be updated」，三平台 + dependency lock 全红。
+    #
+    # 锁文件里每条依赖带 `specifier`（如 `>=4,<8`），与 pyproject 的声明
+    # 直接可比。比它比跑 uv 便宜，且**不需要装 uv**（本文件的设计前提）。
+    locked_specs: dict[tuple[str, str], str] = {}
+    for item in requires_dist if isinstance(requires_dist, list) else []:
+        name = str(item.get("name", "")).casefold()
+        marker = str(item.get("marker", ""))
+        spec = str(item.get("specifier", ""))
+        for extra in declared_extras:
+            if f"extra == '{extra}'" in marker or f'extra == "{extra}"' in marker:
+                locked_specs[(extra, name)] = spec
+    for extra in sorted(declared_extras):
+        for requirement in (project.get("optional-dependencies") or {}).get(extra, ()):
+            text = str(requirement).split(";")[0].strip()
+            # 去掉包名后的 `[extra1,extra2]` —— 那是 pip 的 extras 标记，
+            # uv 在锁里只存版本 specifier（如 `psycopg[binary]>=3.2,<4`
+            # 存成 `>=3.2,<4`）。不去掉会误判成「约束不一致」。
+            match = re.match(r"^([A-Za-z0-9_.\-]+)(?:\[[^\]]*\])?(.*)$", text)
+            if not match:
+                continue
+            name = match.group(1).casefold()
+            expected = match.group(2).strip()
+            actual = locked_specs.get((extra, name))
+            if actual is not None and actual != expected:
+                issues.append(
+                    f"extras `{extra}` 的 `{name}` 约束不一致："
+                    f"pyproject 是 `{expected}`，锁里是 `{actual}`"
+                    "（改了 extras 必须重跑 `uv lock`）"
+                )
     return issues
 
 
