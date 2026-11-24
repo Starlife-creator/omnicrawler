@@ -414,14 +414,24 @@ def main(argv: list[str] | None = None) -> None:
     # "unrecognized arguments: --config"，自定义 PDF 项目从顶层 CLI 完全不可达
     # （只能用内置模板）。因此这里把 `pdf` 之后的 token 原样交给子系统：
     # **发现路径与执行路径分离，子命令定义仍是唯一真源**。
-    if argv and argv[0] in {"pdf", "pdf-process", "pdf-extract"}:
+    # ★ 2026-11-24：判断时**跳过前置的全局 flag**。
+    # 此前写成 `argv[0] in {...}`，于是 `omnicrawler --json pdf --help` 匹配失败 ——
+    # `pdf` 落到普通子命令路径（argparse），得到 `ok=false` / `is_retryable=true`，
+    # 与 `omnicrawler pdf --json --help`（rc=0 / ok=true）**不一致**。
+    # 而「`--json` 位置无关」是本仓明确承诺的（见 `_ArgumentParser.parse_args` 的
+    # 同类处理）。这里同样要先剥掉前置 flag 再判断。
+    _pdf_head = [tok for tok in argv if tok != "--json"]
+    if _pdf_head and _pdf_head[0] in {"pdf", "pdf-process", "pdf-extract"}:
         # W6.7-④：这条**转发路径**此前既不配置日志、也不打启动行 ⇒ 与统一入口行为不一致
         # （同一次运行，走 `omnicrawler pdf …` 与走 `omnicrawler …` 看到的排障信息不一样）。
         # 这里补齐同一套：配置日志（默认级别/格式，别名无顶层开关）+ 打关键路径。
         configure_logging("INFO", "text")
         _log_startup_paths()
         try:
-            _dispatch_pdf(argv)
+            # 传给子系统的应是**剥掉前置 `--json` 之后**的 argv：
+            # 否则 `omnicrawler --json pdf --help` 会把 `--json` 当 pdf 的参数，
+            # 且下面 `"--json" in argv` 的判断与子系统看到的参数不一致。
+            _dispatch_pdf(_pdf_head)
         except RuntimeError as exc:
             # **这条是"转发路径"，绕过 `_handlers` 注册表**（第 138 行直接调用）。
             # 插件未安装时 facade 抛的 RuntimeError 会以裸 traceback 呈现——
@@ -436,6 +446,11 @@ def main(argv: list[str] | None = None) -> None:
                 "提示：PDF 工作台的子命令与选项由插件提供。"
                 "装好 document-workbench 后\n  omnicrawler pdf --help   即可看到完整子命令列表。"
             )
+            # 退出码保持**非零**：`pdf --help` 的「结果」是**看到子命令列表**，
+            # 而缺插件时并没有看到 —— 帮助请求本身未被满足。
+            # （2026-11-24 我一度改成 0，被既有测试 `test_pdf_help_without_plugin_is_a_clean_message`
+            #  当场驳回，理由「未装插件却退码 0 ⇒ 脚本会误以为成功」成立。）
+            exit_code = 1
             print(f"omnicrawler {' '.join(argv)}: {message}", file=sys.stderr)
             print(f"\n{hint}", file=sys.stderr)
             # ★ `--json` 时 stdout 也必须有 envelope（2026-11-24 实测：此前这条分支
@@ -451,7 +466,7 @@ def main(argv: list[str] | None = None) -> None:
                             "pdf",
                             ok=False,
                             output=f"{message}\n\n{hint}",
-                            exit_code=1,
+                            exit_code=exit_code,
                             exc=RuntimeError(message),
                             # 插件未安装是**配置/安装问题**：原样重试永远不会成功，
                             # 必须装插件。默认按类型推断会把 RuntimeError 判成可重试。
@@ -460,7 +475,7 @@ def main(argv: list[str] | None = None) -> None:
                         ensure_ascii=False,
                     )
                 )
-            raise SystemExit(1) from None
+            raise SystemExit(exit_code) from None
         return
     if not argv:
         _print_welcome()
