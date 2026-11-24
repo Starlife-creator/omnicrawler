@@ -197,8 +197,15 @@ class _TemplateInstallWorker(BackgroundWorker):
 def _template_matches(entry: dict[str, Any], query: str) -> bool:
     """模板条目是否匹配搜索词。
 
-    匹配 id / name / category / tags —— 与插件页 `_matches_filters` 同口径
-    （用户凭"名字"或"分类"找东西，两处行为不应不一致）。
+    匹配 **id / name / category / summary / tags**。
+
+    与插件页 `_matches_filters` 的**共同部分**一致（都含 id/name/category/summary/tags，
+    且两侧都 casefold）；差异只在**各自的专有字段**：
+    插件页多 `plugin_types`、组件页多 `publisher`/`hosts` —— 那些字段在模板条目里不存在。
+
+    ★ 2026-11-24 更正：原文写「同口径」，读起来像「字段集相同」；实际是
+    「**共通字段的行为一致**」。用户在一个页面能搜到的词，在另一个页面可能搜不到，
+    这是数据模型不同导致的，不是缺陷 —— 但文档不该把它说成完全一致。
     """
     parts = [
         str(entry.get("id", "")),

@@ -241,8 +241,14 @@ def describe_for_confirm(entry: ComponentEntry) -> str:
 def filter_components(entries: list[ComponentEntry], query: str) -> list[ComponentEntry]:
     """按关键词过滤组件条目。
 
-    与插件页 `_matches_filters`、模板页 `_template_matches` 同口径：
-    匹配 id / name / publisher / 上游域名。**两侧都归一大小写**。
+    匹配 **id / name / publisher / 上游域名（hosts）**，两侧都归一大小写。
+
+    与插件页 / 模板页的**共同部分**一致（都 casefold、都是子串匹配）；
+    差异在**各自的专有字段** —— 组件有 publisher/hosts，插件有 plugin_types，
+    模板两者都没有。
+
+    ★ 2026-11-24 更正：原文写「同口径」，会被读成「字段集相同」。
+    实际是「**共通字段的行为一致**」。
     """
     needle = (query or "").strip().casefold()
     if not needle:
