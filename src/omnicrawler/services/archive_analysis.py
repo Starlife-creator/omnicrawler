@@ -73,10 +73,20 @@ def read_sources(manifest: Path) -> list[dict[str, Any]]:
             item = json.loads(line)
             if not isinstance(item, dict) or item.get("verification") != "verified_file":
                 raise ValueError("PDF 交付清单缺少文件核验标记")
-            path = Path(str(item.get("file_path", "")))
-            if root not in path.resolve().parents:
+            # ★ 相对路径必须**相对清单目录**解析，而不是相对 cwd。
+            # 此前 `Path(str(...))` 保留相对形态，于是：
+            #   * cwd ≠ 清单目录 ⇒ `root not in path.resolve().parents` 恒真 ⇒
+            #     合法条目被误判「越出清单目录」；
+            #   * cwd == 清单目录 ⇒ 越过第一关，却在 `path.relative_to(root)` 抛
+            #     「not in the subpath of」。
+            # 两条合起来 = **JSONL 交付清单从来不能用**（2026-11-24 实测）。
+            raw_path = str(item.get("file_path", "")).strip()
+            if not raw_path:
+                raise ValueError("交付条目缺少 file_path")
+            path = (root / raw_path).resolve() if not Path(raw_path).is_absolute() else Path(raw_path).resolve()
+            if path != root and root not in path.parents:
                 raise ValueError("交付文件越出清单目录")
-            relative = str(path.relative_to(root))
+            relative = path.relative_to(root).as_posix()
             entries.append({"id": hashlib.sha256(relative.encode()).hexdigest(), "path": relative,
                             "sha256": item.get("sha256"), "source_url": item.get("source_url", "")})
     if not 1 <= len(entries) <= 1000 or any(not isinstance(entry, dict) for entry in entries):
