@@ -195,7 +195,10 @@ def test_mode_descriptions_state_size_and_disk_cost() -> None:
     assert "7.6MB" in describe_apply_mode(MODE_INCREMENTAL, options)
     assert "一份磁盘" in describe_apply_mode(MODE_FULL, options)
     assert "两份磁盘" in describe_apply_mode(MODE_VERSIONS, options)
-    assert "490.2MB" in describe_apply_mode(MODE_FULL, options)
+    # ★ 2026-11-24：`_human_bytes` 改为**向下取整**后，514_000_000 字节显示 490.1MB
+    # （旧值 490.2MB 是四舍五入的结果）。体积是用户判断「下多久 / 够不够空间」的读数，
+    # 截断给的是保守答案 —— 详见 `test_human_bytes_parity.py`。
+    assert "490.1MB" in describe_apply_mode(MODE_FULL, options)
 
 
 def test_apply_kwargs_mapping_matches_the_command_switches() -> None:

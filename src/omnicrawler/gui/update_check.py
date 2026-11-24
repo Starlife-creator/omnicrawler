@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, TypedDict
 
 from PySide6.QtCore import QThread, Signal
@@ -39,13 +40,29 @@ MODE_VERSIONS = "versions"
 
 
 def _human_bytes(size: int) -> str:
-    """与 commands.self_update._human_bytes 同口径（那里不 import GUI，这里独立实现）。"""
+    """与 commands.self_update._human_bytes 同口径（那里不 import GUI，这里独立实现）。
+
+    ★ 2026-11-24：docstring 一直声称「同口径」，但实现**不同步** ——
+    `self_update` 那边已改为**向下取整**（`2 GiB - 1` 不许显示成 `2.0GB`），
+    这里仍在用 `:.1f` 四舍五入。实测差异：
+
+    ```
+    4_943_169_536 bytes（4.6 GiB）  self_update: 4.7GB  这里: 4.7GB   （一致）
+    5_143_223_336 bytes（4.79 GiB） self_update: 4.7GB  这里: 4.8GB   ← 不一致
+    1_073_741_823 bytes（1 GiB-1）  self_update: 1023.9MB 这里: 1024.0MB
+    ```
+
+    更新包大小是用户判断「下多久 / 够不够空间」的读数，四舍五入是乐观答案。
+    现改为与 `self_update` 相同的截断口径。
+    """
     value = float(size)
     for unit in ("B", "KB", "MB", "GB"):
         if value < 1024 or unit == "GB":
-            return f"{int(value)}B" if unit == "B" else f"{value:.1f}{unit}"
+            if unit == "B":
+                return f"{int(value)}B"
+            return f"{math.floor(value * 10) / 10:.1f}{unit}"
         value /= 1024
-    return f"{value:.1f}GB"
+    return f"{math.floor(value * 10) / 10:.1f}GB"
 
 
 def available_apply_modes(options: dict[str, Any]) -> list[str]:
