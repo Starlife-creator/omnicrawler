@@ -150,13 +150,30 @@ def writable_data_dir() -> bool:
         # ★ 不能只看 `os.access`：本机实测该目录标称可写（`access` 返回 True），
         #   但 `.registry.lock` **独占打开会被拒**（被占用或 ACL 拒绝）。
         #   所以判据是「真的能打开一次」。
-        target = components / ".registry.lock"
-        if target.is_file():
-            with target.open("r+b"):
+        # ★ 2026-11-24：原来文件不存在时退回 `os.access(W_OK)` —— 那个判据是**错的**。
+        # 实测：本机该目录的 ACL 里有 `Lenovo:(F)`，`os.access` 返回 True，
+        # 但受限令牌（CodexSandboxUsers 只有 RX）实际写不进去。
+        # 于是 `requires_writable_data_dir` 放行、测试继续跑、然后红在 PermissionError ——
+        # 这正是本模块开头想消灭的「环境问题伪装成代码缺陷」。
+        #
+        # 现改为**真实写探针**：先在 `.registry.lock` 上试，不行再在目录里建一个短命探针文件。
+        ok = False
+        if components.is_dir():
+            probes = [components / ".registry.lock"]
+            probe = components / ".env-marker-write-probe"
+            probes.append(probe)
+            for candidate in probes:
+                try:
+                    with candidate.open("a+b"):
+                        pass
+                    ok = True
+                    break
+                except OSError:
+                    continue
+            try:
+                probe.unlink()
+            except OSError:
                 pass
-            ok = True
-        else:
-            ok = components.is_dir() and os.access(components, os.W_OK)
     except (OSError, PermissionError):
         ok = False
     except Exception:  # noqa: BLE001 - 判定失败按不可用处理

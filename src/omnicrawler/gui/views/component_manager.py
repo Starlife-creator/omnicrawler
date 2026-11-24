@@ -56,6 +56,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -158,13 +160,49 @@ class ComponentManagerPanel(WorkerOwnedWidget):
             self._market_search.setPlaceholderText(_("按名称、ID、发布者或上游域名搜索…"))
             self._market_search.setClearButtonEnabled(True)
             self._market_search.textChanged.connect(self._reload_catalog_filtered)
-            root.addWidget(self._market_search)
 
+            # ★ 2026-11-24：这里原先写死 `setMaximumHeight(160)`，于是列表**永远只有约 3 行**，
+            # 用户必须先滚动才看得到其余组件 —— 而同一页的「已安装」「详情」「内核」三块
+            # 都在抢 `stretch=1`，可下载列表只拿到那 160px。
+            #
+            # 改成**左右分栏（QSplitter）+ 撑满**，与插件页 `market.py:316` 同形态：
+            # 左侧是可滚动列表，右侧是选中项的下载前须知。这样列表能吃到整块高度，
+            # 也不会因为下面还有三块而互相挤。
+            splitter = QSplitter(Qt.Orientation.Horizontal)
+
+            left = QWidget()
+            left_layout = QVBoxLayout(left)
+            left_layout.setContentsMargins(0, 0, 0, 0)
+            left_layout.setSpacing(6)
+            left_layout.addWidget(self._market_search)
             self._market_list = QListWidget()
             self._market_list.setAccessibleName(_("可下载组件列表"))
+            self._market_list.setAlternatingRowColors(True)
             self._market_list.currentItemChanged.connect(self._show_market_selected)
-            self._market_list.setMaximumHeight(160)
-            root.addWidget(self._market_list)
+            left_layout.addWidget(self._market_list, 1)
+
+            right = QWidget()
+            right_layout = QVBoxLayout(right)
+            right_layout.setContentsMargins(0, 0, 0, 0)
+            right_layout.setSpacing(6)
+            self._market_detail = QLabel(_("选择一个组件查看下载前须知。"))
+            self._market_detail.setWordWrap(True)
+            self._market_detail.setAlignment(Qt.AlignmentFlag.AlignTop)
+            self._market_detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            right_layout.addWidget(self._market_detail, 1)
+
+            splitter.addWidget(left)
+            splitter.addWidget(right)
+            splitter.setStretchFactor(0, 3)
+            splitter.setStretchFactor(1, 2)
+            # ★ `stretch` 只分配**剩余**空间；`QSplitter` 自身的 sizeHint 很小，
+            # 实测 700px 高的面板里它只拿到 98px（比下面的内核面板还矮）。
+            # 所以还要把它标成**可扩展**并给一个下限，才不会被子控件挤扁。
+            splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            splitter.setMinimumHeight(260)
+            # ★ 四块原先都是 `stretch=1`，于是市场区只分到 1/4 高度（实测 700px 窗口下
+            # 列表仅 70px ≈ 2 行）。给它更高权重，让「可下载组件」成为本页主区域。
+            root.addWidget(splitter, 3)
 
             market_row = QHBoxLayout()
             self._market_refresh = QPushButton(_("刷新市场组件列表"))
@@ -217,12 +255,20 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._list = QListWidget()
         self._list.setAccessibleName(_("已安装的可选组件"))
         self._list.currentItemChanged.connect(self._show_selected)
-        root.addWidget(self._list, 1)
+        # ★ 让「已安装」不参与 sizeHint 竞争：它的默认 sizeHint 是 192px，
+        # 与市场区、详情、内核的 sizeHint 相加（1056）超过常见窗口高度，
+        # 导致整个布局进入「空间不足」态，所有项都被压到 minimum ——
+        # 市场区的 QSplitter 因此永远停在它自己的 minimumHeight。
+        self._list.setMaximumHeight(150)
+        self._list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        root.addWidget(self._list)
 
         self._details = QPlainTextEdit()
         self._details.setReadOnly(True)
         self._details.setAccessibleName(_("组件用途、兼容与卸载影响"))
-        root.addWidget(self._details, 1)
+        self._details.setMaximumHeight(140)
+        self._details.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        root.addWidget(self._details)
 
         write_actions = QHBoxLayout()
         self._uninstall_btn = QPushButton(_("卸载所选组件"))
@@ -246,7 +292,11 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         # 把面板的选择意图向上转发：保存配置是主窗口/市场页的职责，
         # 组件面板只做中转（它不知道 config_path 与 dirty 标记）。
         self._kernel_panel.kernel_selected.connect(self.kernel_selected.emit)
-        root.addWidget(self._kernel_panel, 1)
+        # ★ 内核面板原先 `stretch=1` 且没有上限，会抢走剩余空间，
+        # 导致市场列表在常见窗口高度下固定在 232px 不再增长。
+        # 给它合理上限，把剩余高度让给「可下载组件」。
+        self._kernel_panel.setMaximumHeight(240)
+        root.addWidget(self._kernel_panel)
 
     def _reload_catalog(self) -> None:
         """拉取并聚合全部市场源，填充可下载列表。
@@ -375,7 +425,12 @@ class ComponentManagerPanel(WorkerOwnedWidget):
             parts.append("；".join(warnings))
         if blockers:
             parts.append(_("无法安装：") + "；".join(blockers))
-        self._market_status.setText(" — ".join(parts))
+        # 右栏（详情）承载「下载前须知」；底部的 `_market_status` 仍保留，
+        # 用于报告**操作级**状态（如「目录已刷新 / 下载失败」），两者语义不同。
+        if getattr(self, "_market_detail", None) is not None:
+            self._market_detail.setText(" — ".join(parts))
+        if self._market_status is not None:
+            self._market_status.setText(" — ".join(parts))
         if self._market_install is not None:
             # 有阻断项就禁用按钮，而不是让用户点了才失败。
             self._market_install.setEnabled(not blockers)

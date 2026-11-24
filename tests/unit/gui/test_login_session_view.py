@@ -393,14 +393,32 @@ def test_open_rejected_when_persistence_disabled(
 
 
 def test_extend_postpones_deadline(tmp_path: Path, qapp: QApplication) -> None:
+    """「延长」必须让剩余时间变长。
+
+    为什么这里要注入假时钟：原实现用**真实** `time.monotonic` 取两次快照，
+    `before` 与 `after` 分别是 `deadline - t1` 和 `(now + bonus) - now`。
+    两者的差只有「两次取时钟之间的几微秒」——而这两次调用之间要做一次
+    `snapshot()`、一次 `extend()`、一次 `refresh()`，机器负载高时可能跨过
+    一个时钟粒度，于是 `after` 比 `before` 小一点点，断言 `>=` 偶发失败。
+
+    实测（2026-11-24）：全量跑 6486 条时偶发红一次，单独跑 3 次全过。
+    注入可控时钟后判据变成确定的：`extend` 之后剩余 = `bonus`，与调用耗时无关。
+    """
     view = _view(_config(tmp_path))
+    now = [1000.0]
+    view.manager._clock = lambda: now[0]  # type: ignore[method-assign]
     view._url_edit.setText("https://example.org/")
     view._on_open_login_window()
+
+    # 先让时间前进一段，模拟「用户已经等了一会儿」
+    now[0] += 120.0
     before = view.manager.snapshot().remaining_seconds
 
     view._on_extend()
 
-    assert view.manager.snapshot().remaining_seconds >= before
+    after = view.manager.snapshot().remaining_seconds
+    assert after > before, f"延长后剩余时间没有变长：{before} -> {after}"
+    assert after == view.manager._timeout_seconds  # type: ignore[attr-defined]
     assert view._extend_button.isEnabled()
     view.stop_timer()
 
