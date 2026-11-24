@@ -86,20 +86,42 @@ def _rebase_pth_lines(text: str, old: str, new: str) -> str:
 
 
 def reinstall_editable(venv_python: Path, project_root: Path) -> bool:
-    """Re-run pip install -e . so dist-info/direct_url/scripts track the source.
+    """Re-run ``pip install -e .`` so dist-info/direct_url/scripts track the source.
 
-    Deliberately bare `pip install -e .` (no extras): the goal is metadata
-    reconciliation, not a dependency reinstall. Already-satisfied packages are
-    untouched, so this is fast and offline-friendly when the venv is complete.
+    Deliberately no extras / no deps: the goal is metadata reconciliation, not a
+    dependency reinstall. Already-satisfied packages are untouched.
+
+    ★ 2026-11-24：**必须加 ``--no-build-isolation``**。此前只写
+    ``pip install -e .``，而 pip 默认会创建隔离构建环境并从索引**下载**
+    ``setuptools`` / ``wheel`` —— 在没有外网（或 DNS 被劫持）的机器上，这一步会
+    一直卡在 ``Installing build dependencies: started``。
+
+    实测（本机）：
+
+    ```
+    pip install -e .                          -> 90s 超时，卡在 Installing build dependencies
+    pip install -e . --no-build-isolation      -> 5.7s 成功
+    ```
+
+    而 ``reconcile_installed_version`` 是**每次启动都跑**的（``run_windows.bat`` →
+    本脚本），于是「版本不一致」一旦成立，用户每次双击都要等一次超时，
+    而 docstring 此前还写着「offline-friendly」——**那句话是假的**。
+
+    回退：venv 里若缺 ``setuptools`` / ``wheel``，``--no-build-isolation`` 会失败，
+    此时退回到带隔离的普通安装（那种环境本来也需要联网补齐构建依赖）。
     """
-    try:
-        result = subprocess.run(
-            [str(venv_python), "-m", "pip", "install", "-e", str(project_root)],
-            capture_output=True, text=True, timeout=600,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0
+    base = [str(venv_python), "-m", "pip", "install", "-e", str(project_root)]
+    for extra in (["--no-build-isolation", "--no-deps"], []):
+        try:
+            result = subprocess.run(
+                [*base, *extra],
+                capture_output=True, text=True, timeout=600,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if result.returncode == 0:
+            return True
+    return False
 
 
 _DIST_INFO_RE = re.compile(r"omnicrawler_platform-[^.]+\.dist-info$", re.IGNORECASE)
