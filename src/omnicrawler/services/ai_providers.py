@@ -80,9 +80,37 @@ def _format_http_error(name: str, exc: urllib.error.HTTPError, body: str) -> str
     return f"AI provider {name} 返回 HTTP {code}。{guidance}{snippet}"
 
 
+def _human_seconds(value: float) -> str:
+    """把秒数渲染成用户能读的形态，**消掉浮点噪声与科学计数法**。
+
+    为什么需要：`timeout` 来自 `min(self.timeout, self._remaining(deadline))`，
+    而 `_remaining` 是 `deadline - time.monotonic()` —— 必然产出
+    `0.30000000000000004` 这类值。实测（2026-11-24）它会原样进错误消息：
+
+    ```
+    请求超时（0.30000000000000004s）
+    请求超时（1e-09s）
+    ```
+
+    用户看到十六位小数只会困惑。渲染规则：
+
+    * < 1s → 保留两位小数（`0.30s`），极小值向下取到 `0.00s` 前先兜底为 `<0.01s`；
+    * >= 1s → 整数秒（`60s`，不再是 `60.0s`）。
+    """
+    value = float(value)
+    if value < 0.01:
+        return "<0.01s"
+    if value < 1:
+        return f"{value:.2f}s"
+    return f"{value:.0f}s"
+
+
 def _format_network_error(name: str, exc: Exception, timeout: float) -> str:
     if isinstance(exc, socket.timeout):
-        return f"AI provider {name} 请求超时（{timeout}s）。请检查网络或调大 AI 超时设置。"
+        return (
+            f"AI provider {name} 请求超时（{_human_seconds(timeout)}）。"
+            "请检查网络或调大 AI 超时设置。"
+        )
     if isinstance(exc, ssl.SSLError):
         return f"AI provider {name} SSL 握手失败：{exc}。请检查 base_url 是否使用 https 且证书有效。"
     if isinstance(exc, ConnectionError):
