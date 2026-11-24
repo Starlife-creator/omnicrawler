@@ -11,7 +11,12 @@ import re
 # scheme://user:pass@host —— 用户信息段整体视为凭据。
 # 注意：IPv6 的 [::1] 与合法非凭据 URL（rare）可能被误判，但脱敏方向是安全的
 # （宁可多脱敏不可泄露）。
-_URL_CREDENTIAL_RE = re.compile(r"(//[^/\s:@]+):([^@/\s]+)@")
+#
+# ★ 用户名**可以为空**（2026-11-24 实测漏掉）：`redis://:pw@cache:6379/0`、
+# `postgres://:pw@db/x` 这类「只有口令、没有用户名」的连接串是标准写法，
+# 原先 `[^/\s:@]+` 要求用户名非空 ⇒ **整个口令原样留在日志里**。
+# 改为 `*` 之后，`:pw@` 也会被脱敏成 `:<redacted>@`。
+_URL_CREDENTIAL_RE = re.compile(r"(//[^/\s:@]*):([^@/\s]+)@")
 
 
 def redact_url(value: str) -> str:
