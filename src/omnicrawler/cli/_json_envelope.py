@@ -75,6 +75,12 @@ def _suggest(exc: BaseException) -> str:
         return "确认目标站点允许访问，或检查网络策略"
     if name in _INPUT_ERRORS:
         return "修正参数或配置后重试（此类失败重试原样输入不会成功）"
+    # ★ 2026-11-24：「插件未安装」抛的是 `RuntimeError`，落到默认分支后
+    # 被建议「运行 doctor 诊断环境」—— 而它有一个**明确的解决方案**（装插件），
+    # doctor 帮不上忙。按消息识别比按类型识别更准。
+    message = str(exc)
+    if "插件" in message and "未安装" in message:
+        return "在「OmniCrawler 市场」安装所需插件后重试（此类失败改输入即可解决）"
     return "运行 omnicrawler doctor 诊断环境，或用 --log-level DEBUG 复现"
 
 
