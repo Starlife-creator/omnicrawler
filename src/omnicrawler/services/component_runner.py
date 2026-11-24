@@ -270,6 +270,26 @@ def _worker_command() -> list[str]:
     return [sys.executable, "-m", "omnicrawler.services.component_worker"]
 
 
+#: 启动期的**无关告警**：它们说明「某个可选件没找到」，与本次失败无关。
+#: 出现在 stderr 里会把真正的失败原因挤掉 —— 2026-11-20 的 CI 就因此把
+#: 「worker 未产出 JSON」误读成「Tesseract 缺失导致失败」。
+_STDERR_NOISE = ("内置 tesseract", "内置 chromedriver", "内置tesseract", "内置chromedriver")
+
+
+def _meaningful_stderr(stderr: str) -> str:
+    """过滤掉启动期无关告警后，取最后 10 行（不足则全部）。
+
+    取**行**而不是字符：崩溃栈的末尾几行才是「哪一行炸的」，而中文字符占 3 字节，
+    800 字符窗口很容易被前面的告警吃光。
+    """
+    lines = [
+        ln
+        for ln in (stderr or "").strip().splitlines()
+        if ln.strip() and not ln.strip().lower().startswith(_STDERR_NOISE)
+    ]
+    return "\n".join(lines[-10:])
+
+
 def _extract_worker_error(stdout: str) -> str:
     """从 worker 的 stdout 里取出它自报的错误（没有就返回空串）。
 
@@ -357,8 +377,14 @@ def run_component(
         # （真实 CI 上"退出码 1"后面跟的全是告警，看不出失败原因）。
         reported = _extract_worker_error(completed.stdout or "")
         if reported:
+            # ★ JSON 说明「worker 在哪一步退出」，stderr 说明「为什么」。两者都要带：
+            # 主动退出（`sys.exit()`）现在也会产出 JSON，若只报 JSON 的 error，
+            # 组件自己写到 stderr 的原因就被吞掉了 —— 实测（2026-11-24）原本能看到的
+            # `boom` 变成了 `SystemExit: 3`，等于用「哪一步」替换了「为什么」。
+            tail = _meaningful_stderr(completed.stderr or "")
+            suffix = f"；stderr：{tail}" if tail else ""
             raise ComponentRunnerError(
-                f"组件 {spec.name} 退出码 {completed.returncode}：{reported}"
+                f"组件 {spec.name} 退出码 {completed.returncode}：{reported}{suffix}"
             )
         # worker 可能已经写出了**非 error 形态**的 JSON（`ok=False` 但没带
         # error 字段，例如 paddle 探针只设了 `backend`）。此时仍然要把 JSON
@@ -376,13 +402,7 @@ def run_component(
         # 是启动期的 warning，与本次失败无关。它们出现在 stderr 里会把
         # 真正的信息挤掉 —— 2026-11-20 的 CI 就因此把「worker 未产出 JSON」
         # 误读成「Tesseract 缺失导致失败」。
-        _noise = ("内置 tesseract", "内置 chromedriver", "内置tesseract", "内置chromedriver")
-        stderr_lines = [
-            ln
-            for ln in (completed.stderr or "").strip().splitlines()
-            if ln.strip() and not ln.strip().lower().startswith(_noise)
-        ]
-        detail = "\n".join(stderr_lines[-10:]) or "（stderr 只有无关告警）"
+        detail = _meaningful_stderr(completed.stderr or "") or "（stderr 只有无关告警）"
         raise ComponentRunnerError(
             f"组件 {spec.name} 退出码 {completed.returncode}："
             f"**worker 未产出结果 JSON**（进程在写结果前就退出了）。"

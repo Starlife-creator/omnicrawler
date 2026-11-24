@@ -246,8 +246,26 @@ def _guarded_main() -> int:
 
     try:
         return main()
-    except SystemExit:
-        raise
+    except SystemExit as exc:
+        # ★ `sys.exit()` 也必须产出 JSON。此前这里直接 `raise`，于是 worker 内部
+        # 任何一次主动退出（参数校验失败、前置检查不通过…）都会让 stdout **完全为空** ——
+        # 正是真实 CI 见到的形态：「已校验文件 14819 个」「退出码 1」但没有任何 JSON，
+        # 父进程无从判断是哪一步失败的。承诺写的是「保证 stdout 一定有 JSON」，
+        # 就不能给主动退出留例外。
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "stage": "worker_exit",
+                    "error": f"SystemExit: {exc.code!r}",
+                    "traceback": "",
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        # 保留原退出码语义：整数就照原样返回，非整数（如字符串消息）按 1。
+        return int(exc.code) if isinstance(exc.code, int) else 1
     except BaseException as exc:  # noqa: BLE001 - 兜底必须捕获一切
         print(
             json.dumps(
