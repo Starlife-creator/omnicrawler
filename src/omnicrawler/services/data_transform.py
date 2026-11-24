@@ -226,10 +226,21 @@ def transform_records(
     batch_size: int = 1000,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> tuple[list[dict[str, Any]], TransformStats]:
-    """逐行求值并追加 ``{lhs}_parsed`` 列（原列永不修改）。
+    """逐行求值并追加 ``{lhs}_parsed`` 列。
+
+    ★ **就地修改**：返回的就是传入的那个 ``records`` 列表（同一对象），每个 dict 上
+    追加 ``{lhs}_parsed`` 键。**不会**新建副本。
+
+    所以 "原列永不修改" 指的是 **``{lhs}`` 那一列的值不被改写**（新值写入
+    ``{lhs}_parsed``），不是 "整个记录不被改动"。此前文档只写了前者，读起来像是
+    后者 —— 2026-11-24 实测确认传入的 dict 会被加上新键，需要就地语义的调用方
+    （既有测试就用 ``_ , stats = transform_records(records, ...)`` 之后直接读
+    ``records[0]``）与它是一致的，但**文档必须说清**。
+
+    若需要保留原始记录，调用方自己先 ``copy.deepcopy``。
 
     Returns:
-        (新记录列表, 统计)。求值失败单元格写 None 并计入 eval_failures；
+        (与入参同一列表, 统计)。求值失败单元格写 None 并计入 eval_failures；
         求值成功但**值没变**的单元格计入 ineffective_cells（见 TransformStats 说明）。
     """
     columns_added = tuple(spec.output_column for spec in specs)

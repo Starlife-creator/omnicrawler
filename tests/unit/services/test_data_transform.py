@@ -256,5 +256,44 @@ class IneffectiveTransformVisibilityTest(unittest.TestCase):
             self.assertEqual(result["ineffective_columns"], ["价格数字_parsed"])
 
 
+def test_transform_records_is_in_place_and_documents_it() -> None:
+    """契约：**就地修改**并返回同一个列表对象，而不是返回副本。
+
+    为什么要钉这条：函数叫 `transform_records`，而文档曾只写「原列永不修改」，
+    读起来像是「不改动记录」。2026-11-24 实测确认传入的 dict 会被追加
+    `_parsed` 键，且既有用例（`_, stats = ...` 之后直接读 `records[0]`）
+    就依赖这一点。
+
+    本用例把两个方向都钉住：
+
+    * 就地：`out is records`，且入参 dict 确实被加了键；
+    * 但**原列的值确实没变** —— 这才是「原列永不修改」的真正含义。
+
+    若将来改成返回副本，这条会红：改的人必须同时改掉依赖就地语义的既有用例，
+    并更新文档，而不是悄悄改掉一个被公开依赖的行为。
+    """
+    records = [{"price": "¥20"}]
+    specs = [MapSpec("price", "concat(price, '_x')")]
+    out, _stats = transform_records(records, specs)
+
+    assert out is records, "契约是就地修改：返回的必须是同一个列表对象"
+    assert records[0]["price_parsed"] == "¥20_x", "入参 dict 应被追加新键"
+    assert records[0]["price"] == "¥20", "原列的值不得被改写"
+
+
+def test_transform_records_two_specs_sharing_a_lhs_do_not_chain() -> None:
+    """同名 spec 叠加时，第二步读到的仍是**原列**（写的是 `_parsed`，读的是原列）。
+
+    这条记录就地语义的**代价**：两个 spec 用同一个 `lhs` 时，第二步不会看到第一步
+    的结果。这是可接受的，但必须是**已知**的 —— 若将来有人把结果写回原列，
+    这条会立刻红。
+    """
+    records = [{"x": "1"}]
+    out, _stats = transform_records(
+        records, [MapSpec("x", "concat(x, 'a')"), MapSpec("x", "concat(x, 'b')")]
+    )
+    assert out[0]["x_parsed"] == "1b", out[0]
+    assert out[0]["x"] == "1", "原列不得被覆盖"
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
