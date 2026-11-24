@@ -368,15 +368,21 @@ def _dispatch_internal(argv: list[str]) -> bool:
     **在 argparse 之前拦截**：内部命令不进 subparsers，所以 `--help` 里看不到它，
     argparse 也不会因为不认识它而报错。
     """
-    if not argv or argv[0] not in _INTERNAL_COMMANDS:
+    # ★ 2026-11-24：判断前**剥掉前置的全局 flag**。
+    # 此前写成 `argv[0] not in _INTERNAL_COMMANDS`，于是 `omnicrawler --json
+    # __component_worker__` 匹配失败 ⇒ 内部命令落到 argparse ⇒ 报「未注册的命令」，
+    # 而它本该被执行。与第 25 轮 `pdf` 分支是**同一个形态**（`--json` 位置无关
+    # 是明确承诺，但 `argv[0]` 判断没考虑前置 flag）。
+    head = [tok for tok in argv if tok != "--json"]
+    if not head or head[0] not in _INTERNAL_COMMANDS:
         return False
-    module_name = _INTERNAL_COMMANDS[argv[0]]
+    module_name = _INTERNAL_COMMANDS[head[0]]
     import importlib
 
     module = importlib.import_module(module_name)
     entry = getattr(module, "main", None)
     if entry is None:
-        print(f"内部命令 {argv[0]} 的模块缺少 main()", file=sys.stderr)
+        print(f"内部命令 {head[0]} 的模块缺少 main()", file=sys.stderr)
         raise SystemExit(2)
     # 有的 worker 从环境变量/stdin 读参数（component_worker），有的要 argv
     # （worker_main 的 --session）。按签名决定，避免两处各写一套。
@@ -386,7 +392,8 @@ def _dispatch_internal(argv: list[str]) -> bool:
         _accepts_args = bool(inspect.signature(entry).parameters)
     except (TypeError, ValueError):  # pragma: no cover - 内建函数无签名
         _accepts_args = False
-    raise SystemExit(entry(argv[1:]) if _accepts_args else entry())
+    # 传给模块的是**剥离全局 flag 后**的参数（内部模块不认识 `--json`）。
+    raise SystemExit(entry(head[1:]) if _accepts_args else entry())
 
 
 def main(argv: list[str] | None = None) -> None:
