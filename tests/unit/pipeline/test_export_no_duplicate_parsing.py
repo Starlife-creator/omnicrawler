@@ -12,9 +12,13 @@ exporters.py:221   写 jsonl 用          data + evidence
 ```
 
 这不是"会不会更准"的问题，是**同一份字节被解析三遍**。
-实测修掉后：12 万次 -> 8 万次（2.0x/行，即每行 2 个 JSON 列各一次）。
+演进（都发生在 2026-11-25）：
+   6x/行  <- 三处各自 SELECT + 各自 json.loads
+   4x/行  <- export 内部合并
+   2x/行  <- quality_report 改为接受已解析结果（终态）
 
 本文件用**计数**断言，而不是计时 —— 次数是确定性的，耗时会随机器波动。
+断言用**精确等于** 2x：低于它说明有地方被跳过（可能丢数据），高于它说明又有人新增了独立的 SELECT + json.loads。
 """
 
 from __future__ import annotations
@@ -70,14 +74,20 @@ def test_each_json_column_is_parsed_once_per_row(tmp_path: Path, monkeypatch) ->
     monkeypatch.setattr(exporters.json, "loads", counting)
     exporters._export_delivery(config, state, run_id)
 
-    #: 每行 2 个 JSON 列 × 2 处消费者：
-    #:   * `_export_delivery` 自己（展开 + jsonl，已合并为共用一份解析结果）；
-    #:   * `build_quality_report`（独立模块，有自己的 SELECT —— 见下方已知边界）。
-    #: 改动前是 6x/行，现在 4x/行。这里钉住上限，防止再退回 6。
-    expected = count * 4
-    assert calls[0] <= expected, (
-        f"{count} 行最多允许 {expected} 次解析（{calls[0]} 次，{calls[0] / count:.1f}x/行）。"
-        f" 同一份字节被解析了多遍 —— 检查是否又新增了独立的 SELECT + json.loads"
+    #: 每行恰好 2 次：`data_json` 与 `evidence_json` **各一次**。
+    #:
+    #: 演进（都发生在 2026-11-25）：
+    #:   6x/行 <- 三处各自 SELECT + 各自 json.loads（export / quality_rows / jsonl）
+    #:   4x/行 <- export 内部合并
+    #:   2x/行 <- quality_report 改为接受已解析结果（终态）
+    #:
+    #: 用**精确等于**而不是上界：低于它说明有解析被跳过（可能丢数据），
+    #: 高于它说明又有人新增了独立的 SELECT + json.loads。
+    expected = count * 2
+    assert calls[0] == expected, (
+        f"{count} 行应恰好解析 {expected} 次（每行 data + evidence 各一次），"
+        f"实际 {calls[0]} 次（{calls[0] / count:.1f}x/行）。"
+        f" 多了 = 有人新增了独立的 SELECT + json.loads；少了 = 有解析被跳过"
     )
 
 

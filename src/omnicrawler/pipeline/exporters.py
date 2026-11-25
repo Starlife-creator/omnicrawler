@@ -403,7 +403,14 @@ def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = 
                 connection.close()
             files["duckdb"] = str(path)
 
-    quality_report = build_quality_report(config, state, run_id)
+    # 复用本函数已解析好的 evidence —— 否则 build_quality_report 会再 SELECT
+    # 一遍 records 并再 json.loads 一遍（2 万条实测多付 1 次读库 + 1 次解析）。
+    quality_report = build_quality_report(
+        config, state, run_id,
+        parsed_evidence=parsed_evidence,
+        parsed_data=parsed_data,
+        record_total=len(raw_records),
+    )
     files["quality_report_json"] = quality_report["files"]["json"]
     files["quality_report_html"] = quality_report["files"]["html"]
     error_center = build_error_center(state, output, run_id)
