@@ -158,6 +158,19 @@ def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = 
     records: list[dict[str, Any]] = []
     # 与基础列同名的 data 字段（改名保留，见循环内注释）
     flat_key_collisions: set[str] = set()
+    #: 逐行缓存「已解析的 JSON」，避免同一份数据被解析多次。
+    #:
+    #: **为什么需要**（2026-11-25 实测）：改动前 2 万条记录调用 `json.loads`
+    #: **12 万次**（每行 6 次，而每行只有 2 个 JSON 列）。同一份 `data_json` /
+    #: `evidence_json` 被三处各自重复解析：
+    #:
+    #:   * 第 170 行（展开 records 用）        —— data
+    #:   * 第 183 行（构造 quality_rows 用）   —— evidence
+    #:   * 第 221 行（写 jsonl 用）            —— data + evidence
+    #:
+    #: 现在**只解析一次**，后续全部复用。
+    parsed_data: list[Any] = []
+    parsed_evidence: list[Any] = []
     for row in raw_records:
         flat = {
             "record_id": row["record_id"], "source_url": row["source_url"],
@@ -167,7 +180,10 @@ def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = 
         # source_url / record_type / created_at ⇒ CSV/XLSX/DuckDB 的列被污染且无任何提示。
         # 现在"改名不覆盖"：冲突键写进 `data.<key>`，并汇总一条告警。
         data_flat: dict[str, Any] = {}
-        _flatten("", json.loads(row["data_json"]), data_flat)
+        data_value = json.loads(row["data_json"])
+        parsed_data.append(data_value)
+        parsed_evidence.append(json.loads(row["evidence_json"]))
+        _flatten("", data_value, data_flat)
         for key, value in data_flat.items():
             if key in flat:
                 flat[f"data.{key}"] = value
@@ -179,8 +195,7 @@ def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = 
     quality_headers = ["record_id", "run_id", "status", "score", "review_required",
                        "validation_errors", "missing_required", "duplicate", "anomalies"]
     quality_rows: list[dict[str, Any]] = []
-    for row in raw_records:
-        evidence = json.loads(row["evidence_json"])
+    for row, evidence in zip(raw_records, parsed_evidence, strict=True):
         counts = record_quality_counts([evidence])
         quality = evidence.get("_quality", {}) if isinstance(evidence, dict) else {}
         assessed = counts["assessed"] == 1
@@ -213,14 +228,16 @@ def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = 
     if outputs.get("jsonl", True):
         path = output / "records.jsonl"
         with path.open("w", encoding="utf-8") as handle:
-            for row in raw_records:
+            for row, data_value, evidence in zip(
+                raw_records, parsed_data, parsed_evidence, strict=True
+            ):
                 # S3.4.1 ①：同一份数据不写两遍——剔除 data_json/evidence_json
-                # 原始列，只保留展开的 data/evidence
+                # 原始列，只保留展开的 data/evidence。
+                # 2026-11-25：data/evidence 复用上面的解析结果，不再重复 json.loads。
                 clean = {key: value for key, value in row.items() if key not in {"data_json", "evidence_json"}}
-                handle.write(json.dumps(
-                    {**clean, "data": json.loads(row["data_json"]), "evidence": json.loads(row["evidence_json"])},
-                    ensure_ascii=False,
-                ) + "\n")
+                clean["data"] = data_value
+                clean["evidence"] = evidence
+                handle.write(json.dumps(clean, ensure_ascii=False) + "\n")
         files["jsonl"] = str(path)
     # S3.4.1 ②：CSV 列按字段定义顺序（extract.fields 键序），附加列按首次出现顺序
     extract_fields = config.section("extract").get("fields", {})
