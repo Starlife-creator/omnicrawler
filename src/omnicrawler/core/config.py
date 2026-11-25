@@ -248,7 +248,20 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     flag = errors.append if strict else warnings.append
 
     # S2.1.1 ②：顶层段白名单（DEFAULTS 键 + GUI/模板允许的扩展段）
-    known_sections = set(DEFAULTS) | {"api_discovery", "task", "template"}
+    #
+    # ★ 2026-11-25：补 `template_version`。它是**模板元数据版本**，由
+    # `templates/capture.py` 写入，且**随包分发的 50 个模板全部带它**
+    # （`gui/templates/*.yaml`、`templates/scenarios/*.yaml` 等）。
+    #
+    # 缺了它，用户 `init --template` 生成配置后第一件事 `validate` 就收到：
+    #   配置包含未知顶层段 'template_version'
+    # —— 而那是我们自己的模板写进去的，不是用户拼错。
+    #
+    # 这不是「放宽白名单」：`template_version` 确实是被消费的正式键
+    # （见 `templates/evidence.py`、`templates/capture.py`）。
+    known_sections = set(DEFAULTS) | {
+        "api_discovery", "task", "template", "template_version",
+    }
     for key in sorted(set(config.raw) - known_sections):
         hint = _closest_hint(sorted(known_sections), key)
         flag(
