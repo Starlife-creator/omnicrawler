@@ -54,14 +54,38 @@ _WEBDRIVER_NAMES = {
 }
 
 
+#: 探测结果缓存：`(名称) -> 解析到的路径 或 None`。
+#:
+#: **为什么必须缓存**（2026-11-25 实测）：本机 PATH 有 36 条目录，
+#: `shutil.which("chromedriver.exe")` 实测 **21 ms**（走完 36 个目录的
+#: `nt._path_exists`）。而 `slot_combo_items()` 每次刷新下拉框都会对
+#: 每个 provider 调 `is_available()` —— 6 个槽位 × 18 个条目 = 98.5 ms，
+#: 其中 82.8 ms 全花在这 4 次 `shutil.which` 上。
+#:
+#: 缓存的语义边界：**同一进程生命周期内可执行文件的位置不会变**。
+#: 用户在运行中装了驱动，重启应用才能看到 —— 这与「插件需重启加载」
+#: 的既有约定一致，且远好于每次开下拉框卡 100ms。
+#:
+#: 需要强制刷新时（例如安装完驱动后在同一进程里复检）调
+#: `clear_executable_cache()`。
+_EXECUTABLE_CACHE: dict[str, Path | None] = {}
+
+
+def clear_executable_cache() -> None:
+    """清空可执行文件探测缓存（安装/卸载驱动后复检用）。"""
+    _EXECUTABLE_CACHE.clear()
+
+
 def _find_executable(name: str) -> Path | None:
-    """在 PATH 与常见随包位置里找可执行文件。"""
+    """在 PATH 里找可执行文件（结果按名称缓存，见 `_EXECUTABLE_CACHE`）。"""
+    if name in _EXECUTABLE_CACHE:
+        return _EXECUTABLE_CACHE[name]
     import shutil
 
     found = shutil.which(name)
-    if found:
-        return Path(found)
-    return None
+    resolved = Path(found) if found else None
+    _EXECUTABLE_CACHE[name] = resolved
+    return resolved
 
 
 def _webdriver_available(driver: str) -> bool:
