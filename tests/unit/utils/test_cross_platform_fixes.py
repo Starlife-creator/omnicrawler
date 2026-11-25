@@ -121,10 +121,22 @@ def test_b9_csv_index_no_100k_truncation(tmp_path) -> None:
     # Phase 0 M0b：PySide6 的 QSignalSpy 无 __len__/__getitem__，
     # 用 count()/at(i)（第 39 轮 API 差异）
     assert spy.count() == 1, "异步索引未完成"
-    headers, total_rows, file_size = spy.at(0)
+    # 2026-11-25：信号多带一个「每页起始字节偏移」列表（供翻页 seek 用）。
+    headers, total_rows, file_size, page_offsets = spy.at(0)
     assert headers == ["a", "b", "c"]
     assert total_rows == ROWS_PER_PAGE * 3 + 7  # 与同步路径一致，未被截断
     assert file_size > 0
+    # 偏移表长度 = 页数（每页一个起点）；4 页 = 3 整页 + 1 尾页
+    assert len(page_offsets) == 4, page_offsets
+    # 首页偏移 = 表头那一行**按字节**的长度（用实际文件算，不假设行尾是 \n 还是 \r\n）
+    with csv_path.open("rb") as handle:
+        header_bytes = handle.readline()
+    assert page_offsets[0] == len(header_bytes), "首页偏移应为表头之后"
+    # 每个偏移都能读到当前页第一行（用 seek 验证，不依赖内部实现）
+    with csv_path.open("rb") as handle:
+        handle.seek(page_offsets[1])
+        first_of_page2 = handle.readline().decode().strip()
+    assert first_of_page2.split(",")[0] == str(ROWS_PER_PAGE)
 
 
 def test_b9_csv_tail_reachable_beyond_100k_rows(tmp_path) -> None:
