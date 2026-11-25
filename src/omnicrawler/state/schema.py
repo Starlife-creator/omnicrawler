@@ -275,6 +275,24 @@ CREATE INDEX IF NOT EXISTS idx_audit_review_record
 CREATE INDEX IF NOT EXISTS idx_errors_run ON errors(run_id);
 CREATE INDEX IF NOT EXISTS idx_run_state_events_run ON run_state_events(run_id, id);
 CREATE INDEX IF NOT EXISTS idx_stage_checkpoints_run ON stage_checkpoints(run_id, stage);
+-- ★ 2026-11-25：`reuse_record_observation`（增量抓取时**每个未变页面**都走）
+-- 的查询按 `stage` + `idempotency_key` 过滤，**不带 run_id**：
+--
+--     SELECT ... FROM stage_checkpoints c ...
+--     WHERE c.stage='record_observation' AND c.idempotency_key=? ...
+--     ORDER BY c.updated_at DESC, c.rowid DESC LIMIT 1
+--
+-- 而 `stage_checkpoints` 只有 `(run_id, stage)` 索引，过滤条件里没有 run_id
+-- ⇒ 走 sqlite_autoindex 全扫。实测（每行一条 record_observation）：
+--
+--     表中 10000 行: 1.12 ms
+--     表中 30000 行: 4.98 ms
+--     表中 60000 行: 9.10 ms     <- 线性
+--
+-- 增量抓取时这是**每页一次**，5 万页就是 7 分钟以上。
+-- 加索引后 0.02 ms（快 300+ 倍），且 ORDER BY 也不再需要临时 B 树。
+CREATE INDEX IF NOT EXISTS idx_stage_checkpoints_lookup
+    ON stage_checkpoints(stage, idempotency_key, updated_at);
 CREATE INDEX IF NOT EXISTS idx_plugin_state_namespace
     ON plugin_state(project_scope, plugin_id, author_fingerprint, schema_version);
 """
