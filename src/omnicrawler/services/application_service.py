@@ -5,19 +5,83 @@ import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+
+# ★ 2026-11-25：`Pipeline` / `export_all` / `run_sample` / `RunControl` /
+# `session_lease` / `egress_audit_report` 改为**函数内惰性导入**。
+#
+# 为什么：`..pipeline` 整条导入链实测 **342 ms**（含 bs4 66ms、core.config 60ms、
+# extraction 75ms…），而本模块被 `gui/main.py` 在**模块顶层**导入。
+# 结果是：用户双击图标 → 还没看到任何界面，就先付了这 342ms。
+#
+# 这些名字只在下面几个方法里用到（run/sample/export/resume…），
+# 而 GUI 冷启动时一个都不调用。**能推迟到真正需要时再付的，就不要在导入期付。**
+#
+# 类型标注需要的名字放 `TYPE_CHECKING`。
+from typing import TYPE_CHECKING, Any
 
 from ..core.config import AppConfig, load_config, validate_config
 from ..core.utils import atomic_write, utcnow
-from ..fetching.session_lease import session_lease
-from ..pipeline import Pipeline
-from ..pipeline.exporters import export_all
 from ..pipeline_ops.plan_compiler import TaskPlan, compile_task_plan, diff_plans
-from ..pipeline_ops.preflight import run_sample
 from ..pipeline_ops.task_ir import TaskIR
-from ..runtime.run_control import RunControl
-from ..security.security_audit import egress_audit_report
 from ..state import StateStore
+
+if TYPE_CHECKING:  # 仅类型标注；运行时由下面的 __getattr__ 按需加载
+    pass
+
+
+#: 惰性模块属性表：名字 -> (模块路径, 属性名)。
+#:
+#: ★ 2026-11-25：为什么用模块级 `__getattr__`（PEP 562）而不是函数内 import。
+#:
+#: 函数内导入虽然也省了导入时间，但**破坏了两件事**：
+#:
+#: 1. `from ...application_service import Pipeline` 不再成立（模块上没有这个属性）；
+#: 2. `monkeypatch.setattr(module, "Pipeline", Fake)` 失效 —— 函数内的
+#:    `from ..pipeline import Pipeline` 不经过模块属性查找，patch 打不中。
+#:    本会话实测：这个改动让 `test_run_finished_event.py` 的两条守卫直接报
+#:    `AttributeError: module has no attribute Pipeline`。
+#:
+#: `__getattr__` 两者都保住：属性第一次被访问时才真正 import，之后缓存在 globals 里。
+#: 于是「导入期零成本」与「模块属性可 patch」同时成立。
+_LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "Pipeline": ("..pipeline", "Pipeline"),
+    "export_all": ("..pipeline.exporters", "export_all"),
+    "run_sample": ("..pipeline_ops.preflight", "run_sample"),
+    "RunControl": ("..runtime.run_control", "RunControl"),
+    "session_lease": ("..fetching.session_lease", "session_lease"),
+    "egress_audit_report": ("..security.security_audit", "egress_audit_report"),
+}
+
+
+def _lazy(name: str) -> Any:
+    """取一个惰性模块属性，**先查 `globals()`**。
+
+    为什么先查 globals：`monkeypatch.setattr(module, "Pipeline", Fake)` 写的就是
+    `module.__dict__`，也就是本模块的 `globals()`。先查它，patch 才打得中。
+
+    注意：模块级 `__getattr__`（PEP 562）只对**模块属性访问**生效；
+    函数体里的裸名字 `Pipeline(...)` 走的是 globals 查找，**不经过 `__getattr__`**。
+    所以函数体内必须显式调用本函数取值，不能指望 `__getattr__`。
+    """
+    existing = globals().get(name)
+    if existing is not None:
+        return existing
+    module_path, attr = _LAZY_ATTRS[name]
+    import importlib
+
+    value = getattr(importlib.import_module(module_path, __package__), attr)
+    globals()[name] = value
+    return value
+
+
+def __getattr__(name: str) -> Any:
+    """按需加载重模块属性（PEP 562），供 `from ...application_service import X`。
+
+    只有 `_LAZY_ATTRS` 里的名字会被拦；其余名字抛 `AttributeError`（保持正常语义）。
+    """
+    if name not in _LAZY_ATTRS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return _lazy(name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,9 +163,10 @@ class ApplicationService:
             if binding.get("sample_plan_hash") != plan.plan_hash:
                 raise ValueError("正式运行计划与最近一次试跑计划不一致，请重新试跑或明确取消绑定检查")
         self._emit("stage", "run_started", {"plan_hash": plan.plan_hash})
+        pipeline_cls = _lazy("Pipeline")
         status = "unknown"
         try:
-            with Pipeline(config) as pipeline:
+            with pipeline_cls(config) as pipeline:
                 if lifecycle_callback is not None:
                     target = lifecycle_callback
                     # Progress callbacks and lifecycle hooks are separate
@@ -128,7 +193,7 @@ class ApplicationService:
         config = self._ensure_config()
         plan = compile_task_plan(TaskIR.from_config(config.raw))
         self._require_runnable(plan)
-        result = run_sample(config, pages=pages)
+        result = _lazy("run_sample")(config, pages=pages)
         self._write_binding(config, sample_plan_hash=plan.plan_hash)
         self._emit("progress", "sample_finished", {"plan_hash": plan.plan_hash, "pages": pages})
         return {**result, "plan_hash": plan.plan_hash}
@@ -149,7 +214,7 @@ class ApplicationService:
         if database.is_file():
             with StateStore(database) as state:
                 state_result = {"latest_run": state.latest_run(), "totals": state.stats()}
-        return {"run": state_result, "security": egress_audit_report(config.workspace / "logs" / "egress-audit.jsonl")}
+        return {"run": state_result, "security": _lazy("egress_audit_report")(config.workspace / "logs" / "egress-audit.jsonl")}
 
     def export(self, run_id: str | None = None) -> dict[str, Any]:
         config = self._ensure_config()
@@ -159,12 +224,12 @@ class ApplicationService:
             raise FileNotFoundError(
                 f"断点数据库不存在: {database}。请先运行采集任务（omnicrawler run -c <配置>）再导出。"
             )
-        with session_lease(config.workspace), StateStore(database) as state:
+        with _lazy("session_lease")(config.workspace), StateStore(database) as state:
             delivery = None
             if config.section("download").get("verified_pdf_manifest", False):
                 from ..pipeline_ops.provenance import write_pdf_source_manifest
                 delivery = write_pdf_source_manifest(config.workspace, state, run_id=run_id)
-            result = export_all(config, state, run_id)
+            result = _lazy("export_all")(config, state, run_id)
             if delivery is not None:
                 result["pdf_delivery"] = delivery
             return result
@@ -180,7 +245,7 @@ class ApplicationService:
 
     def _control(self, action: str) -> dict[str, Any]:
         config = self._ensure_config()
-        control = RunControl(config.workspace)
+        control = _lazy("RunControl")(config.workspace)
         result = {"pause": control.pause, "resume": control.resume, "stop": control.request_stop}[action]()
         self._emit("stage", action, result)
         return result
