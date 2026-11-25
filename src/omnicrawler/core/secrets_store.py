@@ -142,14 +142,50 @@ class SecretsStore:
             if env_path
             else Path.home() / ".omnicrawler" / "secrets.bin"
         )
-        self.keyring = (
-            None
-            if os.environ.get("OMNICRAWL_KEYRING_DISABLE")
-            else (_load_keyring() if keyring_api is None else keyring_api)
-        )
+        # ★ 2026-11-25：**惰性**解析 keyring 后端，不在构造时导入。
+        #
+        # `import keyring` 实测 **238 ms**（它会拉起 jaraco.* 共 16 个模块）。
+        # GUI 启动路径上 `_gui_app_config()` 每次都会 `SecretsStore()` —— 构造
+        # 时同步导入就等于让窗口出现多等 238 ms。
+        #
+        # 但大多数启动路径根本用不到 keyring：
+        #   * `OMNICRAWL_KEYRING_DISABLE` 已设 ⇒ 直接 None；
+        #   * 设了 `OMNICRAWL_MASTER_PASSWORD` ⇒ 走密码派生，从不碰 keyring；
+        #   * 只读配置、不读凭据。
+        #
+        # 所以改成：需要时（`_master_key` 第一次真的去问 keyring）才导入。
+        # 语义完全不变 —— `self.keyring` 仍是 `模块 | None | 注入的 mock`，
+        # 只是从 property 变成"第一次访问时算出来"。
+        # ★ 优先级必须与改造前**逐字一致**（否则是语义回归）：
+        #
+        #     原先：None if DISABLE else (注入的 keyring_api 或 _load_keyring())
+        #
+        # 即 **DISABLE 压过注入**。我第一版写成「注入了就先解析」，
+        # 结果 `test_session_crypto` 里每个 `_store()` 都新建一个空 FakeKeyring，
+        # 第二个实例拿不到第一个写入的主密钥 ⇒ 解密失败。
+        self._keyring_disabled = bool(os.environ.get("OMNICRAWL_KEYRING_DISABLE"))
+        self._keyring_value = keyring_api
+        self._keyring_loaded = keyring_api is not None
         self._cache: dict[str, bytes] | None = None
         # B05-003：加载/保存/增删改统一串行化，防多线程并发写盘竞态
         self._io_lock = threading.RLock()
+
+    @property
+    def keyring(self) -> Any:
+        """keyring 后端：**惰性**解析，`OMNICRAWL_KEYRING_DISABLE` 压过一切注入。"""
+        if self._keyring_disabled:
+            return None
+        if not self._keyring_loaded:
+            self._keyring_value = _load_keyring()
+            self._keyring_loaded = True
+        return self._keyring_value
+
+    @keyring.setter
+    def keyring(self, value: Any) -> None:
+        # 与改造前的实例属性赋值等价：显式赋值立即生效、解除 DISABLE。
+        self._keyring_value = value
+        self._keyring_loaded = True
+        self._keyring_disabled = False
 
     # -- 密钥获取 ----------------------------------------------------------
 
