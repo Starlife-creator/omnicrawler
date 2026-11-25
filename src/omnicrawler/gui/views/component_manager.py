@@ -76,7 +76,15 @@ _INTRO = _(
 
 
 class _ComponentWorker(BackgroundWorker):
-    """在后台线程执行组件动作，避免读注册表 / 校验大包时卡住界面。"""
+    """在后台线程执行组件动作，避免读注册表 / 校验大包 / 拉市场目录时卡住界面。
+
+    两种操作：
+
+    * 常规组件动作（`list` / `inspect` / `import` / `uninstall` / `rollback` /
+      `verify`）→ 交给 `services.component_tools.execute`；
+    * `catalog` → 拉取并聚合市场目录（**纯网络 IO**，不是组件动作，
+      所以不走 `execute`）。
+    """
 
     def __init__(self, operation: str, arguments: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -84,6 +92,11 @@ class _ComponentWorker(BackgroundWorker):
         self._arguments = arguments
 
     def work(self) -> Any:  # pragma: no cover - 由线程执行
+        if self._operation == "catalog":
+            from .market_aggregation import aggregate_market_catalogs
+
+            return aggregate_market_catalogs(**self._arguments)
+
         from ...services.component_tools import execute
 
         return execute(self._operation, self._arguments)
@@ -134,11 +147,23 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._status.setText(_("打开组件页时自动读取已安装组件。"))
 
     def showEvent(self, event: Any) -> None:  # noqa: N802 - Qt 命名
-        """首次可见时才做只读检测（打开即检测，但不提前占线程）。"""
+        """首次可见时做只读检测，并**自动拉取市场目录**。
+
+        ★ 2026-11-25：此前只 `refresh()`（列已安装组件），**市场目录不会自动拉**
+        —— 用户打开组件页看到的是一份只有本地条目的列表，必须自己点「刷新」
+        才知道市场里有什么。而插件页（`plugin_market_catalog.py:75`）是
+        `showEvent` → `refresh()` 自动拉的。两边不一致，也对用户不友好。
+
+        为什么不在构造时做：面板可能被创建后一直不可见（市场页从未打开），
+        那样会白拉一次网络，还会在对象销毁时撞上
+        "QThread: Destroyed while thread is still running"。
+        """
         super().showEvent(event)
         if not self._loaded_once:
             self._loaded_once = True
             self.refresh()
+            if self._catalog_url:
+                self._reload_catalog()
 
     # ── UI ────────────────────────────────────────────────────────────────
     def _build_ui(self) -> None:
@@ -330,80 +355,78 @@ class ComponentManagerPanel(WorkerOwnedWidget):
         self._set_write_enabled(False)
 
     def _reload_catalog(self) -> None:
-        """拉取并聚合全部市场源，填充可下载列表。
+        """拉到后台线程执行（原先在主线程同步做网络 IO，最坏卡 30 秒）。
 
-        **只读**：不下载任何构件。真正的下载在用户点「下载并安装」并确认后。
-
-        **多源聚合**（2026-11-19）：与插件栏同语义——逐源独立验签、
-        失败可见、全部失败才算整体失败。此前组件栏只读单源，
-        用户配置了镜像源也看不到镜像里的组件。
+        ★ 2026-11-25：`aggregate_market_catalogs` 会走网络（超时 30s）。
+        原先直接在 GUI 线程调用 ⇒ 点「刷新」时整个界面僵住，
+        而且首次 `showEvent` 自动拉目录后会**一进来就卡**。
+        现改为经 `_ComponentWorker` 在后台跑，结果回主线程再渲染。
         """
         if self._market_list is None or not self._catalog_url:
             return
-        from .market_aggregation import (
-            MarketAggregationError,
-            aggregate_market_catalogs,
-            failed_sources,
-            freshness_summary,
-            source_summary,
-        )
-
+        if self._worker is not None and self._worker.isRunning():
+            return
         self._market_status.setText(_("正在拉取市场目录…"))
-        try:
-            aggregated = aggregate_market_catalogs(
-                self._app_config,
-                trust_source=self._trust_source,
-                local_fallback=self._base.parent / "OmniCrawler-market" if self._base else None,
-                egress=_market_egress(self._base),
-            )
-        except MarketAggregationError as exc:
-            # 失败归因决定"要不要提示换镜像"：
-            # 只有**网络类**失败才建议换源；签名/哈希/ABI 这类安全失败
-            # 一律阻断且绝不诱导换源（换源只会绕过校验）。
-            message = _("无法拉取市场目录：") + str(exc)
-            if _failures_allow_mirror_hint(exc):
-                message += "\n" + _(
-                    "当前源连接失败，可以尝试在「源与下载镜像设置」里切换镜像源重试。"
-                )
-            self._market_status.setText(message)
-            self._market_list.clear()
-            self._entries = []
-            return
-        except Exception as exc:  # noqa: BLE001 - 市场不可用不该让面板崩
-            # 明确区分"拉不到"与"验签失败"：后者是安全问题，必须让用户看见。
-            kind = _("目录验签失败，已停止") if isinstance(exc, PermissionError) else _("无法拉取市场目录")
-            self._market_status.setText(f"{kind}：{exc}")
-            self._market_list.clear()
-            self._entries = []
-            return
+        worker = _ComponentWorker(
+            "catalog",
+            {
+                "config": self._app_config,
+                "trust_source": self._trust_source,
+                "local_fallback": (
+                    self._base.parent / "OmniCrawler-market" if self._base else None
+                ),
+                "egress": _market_egress(self._base),
+            },
+            parent=self,
+        )
+        worker.succeeded.connect(self._render_catalog)
+        worker.failed.connect(self._on_catalog_failed)
+        worker.finished.connect(worker.deleteLater)
+        self._worker = worker
+        worker.start()
 
+    def _on_catalog_failed(self, message: str) -> None:
+        """拉目录失败：不崩面板，把原因写在状态行。
+
+        ★ 换源提示的边界（安全关键）：worker 只把异常文本传回来，丢失了
+        `failed_sources` 的结构。所以这里**不主动建议换源** —— 宁可少一条提示，
+        也不能把「验签失败」说成「换个源试试」（那等于诱导绕过校验）。
+        结构化的归因留在 `market_aggregation` 侧，由需要它的调用方自己用。
+        """
+        self._worker = None
+        if self._market_status is not None:
+            self._market_status.setText(_("无法拉取市场目录：") + message)
+        if self._market_list is not None:
+            self._market_list.clear()
+        self._entries = []
+
+    def _render_catalog(self, aggregated: dict[str, Any]) -> None:
+        """把聚合结果画进列表（在 GUI 线程执行）。"""
+        self._worker = None
         from .component_market_logic import components_from_catalog
+        from .market_aggregation import failed_sources, freshness_summary, source_summary
 
         self._entries = components_from_catalog(aggregated)
-        self._market_list.clear()
+        self._reload_catalog_filtered()
         source_note = source_summary(aggregated)
         stale_note = freshness_summary(aggregated)
         if not self._entries:
             detail = "（" + source_note + "）" if source_note else ""
             if stale_note:
                 detail += _("；镜像索引滞后：") + stale_note
-            self._market_status.setText(_("市场暂无组件。") + detail)
+            if self._market_status is not None:
+                self._market_status.setText(_("市场暂无组件。") + detail)
             return
         broken = failed_sources(aggregated)
-        for entry in self._entries:
-            item = QListWidgetItem(f"{entry.name} {entry.version}")
-            item.setData(Qt.ItemDataRole.UserRole, entry.id)
-            self._market_list.addItem(item)
         note = _("共 {n} 个组件").format(n=len(self._entries))
         if source_note:
             note += f"（{source_note}）"
         if broken:
-            # 失败源必须可见——否则用户以为"就这么多"
             note += _("；{n} 个源不可用").format(n=len(broken))
         if stale_note:
-            # 索引新鲜度：镜像有同步周期，用户需要知道"没有某条目"是不是因为滞后
             note += _("；索引滞后：") + stale_note
-        self._market_status.setText(note + _("。选中可查看上游域名与下载量。"))
+        if self._market_status is not None:
+            self._market_status.setText(note + _("。选中可查看上游域名与下载量。"))
 
     def _reload_catalog_filtered(self) -> None:
         """重画**唯一那份**组件列表：市场条目 + 本地已装条目合并，已装的打 ✓。

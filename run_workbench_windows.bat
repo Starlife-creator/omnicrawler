@@ -14,4 +14,13 @@ if exist ".runtime\python\python.exe" (
   echo [INFO] Bundled Python runtime not found; using the existing virtual environment directly.
 )
 
-".venv\Scripts\python.exe" -m omnicrawler workbench %*
+rem ★ 2026-11-25：workbench 是 Tk 窗口程序，用 pythonw.exe 不留 cmd 黑框。
+rem 与 run_gui_windows.bat 同一处理（那边 2026-11-24 已改）。
+rem 注意：rebase 仍用 console python —— 它的报错要能被看到。
+set PYTHONW=.venv\Scripts\pythonw.exe
+if not exist "%PYTHONW%" (
+    ".venv\Scripts\python.exe" -m omnicrawler workbench %*
+    exit /b %ERRORLEVEL%
+)
+start "OmniCrawler Workbench" "%PYTHONW%" -m omnicrawler workbench %*
+exit /b 0

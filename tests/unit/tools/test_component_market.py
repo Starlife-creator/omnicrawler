@@ -220,6 +220,12 @@ def test_panel_stops_on_signature_failure() -> None:
         )
         try:
             panel._reload_catalog()
+            # ★ 2026-11-25：`_reload_catalog` 已改为后台线程（原先同步做网络 IO，
+            # 最坏卡 GUI 30 秒）。测试必须等 worker 真正结束再读状态。
+            worker = panel._worker
+            assert worker is not None, "`_reload_catalog` 没有启动 worker"
+            assert worker.wait(15000), "worker 15 秒内没结束"
+            app.processEvents()
             status = panel._market_status.text()
             assert panel._entries == [], "验签失败却解析出了条目"
             assert "验签" in status or "失败" in status or "无法" in status, (
