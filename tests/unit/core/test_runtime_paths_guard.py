@@ -25,7 +25,12 @@ def test_resolve_portable_path_rejects_absolute_outside(tmp_path: Path) -> None:
         rp.resolve_portable_path(str(outside))
 
 
-def test_resolve_portable_path_rejects_traversal() -> None:
+def test_resolve_portable_path_rejects_traversal(monkeypatch) -> None:
+    # `resolve_portable_path` 的白名单是 (application_dir, portable_data_root,
+    # install_root)。conftest 为隔离把 `OMNICRAWL_INSTALL_ROOT` 指到了会话临时
+    # 目录 —— 那正好是 `${DATA_DIR}/../..` 的落点，于是这条"越界"路径
+    # 反而落在允许的根里，断言失效。清掉它，让三个根都回到默认值再测穿越。
+    monkeypatch.delenv("OMNICRAWL_INSTALL_ROOT", raising=False)
     rp.portable_data_root.cache_clear()
     with pytest.raises(ValueError, match="越出应用/数据根目录"):
         rp.resolve_portable_path("${DATA_DIR}/../../etc/passwd")

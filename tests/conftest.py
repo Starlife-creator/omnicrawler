@@ -10,6 +10,7 @@
 """
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,38 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 os.environ.setdefault("PYTHONHASHSEED", "42")
+
+
+#: **测试用的数据根**：整轮会话落在系统临时目录，绝不碰真实用户目录。
+#:
+#: 为什么需要（2026-11-25 实测）：`tests/unit/utils/test_build_runtime_fixes.py`
+#: 的 `test_f28` 会 `monkeypatch.setattr(runtime_paths, "portable_data_root", ...)`
+#: 并 `cache_clear()`；同进程接着跑 `test_f39` 时，`portable_data_root()` 重新按
+#: 默认规则解析 —— 当时仓库里没有 `PORTABLE.flag`，于是落到**真实的**
+#: `%LOCALAPPDATA%\\OmniCrawler` 并 `mkdir` 出一个空目录。
+#:
+#: 后果不只是「多一个空目录」：`check_test_cleanliness.py` 判的是 git 状态，
+#: 那个目录在用户家目录、不在仓库里，**看不出**；而用户下次启动应用会看到
+#: 一个来历不明的数据目录。开发机因此从"便携"退化成"在 C 盘留垃圾"。
+#:
+#: 修法：把数据根判定链上的两个输入都指向会话临时目录 ——
+#:
+#: * `OMNICRAWL_INSTALL_ROOT` ⇒ `install_root()`（首选根）；
+#: * `LOCALAPPDATA` / `HOME` ⇒ 兜底根。
+#:
+#: 两者都指向临时目录后，无论走哪一条分支都落在临时目录内。
+#: 需要在用例里改这些变量的测试仍可用 `monkeypatch.setenv` 覆盖（fixture
+#: 与模块级设置都只是 `setdefault` 语义的"会话初值"）。
+_TEST_DATA_ROOT = Path(tempfile.mkdtemp(prefix="omnicrawler-test-data-"))
+os.environ["OMNICRAWL_INSTALL_ROOT"] = str(_TEST_DATA_ROOT)
+os.environ["LOCALAPPDATA"] = str(_TEST_DATA_ROOT / "LocalAppData")
+os.environ["XDG_DATA_HOME"] = str(_TEST_DATA_ROOT / "Xdghome")
+#: Windows 缓存路径常被写成 `%SystemDrive%\\ProgramData\\...`；缺这个变量时
+#: 它会被当成**相对路径**，于是在 cwd（仓库根）下生成一个字面名为
+#: `%SystemDrive%` 的目录。`win_shortcut` 的文档里记过这个坑，这里一并堵住。
+os.environ.setdefault("SystemDrive", "C:")
+for _sub in ("LocalAppData", "Xdghome"):
+    (_TEST_DATA_ROOT / _sub).mkdir(parents=True, exist_ok=True)
 
 # **统一强制 offscreen**：22 个测试文件里各写一遍 `qapp`/`qt_app`/`_qt_app`，
 # 但只有 5 处设了 `QT_QPA_PLATFORM=offscreen`，其余靠 CI 的全局环境变量兜着

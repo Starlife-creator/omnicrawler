@@ -137,6 +137,11 @@ def test_signed_upgrade_stages_and_preserves_workspace_paths(tmp_path: Path) -> 
 
 
 def test_portable_mode_choice_placeholders_and_storage_advisory(tmp_path: Path, monkeypatch) -> None:
+    # 本用例断言「portable 模式的数据根 = application_dir()」。
+    # 但 conftest 为隔离给会话设了 `OMNICRAWL_INSTALL_ROOT`，而
+    # `install_root()` **优先**读它 —— 那样 `preferred` 就不是 `tmp_path` 了。
+    # 这里显式清掉，让本用例继续验证它自己要验证的那条分支。
+    monkeypatch.delenv("OMNICRAWL_INSTALL_ROOT", raising=False)
     monkeypatch.setattr(runtime_paths, "application_dir", lambda: tmp_path)
     monkeypatch.setattr(runtime_paths, "is_frozen", lambda: False)
     runtime_paths.portable_data_root.cache_clear()
