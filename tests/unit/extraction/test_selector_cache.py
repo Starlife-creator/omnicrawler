@@ -68,13 +68,14 @@ def test_cached_and_uncached_results_are_identical() -> None:
 
 def test_invalid_selector_is_cached_as_failure_and_still_raises() -> None:
     """非法选择器：缓存「失败」标记，但**行为不变**（仍然抛给调用方降级处理）。"""
+    soupsieve = pytest.importorskip("soupsieve")
     document = parse_html(HTML)
-    with pytest.raises(Exception):
+    with pytest.raises(soupsieve.SelectorSyntaxError):
         select_nodes(document, "div[[[broken")
     assert html_tools._SELECTOR_CACHE.get("div[[[broken") is False, (
         "非法选择器没有被缓存为失败标记 —— 每次都会重新编译再失败"
     )
-    with pytest.raises(Exception):
+    with pytest.raises(soupsieve.SelectorSyntaxError):
         select_nodes(document, "div[[[broken")
 
 
