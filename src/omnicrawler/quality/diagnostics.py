@@ -24,6 +24,8 @@ from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
+from ..i18n import _
+
 
 class ErrorCategory(Enum):
     ACCESS_POLICY = "access_policy"         # 403/401/robots
@@ -274,7 +276,9 @@ def diagnose_from_state(run_id: str, state_store: Any) -> list[DiagnoseReport]:
     """从 StateStore 读取错误并批量诊断。"""
     try:
         raw_errors = state_store.error_summary(run_id)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - 诊断不可用不该让调用方崩
+        # 静默返回 [] 会让「没错误」与「读不出错误」长得一样。
+        LOGGER.warning(_("读取运行错误摘要失败（%s）：%s"), run_id, exc)
         return []
     return diagnose_batch(raw_errors, {"run_id": run_id})
 

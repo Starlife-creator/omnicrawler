@@ -307,6 +307,7 @@ omnicrawler transform books.csv grouped.csv `
 | `omnicrawler cleanup -c <config>` | 预览或执行数据保留策略 |
 | `omnicrawler runtime-verify` | 验证便携运行时清单 |
 | `omnicrawler components list` | 查看已注册组件 |
+| `omnicrawler browser-kernels` | 列出可用浏览器内核（只读，不启动浏览器、不联网）|
 | `omnicrawler models probe` | 查看已下载的 OCR 模型（只读，不联网） |
 | `omnicrawler models download --source aistudio` | 从**上游**下载 OCR 模型（本项目不托管模型） |
 | `omnicrawler serve` | 启动**只读**本地监控面板 |

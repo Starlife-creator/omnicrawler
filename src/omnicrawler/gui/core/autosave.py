@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import threading
 import time
 from pathlib import Path
@@ -19,6 +20,9 @@ from .config_serializer import load_yaml, save_yaml
 AUTOSAVE_INTERVAL_MS = 60_000  # 60 秒
 AUTOSAVE_DIR = "configs"
 AUTOSAVE_PREFIX = ".autosave_"
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AutosaveManager(QObject):
@@ -129,14 +133,31 @@ class AutosaveManager(QObject):
 
         Returns:
             加载成功返回 CrawlConfig，失败返回 None。
+
+        ★ 2026-11-25：失败时**必须留痕**。
+
+        此前这里 `except Exception: return None` 什么都不记，而调用方
+        （`main.py::_on_draft_found`）在用户点了「恢复」之后只做
+        `if config:` —— 返回 None 时**界面毫无反应**：没有错误、没有提示、
+        对话框关掉就像什么都没发生。用户会以为「点了恢复但草稿没回来」，
+        却拿不到任何可排查的信息。
+
+        实测两种情形都返回 None 且静默：
+
+        * 草稿文件不存在（并发清理 / 手动删除）；
+        * YAML 解析失败（草稿被截断 —— 自动保存写一半时断电就会这样）。
+
+        现在把异常交给调用方判断：返回 None 仍表示"没加载成功"，
+        但**原因已写进日志**，用户反馈支持时能直接看到是缺文件还是坏 YAML。
         """
         try:
             config = load_yaml(draft_path)
-            self._config = config
-            self._draft_path = draft_path
-            return config
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 草稿损坏不该让 GUI 崩
+            LOGGER.warning(_("草稿加载失败（%s）：%s"), draft_path, exc)
             return None
+        self._config = config
+        self._draft_path = draft_path
+        return config
 
     def scan_and_emit(self) -> None:
         """扫描残余草稿并发射信号。"""

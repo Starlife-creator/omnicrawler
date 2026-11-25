@@ -595,10 +595,6 @@ class MainWindow(QMainWindow):
     def _check_for_updates(self) -> None:
         self._chrome.check_for_updates()
 
-
-
-
-
     def _restart_application(self) -> None:
         """拉起同一个可执行文件再退出当前进程。
 
@@ -1278,9 +1274,6 @@ class MainWindow(QMainWindow):
     def _inspect_site(self, url: str) -> None:
         self._config_delegate.inspect_site(url)
 
-
-
-
     # ================================================================
     #  P2：意图区 URL 探活（画布徽标，失败静默降级）
     # ================================================================
@@ -1443,6 +1436,13 @@ class MainWindow(QMainWindow):
                 self._refresh_canvas()
                 self._install_plugin_ui(notify=True)
                 ToastManager.instance().success(_("草稿已恢复"))
+            else:
+                # 草稿坏了或已不存在时此前**界面毫无反应**（点了「恢复」像没点过）。
+                ToastManager.instance().warning(
+                    _("草稿恢复失败：文件可能已被删除或内容损坏。\n草稿仍在：{0}").format(
+                        draft_path
+                    )
+                )
 
     # ================================================================
     #  窗口事件
@@ -1616,9 +1616,6 @@ class MainWindow(QMainWindow):
 
         dialog = StealthSettingsDialog(self._settings, parent=self)
         dialog.exec()
-
-
-
 
 def _safe_int(value: Any, default: int) -> int:
     """解析整数，非数字值回退默认（避免 .env 脏数据使 AI 静默不可用）。"""

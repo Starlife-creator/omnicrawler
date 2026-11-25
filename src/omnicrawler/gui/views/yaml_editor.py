@@ -332,7 +332,10 @@ class YamlEditor(QWidget):
         """获取当前编辑器中的配置。"""
         try:
             return from_yaml(self._editor.toPlainText())
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 编辑器内容可能随时是半成品
+            # 解析失败时返回 None；留痕只为排查 GUI 状态不同步时能区分
+            # 「编辑器里就是坏的」与「同步逻辑没跑」。
+            LOGGER.warning(_("编辑器 YAML 解析失败：%s"), exc)
             return None
 
     def update_from_config(self, config: CrawlConfig) -> None:

@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import copy
+import logging
 from dataclasses import fields
 from pathlib import Path
 
 from ...templates.template_catalog import TemplateCatalog, TemplateRecord
 from ..i18n import _
 from .config_model import CrawlConfig, FieldDef
+
+LOGGER = logging.getLogger(__name__)
 
 
 class TemplateInfo:
@@ -136,7 +139,9 @@ class TemplateLoader:
             from .config_serializer import load_yaml
 
             return load_yaml(info.filepath)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - 模板坏不该让 GUI 崩
+            # 返回 None 时调用方只看到「模板没加载出来」，不知道是文件缺失还是 YAML 坏了。
+            LOGGER.warning(_("模板加载失败（%s）：%s"), info.filepath, exc)
             return None
 
     def extract_placeholders(self, config: CrawlConfig) -> dict[str, str]:
