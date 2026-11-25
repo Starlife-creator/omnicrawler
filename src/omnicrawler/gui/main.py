@@ -130,6 +130,8 @@ except ImportError as e:
     print(_("请运行: pip install omnicrawler-platform[gui]"), file=sys.stderr)
     sys.exit(1)
 GUI_VERSION = APP_VERSION
+
+
 class MainWindow(QMainWindow):
     """OmniCrawler GUI 主窗口 — 组合根，通过 delegate 分发功能。"""
 
@@ -523,11 +525,9 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001 - 插件问题不阻塞 GUI 启动
             LOGGER.warning("GUI startup plugin load failed: %s", exc)
             load_errors.append(_(f"插件运行配置加载失败：{exc}"))
-        for item in registry.plugin_errors:
-            path = str(item.get("path", _("插件")))
-            reason = str(item.get("error", _("未知错误")))
-            if item.get("level") != "skipped" or _("未在当前项目启用") not in reason:
-                load_errors.append(f"{path}: {reason}")
+        from .plugin_host import plugin_error_lines
+
+        load_errors.extend(plugin_error_lines(registry.plugin_errors))
         try:
             load_errors.extend(_install_plugin_ui(self, registry))
         except Exception as exc:  # noqa: BLE001

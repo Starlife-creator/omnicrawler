@@ -231,3 +231,26 @@ def clear_plugin_ui(mw: Any) -> None:
         values.clear()
     mw._plugin_background_controllers = []
     mw._declarative_plugin_view_controllers = []
+
+def plugin_error_lines(items: list[dict[str, str]]) -> list[str]:
+    """把 `registry.plugin_errors` 转成用户可见的错误行。
+
+    ★ 2026-11-25：`level == "skipped"` 的条目**不是错误**，一律丢弃。
+
+    默认插件搜索路径 `["plugins/", "plugins_installed/"]`（`core/config_defaults.py`）
+    在全新用户那里**本来就不存在** —— 那是零配置的正常状态，不是故障。
+    原实现只放过「未在当前项目启用」这一种 skipped，于是每次启动都报
+    `plugins_installed/: skipped: 路径不存在`，`notify=True` 时还弹 Toast
+    「有 1 个插件未能加载」—— 用户看到的是「我什么都没装，怎么就坏了」。
+
+    真失败条目（签名无效、导入异常等）**没有 `level` 字段**，照旧保留。
+    """
+    lines: list[str] = []
+    for item in items:
+        path = str(item.get("path") or _("插件"))
+        reason = str(item.get("error") or _("未知错误"))
+        if item.get("level") == "skipped":
+            LOGGER.debug(_("跳过插件项 %s: %s"), path, reason)
+            continue
+        lines.append(f"{path}: {reason}")
+    return lines
