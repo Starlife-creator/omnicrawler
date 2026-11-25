@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
@@ -99,6 +99,7 @@ class QmlShowcaseView(QWidget):
         self._bridge: TokenBridge | None = None
         self._model: ShowcaseModel | None = None
         self._quick: QWidget | None = None
+        self._loaded_once = False
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -109,7 +110,28 @@ class QmlShowcaseView(QWidget):
         self._hint.setVisible(False)
         self._layout.addWidget(self._hint)
 
-        self.refresh()
+        # ★ 2026-11-25：**不在构造时加载 QML**。
+        #
+        # 实测 `import PySide6.QtQml + QtQuickWidgets` = **129.6 ms**，
+        # 而 `refresh()` 会触发它 —— 于是 MainWindow 构造时为这个**第 12 位、
+        # 极少点开**的试点页面白等 129ms。
+        #
+        # 现在只建骨架（提示标签 + 空布局），第一次真正需要时（`refresh()`
+        # 或 `showEvent`）才拉起 QML 运行时。
+        #
+        # 边界：`showcase_model` / `token_bridge` 在加载前是 None —— 与
+        # 「QML 不可用」时一致，调用方本来就该判空（见两个 property 的用法）。
+        # 构造后先按「不可用提示」渲染，避免露出一块空白。
+        self._teardown_quick()
+        self._hint.setVisible(True)
+        self.setAccessibleDescription(qml_unavailable_hint())
+
+    def showEvent(self, event: Any) -> None:  # noqa: N802 - Qt 命名
+        """首次可见时才加载 QML（冷启动不为它付 129ms）。"""
+        super().showEvent(event)
+        if not self._loaded_once:
+            self._loaded_once = True
+            self.refresh()
 
     # ── 对外 ──────────────────────────────────────────────
     def refresh(self) -> None:

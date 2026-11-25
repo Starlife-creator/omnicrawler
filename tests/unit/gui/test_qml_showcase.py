@@ -47,6 +47,11 @@ def _view(tmp_path: Path, qapp: QApplication) -> tuple[QmlShowcaseView, QWidget]
     holder = QWidget()  # ★ 持有引用：临时容器会被 GC 带走子控件（见 test_charts 的教训）
     view.setParent(holder)
     view.resize(520, 420)
+    # ★ 2026-11-25：`QmlShowcaseView` 改为**首次可见时才加载 QML**（构造只建骨架），
+    # 因为 `import QtQml + QtQuickWidgets` 实测 129.6ms，而这个试点页排在导航第 12 位。
+    # 这里 `holder` 从不 `show()` ⇒ 子控件的 showEvent 不会触发，所以显式刷一次。
+    # 本文件测的是**渲染结果**，不是构造时机（构造零开销由 test_qml_showcase_lazy.py 钉住）。
+    view.refresh()
     view.show()
     qapp.processEvents()
     return view, holder
