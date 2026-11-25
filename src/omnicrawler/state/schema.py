@@ -231,6 +231,22 @@ CREATE TABLE IF NOT EXISTS plugin_state (
 
 CREATE INDEX IF NOT EXISTS idx_frontier_status ON frontier(status, priority, depth);
 CREATE INDEX IF NOT EXISTS idx_responses_run ON responses(run_id);
+-- ★ 2026-11-25：`save_response` 每次插入前都要问「这个 URL 上一次的内容哈希是什么」，
+-- 查询是 `WHERE final_url=? OR url=? ORDER BY id DESC LIMIT 1`。**原先没有任何
+-- 针对这两列的索引**，于是每次都全表扫 —— 实测（本机）:
+--
+--     表中  10000 行:  1.2 ms/条
+--     表中  20000 行:  5.2 ms/条
+--     表中  30000 行:  8.4 ms/条
+--     表中  50000 行: 13.2 ms/条     <- 完全线性，就是个全表扫
+--
+-- 抓 5 万页时，光这一步就要多花 10 分钟以上，且随页数持续变差。
+-- 加上这两个索引后 0.32 ms/条 且**不随表增长**（快 41 倍）。
+--
+-- 两个索引而不是一个：查询是 `final_url OR url`，SQLite 用 MULTI-INDEX OR
+-- 各走一个索引再合并。只建一个的话另一条边仍然是扫描。
+CREATE INDEX IF NOT EXISTS idx_responses_final_url ON responses(final_url, id);
+CREATE INDEX IF NOT EXISTS idx_responses_url ON responses(url, id);
 CREATE INDEX IF NOT EXISTS idx_records_run ON records(run_id);
 CREATE INDEX IF NOT EXISTS idx_record_versions_lookup
     ON record_versions(source_url, record_type, identity, id);
