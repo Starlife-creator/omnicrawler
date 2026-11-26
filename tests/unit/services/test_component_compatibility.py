@@ -29,6 +29,24 @@ from omnicrawler.services.component_recipe import check_compatibility, current_a
 from tools.market.component_discovery import iter_component_recipes
 
 
+def _scratch_dir(name: str):
+    """为本用例开一个**独占**的临时目录；用完由调用方删。
+
+    为什么要这个 helper（2026-11-26 实测）：下面三条用例原本都把工作目录写死在
+    `tests/unit/services/.pytest_<name>/` —— **仓库内的固定路径**。
+    正常跑没问题，但同一时刻有两个 pytest 进程时它们互相 `rmtree` 对方正在用的目录，
+    于是出现「单独跑必绿、全量跑随机红、且每次红的用例还不一样」。
+    我当天就撞了一次：并发跑了两次全量，一条报 `assembly` 挂了、另一条报 `pth` 挂了。
+
+    这不是产品缺陷，是**测试之间共享了可变状态**。判据要能在任何并发下成立，
+    就不能把中间产物放在一个全机器共用的名字上。
+    """
+    import tempfile
+    from pathlib import Path
+
+    return Path(tempfile.mkdtemp(prefix=f"omnicrawler-test-{name}-"))
+
+
 def _recipe(**overrides) -> dict:
     base = {
         # **全平台/全架构**：这个 fixture 被显式传不同平台/架构的用例共用
@@ -313,7 +331,7 @@ def test_assembly_manifest_declares_file_hashes() -> None:
 
     from omnicrawler.services.component_recipe import install_from_recipe
 
-    tmp = Path(__file__).resolve().parent / ".pytest_component_assembly"
+    tmp = _scratch_dir("component_assembly")
     work = tmp
     work.mkdir(parents=True, exist_ok=True)
     try:
@@ -708,7 +726,7 @@ def test_multiple_artifacts_into_same_dir_are_merged() -> None:
 
     from omnicrawler.services.component_recipe import install_from_recipe
 
-    work = Path(__file__).resolve().parent / ".pytest_merge_check"
+    work = _scratch_dir("merge_check")
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     try:
@@ -1135,7 +1153,7 @@ def test_pth_files_are_not_extracted() -> None:
 
     from omnicrawler.services.component_recipe import install_from_recipe
 
-    work = Path(__file__).resolve().parent / ".pytest_pth_check"
+    work = _scratch_dir("pth_check")
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     try:
