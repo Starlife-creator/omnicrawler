@@ -36,6 +36,11 @@ class DOMNode:
     parent_tag: str = ""
     parent_key: str = ""
     itemprop: str = ""
+    # ★ 2026-11-26：`data-testid` 是现代站点的**显式语义标注**（Playwright/Cypress 惯例）。
+    #   实测（web-scraping.dev/reviews）：整个数据区没有任何 class，只有
+    #   `data-testid="review-text"` / `"review-date"` / `"review-stars"`，
+    #   旧实现因此把两列都命名成兜底的 `内容_p` / `内容_span`。
+    testid: str = ""
     xpath: str = ""
     css_path: str = ""
     is_link: bool = False
@@ -135,6 +140,7 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int) ->
     title = str(attrs.get("title") or "")
     src = str(attrs.get("src") or "")
     itemprop = str(attrs.get("itemprop") or "").strip()
+    testid = str(attrs.get("data-testid") or "").strip()
 
     children: list[Any] = []
     c = node.child
@@ -171,6 +177,7 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int) ->
             parent_tag=p_tag,
             parent_key=parent_key,
             itemprop=itemprop,
+            testid=testid,
             xpath="",
             css_path=css,
             is_link=bool(href and tag == "a"),
@@ -230,6 +237,7 @@ def _walk(element: Any, nodes: list[DOMNode], depth: int, max_nodes: int) -> Non
     href = element.get("href", "") if hasattr(element, "get") else ""
     src = element.get("src", "") if hasattr(element, "get") else ""
     itemprop = str(element.get("itemprop", "") or "").strip() if hasattr(element, "get") else ""
+    testid = str(element.get("data-testid", "") or "").strip() if hasattr(element, "get") else ""
 
     children = [c for c in element if _tag_name(c)] if hasattr(element, "__iter__") else []
     child_tags = [_tag_name(c) for c in children]
@@ -256,6 +264,7 @@ def _walk(element: Any, nodes: list[DOMNode], depth: int, max_nodes: int) -> Non
         parent_tag=_tag_name(parent) if parent is not None else "",
         parent_key=parent_key,
         itemprop=itemprop,
+        testid=testid,
         xpath="",  # 调用方自行生成
         css_path=css,
         is_link=bool(href and tag == "a"),

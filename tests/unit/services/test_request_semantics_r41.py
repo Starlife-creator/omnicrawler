@@ -211,13 +211,50 @@ def test_run_comparison_points_at_compare_runs_instead_of_denying_it() -> None:
     "demand",
     [
         "抓取 该标签下所有引文",  # 半句话不是字段名
-        "抓取 https://example.com/a 的标题、去除货币符号",  # 处理描述不是字段名
-        "抓取 https://example.com/a 的标题",  # 单项不成列举
     ],
 )
 def test_ambiguous_tokens_are_not_taken_as_field_names(demand: str) -> None:
-    """把半句话当字段名，比少一个字段更糟（项目既有的「歧义不猜」）。"""
+    """把半句话当字段名，比少一个字段更糟（项目既有的「歧义不猜」）。
+
+    ★ 2026-11-26（用户裁定）：原来这里还有一条「抓取 <URL> 的标题」
+    —— 「单项不成列举」。那条规则已改：**单项可以成单个**，
+    只要它来自「…的 X」结构。见 `test_single_field_is_taken_from_the_de_phrase`。
+    """
     assert compile_natural_language(demand).task.fields == ()
+
+
+def test_processing_description_is_dropped_but_the_real_field_is_kept() -> None:
+    """「标题、去除货币符号」——「去除货币符号」是**处理描述**，不是字段。
+
+    旧行为：两项被砍掉一项后只剩一项，于是整条**一个字段都取不出来**；
+    放宽单项后正解是「保留标题、丢掉处理描述」。
+    """
+    assert compile_natural_language(
+        "抓取 https://example.com/a 的标题、去除货币符号"
+    ).task.fields == ("标题",)
+
+
+@pytest.mark.parametrize(
+    ("demand", "expected"),
+    [
+        ("抓取 https://books.toscrape.com 的价格", ("价格",)),
+        ("抓取 https://quotes.toscrape.com 的标签", ("标签",)),
+        ("把 https://quotes.toscrape.com 的正文抓下来", ("正文",)),
+    ],
+)
+def test_single_field_is_taken_from_the_de_phrase(
+    demand: str, expected: tuple[str, ...]
+) -> None:
+    """「单项不成**列举**，但单项可以成**单个**」（用户 2026-11-26 裁定）。
+
+    旧规则一律要求 ≥2 项，于是「抓取 <URL> 的价格」取不出字段 ——
+    下游拿到空列表直接返回**全部**自动推断字段，用户以为只要一列、实际拿到整张表。
+
+    ★ 放宽是有条件的：单项必须来自**「…的 X」**结构。
+    没有「的」的单个名词跟在动词后面语义太弱（「抓取 该标签下所有引文」那种
+    半句话就是靠这条挡住的，见上一个用例）。
+    """
+    assert compile_natural_language(demand).task.fields == expected
 
 
 # ── 5. 两条路径必须一致（否则「开 AI 反而更差」） ────────────────────────

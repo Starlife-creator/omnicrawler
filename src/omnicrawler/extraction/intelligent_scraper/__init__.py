@@ -544,7 +544,16 @@ def verify_config(config: dict[str, Any], html: str) -> dict[str, Any]:
             if not nodes:
                 continue
             node = nodes[0]
-            value = node_attr(node, str(rule["attr"])) if rule.get("attr") else node_text(node)
+            # 2026-11-26: 与 extractors._apply_rule 保持**同一口径** ——
+            #   count 型字段的值是子元素个数（星级 = N 个 svg）。
+            #   这里漏了这条分支，验证报告会显示 评分(0)，而真实 run 能取到；
+            #   反过来也会让"验证通过、运行 0 条"的假绿重新出现。
+            child_selector = str(rule.get("count_selector") or "")
+            value: Any
+            if child_selector:
+                value = len(select_nodes(node, child_selector))
+            else:
+                value = node_attr(node, str(rule["attr"])) if rule.get("attr") else node_text(node)
             if value not in (None, ""):
                 data[str(name)] = value
                 filled[str(name)] += 1
@@ -700,6 +709,10 @@ def analyze_to_config(
         # 走查 R3.6：值写在 class 名里时，取到 `class` 还要映射（`Three` → 3）
         if f.get("value_map"):
             rule["value_map"] = f["value_map"]
+        # 2026-11-26: 有的字段值是**子元素个数**（星级渲染成 N 个 svg）。
+        #   只写 attr 取不到东西，必须把计数选择器一起带下去。
+        if f.get("count_selector"):
+            rule["count_selector"] = f["count_selector"]
         if f.get("examples"):
             rule["examples"] = f["examples"]
         fields_dict[name] = rule
@@ -806,6 +819,10 @@ def align_requested_fields(
         "商品名": ("标题", "名称"),
         "名称": ("名称", "标题"),
         "标题": ("标题", "名称"),
+        # 2026-11-26: 评论类需求的常见说法（web-scraping.dev/reviews 实测）
+        "评论内容": ("正文", "内容", "评论"),
+        "评论": ("正文", "内容", "评论"),
+        "评价内容": ("正文", "内容"),
         "语录": ("正文", "内容"),
         "引文": ("正文", "内容"),
         "名言": ("正文", "内容"),
@@ -1092,11 +1109,17 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
         _consider(html, from_render=initial_rendered)
         static_analysis = analyze_page(html, url)
         static_top = static_analysis.patterns[0] if static_analysis.patterns else None
+        # ★ 2026-11-26：`js_pagination` 也要让静态结果算"弱"。
+        #   判据：页面留着一个**空的分页挂载点**（`<div id="static-pagination"></div>`），
+        #   说明页码是 JS 拉回来填的 —— 静态 HTML 里只有首屏那几条。
+        #   实测 webscraper.io/.../ajax：每页 3 条共 3 页，静态只拿到 3 条却报"足够"。
+        #   ★ 只加这一条信号，不放宽"静态够用"的其它判据 —— 那会让所有站点都去开浏览器。
         weak = (
             best_config is None
             or static_top is None
             or static_top.count < 3
             or _is_chrome_path(static_top.css_path)
+            or "js_pagination" in signals
         )
         rendered_html = ""
         if weak and url and not initial_rendered:

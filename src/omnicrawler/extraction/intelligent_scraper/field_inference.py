@@ -161,6 +161,28 @@ def _class_value_token(node: DOMNode) -> str | None:
     return found[0] if len(found) == 1 else None
 
 
+#: 「库存」写在 **item 自身**类名里的词表（走查：scrapeme.live 实测）。
+#: ★ 封闭表：只认这几个语义明确的词。`product` / `status-publish` / `col-md-6`
+#:   这类排版与状态类名绝不能当数据 —— 那会产出一列与业务无关的噪声。
+_ITEM_CLASS_STOCK: dict[str, str] = {
+    "instock": "有货",
+    "outofstock": "缺货",
+    "out-of-stock": "缺货",
+}
+
+
+def _item_class_value_token(node: DOMNode) -> str | None:
+    """item 自身是否把**库存状态**写在类名里；是则返回那个词。
+
+    与 `_class_value_token` 的分工：那个管**子元素**上的数字词（`star-rating Three`），
+    这个管 **item 自己**上的库存词。两者都不猜表外的类名。
+    """
+    for cls in node.classes:
+        if cls.casefold() in _ITEM_CLASS_STOCK:
+            return cls.casefold()
+    return None
+
+
 def _class_value_node(node: DOMNode) -> bool:
     """值写在 class 名里的候选节点（走查 R3.6 的枚举判据）。
 
@@ -227,6 +249,11 @@ def _field_key(node: DOMNode) -> str:
     """
     if node.itemprop:
         return f"itemprop:{node.itemprop.lower()}"
+    # 2026-11-26: data-testid 是显式语义标注，比 class 更可信（它就是给自动化用的）。
+    #   实测 web-scraping.dev/reviews：数据区没有任何 class，只有 data-testid，
+    #   旧实现把两列都命名成兜底的 内容_p / 内容_span。
+    if node.testid:
+        return f"testid:{node.testid.lower()}"
     if node.classes:
         # ★ 走查 R3.6：值写在 class 名里时（`star-rating Three` / `star-rating Four`），
         #   那个值词**不属于字段身份** —— 带着它聚合，每件商品各成一个键，
@@ -237,6 +264,39 @@ def _field_key(node: DOMNode) -> str:
         ) or node.classes
         return f"tag:{node.tag}:{'.'.join(key_classes[:2])}"
     return f"tag:{node.tag}:@{node.parent_key or '?'}"
+
+
+#: ``data-testid`` 的常见命名 → 业务字段名。
+#: ★ 这是**封闭表**：只认语义明确的 testid 词根，认不出就回落到普通分类逻辑，
+#:   绝不把 `adBanner-wrapper` / `csrf-token` 这类当成业务字段。
+_TESTID_RULES: tuple[tuple[str, str], ...] = (
+    (r"(?:^|[-_])(?:review|comment)[-_]?text$", "正文"),
+    (r"(?:^|[-_])(?:review|comment)[-_]?date$", "日期"),
+    (r"(?:^|[-_])(?:review|comment)[-_]?stars?$", "评分"),
+    (r"(?:^|[-_])(?:review|comment)[-_]?rating$", "评分"),
+    (r"(?:^|[-_])(?:review|comment)[-_]?author$", "作者"),
+    (r"(?:^|[-_])(?:review|comment)[-_]?title$", "标题"),
+    (r"(?:^|[-_])(?:product|item|post)[-_]?title$", "标题"),
+    (r"(?:^|[-_])(?:product|item|post)[-_]?price$", "价格"),
+    (r"(?:^|[-_])(?:product|item|post)[-_]?name$", "名称"),
+    (r"(?:^|[-_])(?:product|item|post)[-_]?image$", "图片地址"),
+    (r"(?:^|[-_])(?:product|item|post)[-_]?link$", "链接地址"),
+    (r"(?:^|[-_])price$", "价格"),
+    (r"(?:^|[-_])title$", "标题"),
+    (r"(?:^|[-_])rating$", "评分"),
+    (r"(?:^|[-_])date$", "日期"),
+)
+
+
+def _testid_field_name(testid: str, sample_texts: list[str]) -> str:
+    """从 ``data-testid`` 推断字段名；认不出就退回普通分类，最后才用兜底名。"""
+    lowered = testid.strip().lower()
+    # `review-text` 这类：**先整串匹配**，再退回普通分类（普通分类看的是 class，
+    # 而 testid 元素通常没有 class —— 所以两者的判定互不干扰）。
+    for pattern, name in _TESTID_RULES:
+        if re.search(pattern, lowered):
+            return name
+    return _classify_field("", "", sample_texts) or "内容"
 
 
 def _itemprop_field_name(itemprop: str) -> str:
@@ -265,7 +325,9 @@ def _infer_item_fields(
             #   （books.toscrape 的 `<p class="star-rating Three">` 文本为空）⇒ 评分列
             #   从未进入候选。放行的同时必须能取值 —— 见下面 `attribute: class` + `value_map`；
             #   只放行不取值，得到的是一列**永远为空**的列，比不出现更糟。
-            and (n.text or n.is_image or _class_value_node(n))
+            # 2026-11-26: data-testid 节点也放行 —— 值可能不是文本（如 N 个 svg 的星级），
+            #   只按「有文本」枚举会让整列缺席。放行之后必须能取值，见 count 规则。
+            and (n.text or n.is_image or _class_value_node(n) or n.testid)
         ]
         for candidate in descendants:
             key = _field_key(candidate)
@@ -299,14 +361,96 @@ def _infer_item_fields(
             child.css_path.startswith(ancestor.css_path + " > ")
         )
 
+    # ★ 2026-11-26：判据从「含任何候选子节点就删」改成**两步**。
+    #
+    #   旧判据的实测后果（scrapingcourse.com 的 WooCommerce 价格）：
+    #
+    #       <span class="price">"$69.00"            <- 真值
+    #         <span class="product-price">"$69.00"
+    #           <bdi>"$69.00"
+    #             <span class="currencySymbol">"$" <- 只剩这个活着
+    #
+    #   四层都是候选，每层都"含候选"⇒ 全被删，**只剩最里层的货币符号**。
+    #   于是「价格」列交付出去全是 `$`，金额丢了且不报错。
+    #
+    #   第 1 步（保留原意）：**多子聚合**要删。quotes 的 `<span>`（"by X (about)"）
+    #   含 `small.author` 与 `<a>(about)</a>` 两个候选，它的文本是把子字段拼成一整块 ——
+    #   留着等于用垃圾列淹没真字段。判据：候选后代 **≥2**。
+    #
+    #   第 2 步：剩下的节点里，**只保留最外层**。单链嵌套（价格那四层）外层的
+    #   文本最全且不含杂质，内层只剩片段。旧判据在这一步把外层也误删了。
     all_nodes = [slot["node"] for slot in by_key.values()]
-    aggregate_keys = {
-        key for key, slot in by_key.items()
-        if any(_is_ancestor(slot["node"], other) for other in all_nodes if other is not slot["node"])
-    }
-    if len(aggregate_keys) < len(by_key):
-        for key in aggregate_keys:
-            by_key.pop(key, None)
+
+    def _candidates_below(node: DOMNode) -> list[DOMNode]:
+        return [o for o in all_nodes if o is not node and _is_ancestor(node, o)]
+
+    def _branches(descs: list[DOMNode]) -> bool:
+        """候选后代之间出现了**分叉**吗（存在两个互不为祖先的）。
+
+        ★ 判据必须是"分叉"而不是"数量 ≥2" —— 我第一版写的是数量，结果：
+
+            <span class="price">  "$69.00"
+              <span class="product-price">  "$69.00"
+                <bdi>  "$69.00"
+                  <span class="currencySymbol">  "$"
+
+        四层单链也被当成"多子聚合"整条删掉，最后只剩货币符号 + 名字退化成
+        `内容_bdi`。数量 ≠ 结构：**单链嵌套是同一个值的不同粒度，分叉才是把
+        多个字段拼成一整块**。
+        """
+        for i, left in enumerate(descs):
+            for right in descs[i + 1:]:
+                if not (_is_ancestor(left, right) or _is_ancestor(right, left)):
+                    return True
+        return False
+
+    for key in [k for k, s in by_key.items() if _branches(_candidates_below(s["node"]))]:
+        by_key.pop(key, None)
+
+    # 第 2 步：嵌套链里**只留一个代表**，而不是"一律留最外层"。
+    #
+    #   ★ 这条我第一版写成"留最外层"，当场被既有测试打红：
+    #     books.toscrape 的标题是 `<h3><a title="A Light in the Attic">A Light in the ...`
+    #     —— 外层 `h3` 的文本被**截断**（带省略号），完整标题在 `a` 的 `title` 属性里。
+    #     留最外层等于把「完整标题」换成「截断标题」。
+    #
+    #   代表节点的选取标准：**文本最长者优先；文本等长时取更深的那个**。
+    #     · 价格的单链：`span.price`("$69.00") 比 `span.currencySymbol`("$") 长 ⇒ 取前者；
+    #     · 标题的 h3>a：两者文本等长 ⇒ 取更深的 `a`，从而用上它的 `title` 属性；
+    #     · 图片的 a>img：两者文本都是空 ⇒ 取更深的 `img`，从而用上它的 `src`。
+    remaining = [slot["node"] for slot in by_key.values()]
+
+    def _representative_rank(node: DOMNode) -> tuple[int, int, int]:
+        """嵌套链里"谁最该留下"的排序键（越大越该留）。
+
+        三层判据，按优先级：
+
+        1. **文本更长** —— 价格链里 `span.price`("$69.00") 胜过 `span.currencySymbol`("$")；
+        2. **带语义类名** —— scrapingcourse 的 `span.price` 与内层 `bdi` 文本**同样长**，
+           但只有前者把"这是价格"说清楚了。只按深度取内层会让字段名退化成 `内容_bdi`；
+        3. **更深** —— 前两项都相同时取内层，因为更内层才可能带 `title` / `src`
+           这类**完整值**属性：books 的 `<h3><a title="完整标题">截断标题</a></h3>`，
+           两者文本一样长、都没有类名，取 `a` 才能用上 `title`。
+        """
+        return (
+            len(node.text.strip()),
+            1 if _has_semantic_signal(node.tag, node.classes) else 0,
+            node.depth,
+        )
+
+    dominated: set[str] = set()
+    for slot in by_key.values():
+        node = slot["node"]
+        for other in remaining:
+            if other is node:
+                continue
+            if not (_is_ancestor(node, other) or _is_ancestor(other, node)):
+                continue
+            if _representative_rank(other) > _representative_rank(node):
+                dominated.add(_field_key(node))
+                break
+    for key in dominated:
+        by_key.pop(key, None)
 
     ranked: list[tuple[float, str, dict[str, Any]]] = []
     for key, slot in by_key.items():
@@ -323,7 +467,9 @@ def _infer_item_fields(
         #   "评分/库存缺失"在多个电商站上复现的原因。
         if slot["attr"] is None and len(texts) >= 3 and len(set(texts)) == 1:
             marker: DOMNode = slot["node"]
-            if not _has_semantic_signal(marker.tag, marker.classes):
+            # 2026-11-26: data-testid 也算语义信号 —— 实测 review-stars 的文本恒为空，
+            #   只按 class 判定会把它当模板噪声整列丢掉（它的"值"在内层 svg 个数里）。
+            if not (_has_semantic_signal(marker.tag, marker.classes) or marker.testid):
                 continue
         avg_len = sum(len(t) for t in texts) / max(1, len(texts))
         ranked.append((presence * 0.6 + min(1.0, avg_len / 200) * 0.4, key, slot))
@@ -354,6 +500,11 @@ def _infer_item_fields(
         if key.startswith("itemprop:"):
             name = _itemprop_field_name(key.split(":", 1)[1])
             selector = f'[itemprop="{key.split(":", 1)[1]}"]'
+        elif key.startswith("testid:"):
+            # 用 data-testid 当**字段名依据**：它是站点自己写给自动化工具的语义标注。
+            testid = key.split(":", 1)[1]
+            name = _testid_field_name(slot["node"].testid, slot["texts"][:3])
+            selector = f'[data-testid="{testid}"]'
         else:
             parts = key.split(":")
             classes_hint = parts[2] if len(parts) > 2 and not parts[2].startswith("@") else ""
@@ -389,6 +540,29 @@ def _infer_item_fields(
         if name == "标签":
             rule["all"] = True
             rule["selector"] = _css_token(desc)
+        # 2026-11-26: data-testid="review-stars" 这类容器，值是内部重复图形元素的个数
+        # （web-scraping.dev/reviews 渲染成 N 个 svg，页面上没有"4 星"这种文本）。
+        # 只写 attr 取不到任何东西；必须改成"数子元素"。
+        if key.startswith("testid:") and re.search(r"(star|rating)", key) and desc.child_count:
+            # 计数对象必须是**直接子元素**里重复出现的那个标签。
+            #   实测：review-stars 的直接子元素是 5 个 <svg>，每个 svg 里还有一个
+            #   <path>；取"第一个叶子后代"会数到 path（5 个 path 恰好也是 5，
+            #   但 3 星时是 3 个 svg / 3 个 path —— 语义上数 svg 才对，
+            #   而且 path 只在 svg 里存在，换站点就会错）。
+            direct = [
+                n for n in item_descendants
+                if n.parent_key.startswith(desc.css_path.rsplit(" > ", 1)[-1])
+                or n.css_path.startswith(desc.css_path + " > ")
+            ]
+            # 这里不能拿 depth 比：depth 从 0 起算、css 段数从 1 起算，把 desc.depth + 1 当段数用会选到 svg 的子元素 <path>。
+            base_segs = desc.css_path.count(" > ")
+            direct = [n for n in direct if n.css_path.count(" > ") == base_segs + 1]
+            tag = direct[0].tag if direct else "svg"
+            rule["count_selector"] = tag
+            rule["attribute"] = "count"
+            rule["examples"] = []
+            rule["desc"] = f"自动推断: {name}（按内部 {tag} 个数计数）"
+            rule.pop("attr", None)
         if name == "标题" and desc.is_link:
             fields.append({"name": "链接地址", "selector": selector, "attribute": "href",
                            "desc": "条目稳定详情链接"})
@@ -403,12 +577,35 @@ def _infer_item_fields(
             rule["selector"] = _strip_value_classes(str(rule["selector"]), slot["class_values"])
         fields.append(rule)
 
+    # ★ 2026-11-26：**item 自身把值写在 class 名里**（scrapeme.live 的库存：
+    #   `<li class="product ... instock">`，页面上没有任何"In stock"文本）。
+    #   这种值不属于任何一个**子元素**，所以上面那圈"遍历后代"永远枚举不到它 ——
+    #   必须单独查 item 自己，并用 `selector: ""` + `attr: class` 取值。
+    #   判据沿用封闭词表（`_WORD_NUMBERS`）之外的**库存词**，避免把 `col-md-6`
+    #   这类排版类名当数据。
+    item_class_values = [
+        token for item in items if (token := _item_class_value_token(item)) is not None
+    ]
+    if item_class_values:
+        stock_rule: dict[str, Any] = {
+            "name": "库存状态",
+            "selector": "",
+            "attribute": "class",
+            "desc": "自动推断: 库存状态（写在 item 的类名里）",
+            "examples": item_class_values[:3],
+            "value_map": {"instock": "有货", "outofstock": "缺货", "out-of-stock": "缺货"},
+        }
+        fields.append(stock_rule)
+
     if not fields:
         return []
     # item 选择器用"容器 + item 自身签名"，而不是只给容器路径：
     # 容器路径常常不止匹配到目标列表（quotes 页面 `div.col-md-8` 就出现 2 次），
     # 只给容器会让抽取器拿到多余元素、甚至一条有效记录都产不出来。
     item_selector = f"{container_css} > {_css_token(items[0])}" if container_css else _css_token(items[0])
+    # 同理 item_selector 不能带库存词，否则只匹配到恰好那一种库存状态的商品。
+    if item_class_values:
+        item_selector = _strip_value_classes(item_selector, item_class_values)
     fields.insert(0, {
         "name": "列表容器",
         "selector": item_selector,
@@ -733,8 +930,26 @@ _SCROLL_MARKUP_RE = re.compile(r"(?:infinite[-_]scroll|load[-_]?more|lazy[-_]loa
 _SCROLL_ROUNDS: dict[str, int] = {"infinite_scroll": 12}
 
 
+#: 「分页容器里是**空的**」—— 静态 HTML 里一条分页链接都没有，但页面明确留着
+#: 一个 pagination 挂载点。这只有一种解释：页码由 JS 请求后填进去。
+#: 实测取证（webscraper.io/test-sites/e-commerce/ajax）：
+#:
+#:     <div id="static-pagination"> </div>
+#:
+#: 而真实数据要等 `app.js` 拉回来。旧实现把这个页面判成「静态 HTML 已足够」⇒
+#: 运行期不启动浏览器 ⇒ 只拿到首屏 3 条（该站每页 3 条、共 3 页）。
+_EMPTY_PAGINATION_RE = re.compile(
+    # 引号两种都要认：真实站点用双引号，测试夹具常写单引号 ——
+    # 只认一种会变成「我本地是绿的、真跑是错的」（第一版就漏了单引号）。
+    # 引号两种都要认（用 \x22 / \x27 写，避开 Python 字符串自身的引号冲突）：
+    # 真实站点用双引号，测试夹具常写单引号 —— 只认一种就会「本地绿、真跑错」。
+    r"<(?:div|nav|ul|section)[^>]*(?:id|class)=[\x22\x27][^\x22\x27]*pagination[^\x22\x27]*[\x22\x27][^>]*>\s*</(?:div|nav|ul|section)>",
+    re.IGNORECASE,
+)
+
+
 def _interaction_signals(html: str) -> tuple[str, ...]:
-    """检出页面里的**交互信号**（滚动 / iframe / 表单 / cookie 提示 / SPA 外壳）。"""
+    """检出页面里的**交互信号**（滚动 / 分页挂载点 / iframe / 表单 / cookie / SPA）。"""
     lowered = html.lower()
     found: list[str] = []
     script_bodies = " ".join(match.group(1) for match in _SCRIPT_RE.finditer(html))
@@ -743,6 +958,10 @@ def _interaction_signals(html: str) -> tuple[str, ...]:
     found.extend(
         name for name, pattern in _INTERACTION_SIGNALS if re.search(pattern, lowered)
     )
+    # ★ 2026-11-26：空的分页挂载点 ⇒ 分页要靠 JS 填。放在最后，因为它是对
+    #   "没有静态分页链接"的一个**解释**，不是另一类交互。
+    if _EMPTY_PAGINATION_RE.search(html):
+        found.append("js_pagination")
     return tuple(found)
 
 
@@ -776,6 +995,13 @@ def _interaction_advice(
         manual.append("需要提交表单（搜索 / 筛选）")
     if "spa_shell" in signals and not scroll_rounds:
         manual.append("SPA 外壳，内容靠 JS 渲染")
+    if "js_pagination" in signals:
+        # ★ 2026-11-26：这一条**不是**"需要人工确认"，我们已经自动换成浏览器抓取了。
+        #   所以它进 advice（说明我们做了什么），不进 manual（要用户动手）。
+        advice.append(
+            "检测到分页由 JS 填充（页面留下空的分页挂载点）⇒ 运行期已改用浏览器抓取，"
+            "静态首屏只有部分数据。"
+        )
     if manual:
         advice.append(
             "另外检测到需要人工确认的交互：" + "、".join(manual)

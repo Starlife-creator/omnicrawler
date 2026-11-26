@@ -65,6 +65,37 @@ class TestDetection:
 
     def test_markup_token_alone_is_enough(self) -> None:
         assert "infinite_scroll" in _interaction_signals("<div id='infinite-scroll'></div>")
+    @pytest.mark.parametrize(
+        ("snippet", "expected"),
+        [
+            # 真实形态（webscraper.io/test-sites/e-commerce/ajax）：唯一的 pagination 节点是空的
+            ('<div id="static-pagination"> </div>', "js_pagination"),
+            ("<div id='static-pagination'></div>", "js_pagination"),
+        ],
+    )
+    def test_empty_pagination_mount_point_is_detected(
+        self, snippet: str, expected: str
+    ) -> None:
+        """空的分页挂载点 ⇒ 页码由 JS 填 ⇒ 静态 HTML 只有首屏。
+
+        ★ 这条信号的价值不在"识别出来"，而在它能**改变运行期抓取方式**：
+          没有它，该页会被判成「静态 HTML 已足够」，运行期不启动浏览器，
+          于是每页 3 条、共 3 页的站点只交出 3 条 —— 而且退出码是 0。
+        """
+        assert expected in _interaction_signals(snippet)
+
+    @pytest.mark.parametrize(
+        "snippet",
+        [
+            # 有真实页码链接的分页不该触发：那不是"等 JS 填"
+            '<div class="pagination"><a href="/p2">2</a></div>',
+            # 词出现在自由文本里也不算
+            "<p>the pagination is broken</p>",
+        ],
+    )
+    def test_real_pagination_links_do_not_trigger_js_signal(self, snippet: str) -> None:
+        """不能把「有分页」误判成「分页靠 JS」—— 那会让所有分页站都去开浏览器。"""
+        assert "js_pagination" not in _interaction_signals(snippet)
 
 
 class TestAdvice:
@@ -72,6 +103,15 @@ class TestAdvice:
         advice = " ".join(_interaction_advice(("infinite_scroll",), scroll_rounds=12))
         assert "已自动配置" in advice
         assert "scroll_bottom×12" in advice
+    def test_js_pagination_is_reported_as_an_action_already_taken(self) -> None:
+        """它属于「我们已经做了什么」，不属于「你需要动手」—— 分两个列表。
+
+        实测：把它写进"需要人工确认"那一段，用户会以为还得自己录动作，而实际上
+        运行期已经改用浏览器抓取了。
+        """
+        advice = " ".join(_interaction_advice(("js_pagination",), scroll_rounds=0))
+        assert "浏览器抓取" in advice
+        assert "record-actions" not in advice, f"不该要求用户动手，实际：{advice}"
 
     def test_manual_signals_point_to_recorder_and_do_not_auto_act(self) -> None:
         for signal in ("cookie_banner", "iframe", "form", "spa_shell"):

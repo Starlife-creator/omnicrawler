@@ -176,9 +176,14 @@ def _extract_requested_fields(request: str) -> tuple[str, ...]:
     """
     request = _URL.sub("", request)
     request = re.sub(r"(?:前|仅|只)?[一二两三四五六七八九十百\d]+\s*页(?:名言|引文|商品|书籍|新闻)?", "", request)
-    def _pick(window: str) -> list[str]:
-        """把一段候选文本切成字段名；取不出就用空列表（宁缺毋滥）。"""
-        if "的" in window:  # "全部 50 页书籍的标题、价格…" ⇒ 取"的"之后
+    def _pick(window: str) -> tuple[list[str], bool]:
+        """把一段候选文本切成字段名；取不出就用空列表（宁缺毋滥）。
+
+        返回值第二项表示**这段字段名是从「…的 X」结构里切出来的** ——
+        单项是否够格当字段，就靠它区分（见下面的 `_accept`）。
+        """
+        from_de_phrase = "的" in window
+        if from_de_phrase:  # "全部 50 页书籍的标题、价格…" ⇒ 取"的"之后
             window = window[window.rfind("的") + 1:]
         picked: list[str] = []
         for part in _FIELD_SPLIT.split(window):
@@ -191,13 +196,30 @@ def _extract_requested_fields(request: str) -> tuple[str, ...]:
             if any(word in token for word in _FIELD_TOKEN_REJECT):
                 continue
             picked.append(token)
-        return picked
+        return picked, from_de_phrase
+
+    def _accept(picked: list[str], from_de_phrase: bool) -> bool:
+        """够不够格当字段清单。
+
+        ★ 2026-11-26（用户裁定）：「单项不成列举，但单项可以成**单个**」。
+        旧规则一律要求 ≥2 项，于是「抓取 <URL> 的价格」取不出字段 ——
+        下游拿到空列表直接返回**全部**自动推断字段，用户以为只要一列、
+        实际拿到整张表。
+
+        新规则：单项也收，**但必须来自「…的 X」结构**。
+        判据不是"长度看着像字段"——那样的宽松度会让「抓取 该标签下所有引文」
+        这种半句话也被当成字段名。有「的」意味着用户明确说了"这个页面的 X"，
+        结构上是确定的；没有「的」的单个名词跟在动词后面，语义太弱。
+        """
+        if len(picked) >= 2:
+            return True
+        return len(picked) == 1 and from_de_phrase
 
     # 方向一：动词在前（「抓取 A、B」）
     for verb in _FIELD_VERBS:
         for match in re.finditer(re.escape(verb), request):
-            picked = _pick(_FIELD_LIST_END.split(request[match.end(): match.end() + 60])[0])
-            if len(picked) >= 2:  # 至少两项才算"列举"，单项多半是误匹配
+            picked, from_de = _pick(_FIELD_LIST_END.split(request[match.end(): match.end() + 60])[0])
+            if _accept(picked, from_de):
                 return tuple(dict.fromkeys(picked))
 
     # 方向二：宾语在前（「把 A、B 抓下来」）。只在方向一取不到时才走这里 ——
@@ -207,8 +229,8 @@ def _extract_requested_fields(request: str) -> tuple[str, ...]:
             head = request[: match.start()]
             # 取动词前面最近的一小段（「把 <URL> 的 X 和 Y」已被 _URL 挖成空格）
             head = head[-40:]
-            picked = _pick(head)
-            if len(picked) >= 2:
+            picked, from_de = _pick(head)
+            if _accept(picked, from_de):
                 return tuple(dict.fromkeys(picked))
     return ()
 

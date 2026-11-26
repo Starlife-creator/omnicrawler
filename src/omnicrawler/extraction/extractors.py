@@ -367,8 +367,18 @@ def _apply_rule(
     nodes = select_nodes(context, selector) if selector else [context]
     values: list[Any] = []
     raw_values: list[str] = []
+    child_selector = str(rule.get("count_selector") or "")
     for node in nodes:
-        value = node_attr(node, str(rule["attr"])) if rule.get("attr") else node_text(node)
+        if child_selector:
+            # 2026-11-26：有些"字段"的值是**子元素个数**而不是文本。
+            # 实测 web-scraping.dev/reviews：评分渲染成 N 个 <svg>，
+            # 页面上没有任何 "4 星" 文本。数不出来就只能整列缺席。
+            try:
+                value = len(select_nodes(node, child_selector))
+            except Exception:  # noqa: BLE001 - 选择器异常按"取不到"处理
+                value = None
+        else:
+            value = node_attr(node, str(rule["attr"])) if rule.get("attr") else node_text(node)
         if value is None:
             continue
         raw_values.append(str(value)[:2000])
