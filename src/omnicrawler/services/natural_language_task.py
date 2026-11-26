@@ -38,6 +38,9 @@ _QUOTED = re.compile(r"“([^”]+)”|\"([^\"]+)\"|「([^」]+)」|『([^』]+)
 _FIELD_VERBS = ("抓取", "采集", "获取", "提取", "抽出", "导出")
 #: 字段列举的终止标志（句读，或紧随其后的下一步动作）
 _FIELD_LIST_END = re.compile(r"[。；;\n]|输出|导出|保存到|保存为|并|然后|接着|，按|,按")
+#: 宾语前置的动词形态（「把 … 抓下来」/「将 … 采集下来」）。
+#: 与 `_FIELD_VERBS` 分开列，是因为它们要往**前**找字段，而不是往后。
+_FIELD_REVERSED_VERBS = ("抓下来", "抓取下来", "采集下来", "获取下来", "提取出来", "抓回来", "导出来")
 #: 列举前的量词 / 归属前缀（"该标签下所有" / "全部 50 页书籍的" 之类）。
 #: ★ 每个分支都必须含**具体 token**：写成"全可选"的正则（各部分都带 `?`）会永远匹配 ——
 #: `finditer` 在空匹配之后会立刻扩成 1 个字符，`re.sub` 于是把字段名的首字吃掉
@@ -110,10 +113,21 @@ _DEMAND_GAP_ADVICE: dict[str, str] = {
     "compare": "以下对比不会自动产出结果，可用 `omnicrawler compare-runs` 对比两次运行",
     "interaction": "以下交互不会由自动路径生成，可用 `omnicrawler record-actions` 录制动作后再运行",
 }
-#: 输出格式：命中即按需求**收窄**（旧实现恒为 xlsx+csv+jsonl 三种）
+#: 输出格式：命中即按需求**收窄**（旧实现恒为 xlsx+csv+jsonl 三种）。
+#:
+#: ★ 2026-11-26 修正：`jsonl` 与 `json` 必须是**两条**规则，且 jsonl 在前。
+#:   原来写的是 `("json", r"\bjson\b|\bjsonl\b")` —— 用户说「存成 JSONL」，
+#:   解析出来是 `("json",)`，而 `json` **不是**合法的 outputs 键（合法的是
+#:   jsonl/csv/xlsx/parquet/duckdb）。两个消费方于是各说各话：`auto-analyze` 里
+#:   有一句 `"jsonl" if item == "json" else item` 的临时补丁所以侥幸正确，
+#:   而 GUI 序列化 `name in output_formats` 会把三种输出**全部**判成 false
+#:   ⇒ 一个输出文件都不产出。同一个词在两处得到相反结果，就是「两份口径」。
 _OUTPUT_FORMAT_RULES: tuple[tuple[str, str], ...] = (
+    # 「JSON」与「JSONL」指向**同一个**产物：本项目只写 JSON Lines（`outputs.jsonl`），
+    # 没有独立的 single-JSON 输出键。把 json 单列成 ("json", ...) 会造出一个不存在
+    # 的格式名，必须在这里就收敛到 jsonl。
+    ("jsonl", r"\bjsonl\b|\bndjson\b|json\s*lines|\bjson\b"),
     ("csv", r"\bcsv\b|逗号分隔|表格文件"),
-    ("json", r"\bjson\b|\bjsonl\b"),
     ("xlsx", r"\bexcel\b|\bxlsx\b|工作表"),
 )
 #: 需求里写明的页数（"全部 50 页" / "翻完 300 页"）
@@ -130,26 +144,52 @@ def _extract_requested_fields(request: str) -> tuple[str, ...]:
 
     只接受**长度 ≤ ``_FIELD_MAX_LEN`` 且不含动作词**的 token；否则宁可不取
     （把「该标签下所有引文」这种半句话当字段名，比少一个字段更糟）。
+
+    ★ 2026-11-26 修正：补上**宾语在动词之前**的语序。
+    原来的实现只在「动词 + 字段列举」这个方向扫描，于是这两种说法天差地别：
+
+        抓取 <URL> 的语录和作者        → ("语录", "作者")   ✅
+        把 <URL> 的语录和作者抓下来    → ()                 ❌ 静默丢失
+
+    中文里后者一样常见（「把 X 抓下来」「将 X 采集下来」）。字段清单丢失后，
+    下游 `align_requested_fields` 拿到空列表 ⇒ 直接返回**全部**自动推断字段，
+    用户以为「我只要语录和作者」，实际拿到整张表。
     """
     request = _URL.sub("", request)
     request = re.sub(r"(?:前|仅|只)?[一二两三四五六七八九十百\d]+\s*页(?:名言|引文|商品|书籍|新闻)?", "", request)
+    def _pick(window: str) -> list[str]:
+        """把一段候选文本切成字段名；取不出就用空列表（宁缺毋滥）。"""
+        if "的" in window:  # "全部 50 页书籍的标题、价格…" ⇒ 取"的"之后
+            window = window[window.rfind("的") + 1:]
+        picked: list[str] = []
+        for part in _FIELD_SPLIT.split(window):
+            token = _QUANT_PREFIX.sub("", part.strip()).strip(" 的了")
+            token = re.sub(r"^(?:名言|引文|商品|书籍|新闻)(?=正文|标题|名称|作者|标签)", "", token)
+            if not token or len(token) > _FIELD_MAX_LEN:
+                continue
+            if any(word in token for word in _FIELD_VERBS):
+                continue
+            if any(word in token for word in _FIELD_TOKEN_REJECT):
+                continue
+            picked.append(token)
+        return picked
+
+    # 方向一：动词在前（「抓取 A、B」）
     for verb in _FIELD_VERBS:
         for match in re.finditer(re.escape(verb), request):
-            window = _FIELD_LIST_END.split(request[match.end(): match.end() + 60])[0]
-            if "的" in window:  # "全部 50 页书籍的标题、价格…" ⇒ 取"的"之后
-                window = window[window.rfind("的") + 1:]
-            picked: list[str] = []
-            for part in _FIELD_SPLIT.split(window):
-                token = _QUANT_PREFIX.sub("", part.strip()).strip(" 的了")
-                token = re.sub(r"^(?:名言|引文|商品|书籍|新闻)(?=正文|标题|名称|作者|标签)", "", token)
-                if not token or len(token) > _FIELD_MAX_LEN:
-                    continue
-                if any(word in token for word in _FIELD_VERBS):
-                    continue
-                if any(word in token for word in _FIELD_TOKEN_REJECT):
-                    continue
-                picked.append(token)
+            picked = _pick(_FIELD_LIST_END.split(request[match.end(): match.end() + 60])[0])
             if len(picked) >= 2:  # 至少两项才算"列举"，单项多半是误匹配
+                return tuple(dict.fromkeys(picked))
+
+    # 方向二：宾语在前（「把 A、B 抓下来」）。只在方向一取不到时才走这里 ——
+    # 两种语序的判据强度不同，方向一有"动词紧邻列举"的结构线索，更可信。
+    for verb in _FIELD_REVERSED_VERBS:
+        for match in re.finditer(re.escape(verb), request):
+            head = request[: match.start()]
+            # 取动词前面最近的一小段（「把 <URL> 的 X 和 Y」已被 _URL 挖成空格）
+            head = head[-40:]
+            picked = _pick(head)
+            if len(picked) >= 2:
                 return tuple(dict.fromkeys(picked))
     return ()
 
@@ -439,7 +479,13 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
     # URL 模式 → 爬虫（现有逻辑）
     lowered = request.lower()
     wants_monitor = any(word in lowered for word in ("每周", "每天", "监测", "变化", "更新", "调度", "定期"))
-    wants_download = any(word in lowered for word in ("附件", "pdf", "下载", ".doc", "表格"))
+    # ★ 2026-11-26 修正：「下载」是**采集**的日常说法，不是「下载附件」。
+    #   实测：「下载 https://books.toscrape.com 全部书籍信息」被解析成
+    #   download_files=True + process_pdf=True，确认单上写着
+    #   「需求包含附件或 PDF，因此启用文件下载和 PDF 处理」—— 用户没说过这句话，
+    #   而且纯文本站点根本没有 PDF 可处理。
+    #   判据改成「明确说到附件/文档」：附件、PDF、文档后缀；裸「下载」不再算。
+    wants_download = any(word in lowered for word in ("附件", "pdf", ".doc", ".xls", ".ppt", ".zip"))
     wants_section = any(word in lowered for word in ("栏目", "列表", "全部", "所有", "整个", "翻页", "分页")) or (_extract_page_count(request) or 1) > 1
     if wants_section:
         intent = "collect_section"

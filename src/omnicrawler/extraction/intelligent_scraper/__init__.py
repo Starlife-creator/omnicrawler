@@ -754,6 +754,16 @@ def analyze_to_config(
         config["source"]["pagination"] = pagination
     if analysis.pagination and analysis.pagination.get("type") == "next_link":
         config["source"]["follow_xpath"] = str(analysis.pagination.get("xpath") or "")
+        # ★ 2026-11-26 修正：下一页链上**每一页都比上一页深一层**，而 `crawl.max_depth`
+        #   默认是 3 ⇒ 只写 follow_xpath 而不抬深度，翻页会在第 4 页**静默停住**，
+        #   而 `crawl.max_pages` 还写着 30/200。实测（books.toscrape.com）：
+        #   同一条配置只改 max_depth（3→50），交付从 4 页 80 条变成 30 页 600 条。
+        #   本项目自己的 `templates/generic/next_link_pagination.yaml` 早就写成
+        #   `max_depth: 100` —— 生成器没跟上这个口径。
+        #   上界取配置校验的 0–100（`core/config.py`），与页数预算取小者：
+        #   深度不需要超过"最多能翻多少页"。
+        budget = int(config["crawl"].get("max_pages") or 0)
+        config["crawl"]["max_depth"] = max(0, min(100, max(budget, 1)))
     if "链接地址" in fields_dict:
         config["extract"]["deduplicate_by"] = ["链接地址"]
     if advisories is not None:
@@ -780,7 +790,40 @@ def analyze_to_config(
 def align_requested_fields(
     fields: dict[str, Any], requested: list[str], multiple: list[str],
 ) -> dict[str, Any]:
-    aliases = {"标签": ("标签", "分类"), "名称": ("名称", "标题"), "正文": ("正文", "内容")}
+    # ★ 2026-11-26 扩充：需求里的**同义说法**不等于「字段不存在」。
+    #   实测事故：用户说「抓取所有书的书名、价格和评分」，站点生成的字段叫「标题」，
+    #   于是整条命令以 `需求字段没有可靠规则：书名` 失败 —— 而 `书名` 就是 `标题`。
+    #   这条错误说的是「你说的东西页面上没有」，实际是「我们不认识这个说法」。
+    #   ★ 但**不能**改成"找不到就忽略"：那会把用户要的字段静默丢掉（既有契约
+    #   `test_missing_goal_fields_are_rejected_before_success` 守着这一点）。
+    #   所以只扩同义词表，真正的缺字段仍然报错。
+    aliases = {
+        "书名": ("标题", "名称"),
+        "商品名": ("标题", "名称"),
+        "名称": ("名称", "标题"),
+        "标题": ("标题", "名称"),
+        "语录": ("正文", "内容"),
+        "引文": ("正文", "内容"),
+        "名言": ("正文", "内容"),
+        "正文": ("正文", "内容"),
+        "内容": ("正文", "内容"),
+        "售价": ("价格",),
+        "价钱": ("价格",),
+        "单价": ("价格",),
+        "星级": ("评分",),
+        "打分": ("评分",),
+        "作家": ("作者",),
+        "著者": ("作者",),
+        "分类": ("标签", "分类"),
+        "类别": ("标签", "分类"),
+        "标签": ("标签", "分类"),
+        "库存": ("库存状态",),
+        "链接": ("链接地址",),
+        "网址": ("链接地址",),
+        "url": ("链接地址",),
+        "封面": ("图片地址",),
+        "图片": ("图片地址",),
+    }
     selected: dict[str, Any] = {}
     missing = []
     for name in requested:
