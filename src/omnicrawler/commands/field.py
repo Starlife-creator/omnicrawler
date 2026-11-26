@@ -29,9 +29,16 @@ def execute_field_suggest(html_path: str, output: str = "", limit: int = 20) -> 
     return candidates
 
 
-def execute_record_actions(url: str, output: str, timeout: float = 120.0) -> Any:
+def execute_record_actions(
+    url: str, output: str, timeout: float = 120.0, *, save_session: bool = True
+) -> Any:
     from ..fetching.action_recorder import record_with_playwright
-    return record_with_playwright(url, Path(output).expanduser().resolve(), timeout_seconds=int(timeout))
+    return record_with_playwright(
+        url,
+        Path(output).expanduser().resolve(),
+        timeout_seconds=int(timeout),
+        save_session=save_session,
+    )
 
 
 def execute_api_discover(input_path: str, output: str) -> Any:

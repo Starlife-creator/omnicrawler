@@ -160,6 +160,9 @@ from .field_inference import (
 from .field_inference import (
     infer_fields as infer_fields,
 )
+from .field_inference import (
+    suggest_closest_field as suggest_closest_field,
+)
 from .pagination import (
     _PAGINATION_PARAMS as _PAGINATION_PARAMS,
 )
@@ -225,6 +228,15 @@ from .pattern_detector import (
 )
 from .pattern_detector import (
     detect_repeating_patterns as detect_repeating_patterns,
+)
+from .result_quality import (
+    meaningful_field_names as _meaningful_field_names,
+)
+from .result_quality import (
+    quality_rank as _result_quality_rank,
+)
+from .result_quality import (
+    verdict as _result_verdict,
 )
 
 # ── 主入口 ─────────────────────────────────────────────────────────────
@@ -913,13 +925,31 @@ def align_requested_fields(
             selected[name]["all"] = True
             selected[name].pop("join", None)
     if missing:
-        # ★ 2026-11-26：原来只说「没有可靠规则」，用户不知道该改哪个字。
-        #   现在把**页面上实际有什么**列出来 —— 这才是能让人下一步就改对的信息。
-        available = "、".join(sorted(fields))
-        raise ValueError(
-            "需求字段没有可靠规则：" + "、".join(missing)
-            + f"（这个页面能取到的字段是：{available}；请改成其中之一，或去掉该项）"
-        )
+        # 2026-11-26：别名与后缀都不中时，**再按相似度试一次**。
+        #   实测：用户说「卡片标题」，页面只有「正文」；说「名字」，页面只有「内容_span」。
+        #   这类跨语义的说法靠枚举同义词永远治不完。用一次相似度推荐，
+        #   命中就采用并**明确写出替换成了哪个**（不静默替换）。
+        fuzzy_hits: dict[str, str] = {}
+        still_missing: list[str] = []
+        for name in missing:
+            guess = suggest_closest_field(name, list(fields))
+            if guess:
+                fuzzy_hits[name] = guess
+            else:
+                still_missing.append(name)
+        for name, guess in fuzzy_hits.items():
+            selected[name] = dict(fields[guess])
+            selected[name]["required"] = True
+            selected[name]["_matched_field"] = guess
+            if name in multiple:
+                selected[name]["all"] = True
+                selected[name].pop("join", None)
+        if still_missing:
+            available = "、".join(sorted(fields))
+            raise ValueError(
+                "需求字段没有可靠规则：" + "、".join(still_missing)
+                + f"（这个页面能取到的字段是：{available}；请改成其中之一，或去掉该项）"
+            )
     return selected or fields
 
 
@@ -931,12 +961,27 @@ def apply_task_goal(config: dict[str, Any], settings: dict[str, Any]) -> None:
         config["extract"]["fields"], list(settings.get("fields", [])),
         list(settings.get("multi_value_fields", [])),
     )
+    # 2026-11-26：字段名被**相似度匹配**替换过时要显式说出来。
+    #   静默改用户的话等于撒谎 —— 用户以为抓的是「卡片标题」，实际抓的是「正文」。
+    substitutions = {
+        name: rule.get("_matched_field")
+        for name, rule in (config["extract"].get("fields") or {}).items()
+        if isinstance(rule, dict) and rule.get("_matched_field")
+    }
+    for rule in (config["extract"].get("fields") or {}).values():
+        if isinstance(rule, dict):
+            rule.pop("_matched_field", None)   # 契约里不许留内部键
     if not all(name in config["extract"]["fields"] for name in config["extract"].get("deduplicate_by", [])):
         config["extract"].pop("deduplicate_by", None)
     config["outputs"] = {key: key in {"jsonl" if item == "json" else item for item in settings["output_formats"]}
                          for key in ("xlsx", "csv", "jsonl")}
-    config["task"] = {"requested_fields": list(settings.get("fields", [])),
-                      "multi_value_fields": list(settings.get("multi_value_fields", []))}
+    # 2026-11-26：相似度替换要落在**最终**的 config["task"] 里（上面那行会整体覆盖）。
+    config["task"] = {
+        "requested_fields": list(settings.get("fields", [])),
+        "multi_value_fields": list(settings.get("multi_value_fields", [])),
+    }
+    if substitutions:
+        config["task"]["field_substitutions"] = substitutions
 
 
 def _analysis_browser_reason(result: Any) -> str:
@@ -1087,6 +1132,9 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
         best_config: dict[str, Any] | None = None
         best_html = html
         best_records = -1
+        # 2026-11-26: 质量排名（有意义字段数 > 填充齐全数 > 记录数），
+        #   「记录更多」不再等于「结果更好」。
+        best_rank: tuple[int, int, int] = (-1, -1, -1)
         #: 走查 R4.2：只保留**胜出那份**配置的提醒，避免静态/渲染两份候选各报一遍。
         chosen_advisories: list[str] = []
 
@@ -1100,7 +1148,7 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
         scroll_rounds = max((_SCROLL_ROUNDS.get(name, 0) for name in signals), default=0)
 
         def _consider(candidate_html: str, *, from_render: bool) -> None:
-            nonlocal best_config, best_html, best_records, chosen_from_render, chosen_advisories
+            nonlocal best_config, best_html, best_records, best_rank, chosen_from_render, chosen_advisories
             local_advisories: list[str] = []
             try:
                 candidate = analyze_to_config(
@@ -1112,36 +1160,44 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
                 return
             report_candidate = verify_config(candidate, candidate_html) or {}
             records = int(report_candidate.get("records") or 0)
-            if records > best_records:
+            # 2026-11-26: 胜出判据从「记录数更多」改成「**质量排名更高**」。
+            #   实测 randomuser.me：静态 42 条（字段全是 内容_span）vs 渲染后少量但字段有意义。
+            #   按记录数比，渲染结果永远赢不了 —— 而静态那份是纯噪声。
+            rank = _result_quality_rank(candidate, report_candidate)
+            if rank > best_rank:
                 best_config, best_html, best_records = candidate, candidate_html, records
+                best_rank = rank
                 chosen_from_render = from_render
                 chosen_advisories = local_advisories
 
         _consider(html, from_render=initial_rendered)
         static_analysis = analyze_page(html, url)
         static_top = static_analysis.patterns[0] if static_analysis.patterns else None
-        # ★ 2026-11-26：`js_pagination` 也要让静态结果算"弱"。
+        # ★ 2026-11-26：`js_pagination` 也要让静态结果算「弱」。
         #   判据：页面留着一个**空的分页挂载点**（`<div id="static-pagination"></div>`），
         #   说明页码是 JS 拉回来填的 —— 静态 HTML 里只有首屏那几条。
-        #   实测 webscraper.io/.../ajax：每页 3 条共 3 页，静态只拿到 3 条却报"足够"。
-        #   ★ 只加这一条信号，不放宽"静态够用"的其它判据 —— 那会让所有站点都去开浏览器。
+        #   实测 webscraper.io/.../ajax：每页 3 条共 3 页，静态只拿到 3 条却报「足够」。
         weak = (
             best_config is None
             or static_top is None
             or static_top.count < 3
             or _is_chrome_path(static_top.css_path)
             or "js_pagination" in signals
+            # 2026-11-26：静态结果「像不像业务数据」也进判据。
+            #   零个有意义字段（全是 内容_<tag> 兜底名）⇒ 静态 DOM 里没有业务结构，
+            #   必须再试一次渲染；否则用户拿到一列列 内容_span 还以为成功了。
+            or not _meaningful_field_names(best_config)
         )
         rendered_html = ""
         if weak and url and not initial_rendered:
             rendered = _fetch_rendered(url)
             if rendered.strip():
                 rendered_html = rendered
-                before = best_records
+                before_rank = best_rank
                 _consider(rendered, from_render=True)
-                if best_records > before:
+                if best_rank > before_rank:
                     print(
-                        "提示: 静态 HTML 列表不完整，已改用浏览器渲染结果生成配置",
+                        "提示: 静态 HTML 的结构不足以生成可用配置，已改用浏览器渲染结果",
                         file=sys.stderr,
                     )
 
@@ -1153,6 +1209,15 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
                 print(f"  · {line}", file=sys.stderr)
             raise SystemExit(3)
         config, html = best_config, best_html
+        # 2026-11-26：给一句**结论**（这站属于哪类、要不要动手）。
+        #   原来成功只打印条数与字段名，用户得自己反推「这是静态还是渲染」。
+        _verdict, _why = _result_verdict(
+            config=config,
+            records=best_records,
+            signals=signals,
+            used_render=chosen_from_render,
+        )
+        _verdict_line = f"结论: {_verdict}" + (f" —— {_why}" if _why else "")
         if task_settings is not None:
             try:
                 apply_task_goal(config, task_settings)
@@ -1170,6 +1235,12 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
                 "如判定失手，加 --always-browser 可强制走浏览器",
                 file=sys.stderr,
             )
+        # 2026-11-26：字段名被相似度替换过时**必须说出来**。
+        #   静默改用户的话等于撒谎 —— 用户以为抓「卡片标题」，实际抓「正文」。
+        substitutions = ((config.get("task") or {}).get("field_substitutions") or {})
+        if isinstance(substitutions, dict) and substitutions:
+            pairs = "；".join(f"{user} → {real}" for user, real in substitutions.items())
+            print(f"提示: 以下字段名页面上没有完全对应的，已按最接近的取：{pairs}", file=sys.stderr)
         # 走查 R3.2：交互信号必须**说出来** —— 要么已自动配好（滚动），要么告知要手工补录。
         for line in _interaction_advice(
             signals, scroll_rounds=scroll_rounds, iframe_locators=_iframe_locators(html)
@@ -1190,6 +1261,9 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
             f" / 字段 {report['fields']}",
             file=sys.stderr,
         )
+        # 2026-11-26：一句话结论 —— 用户问的就是「这站能不能抓」，
+        #   而不是「多少条记录」。放在最后一行，紧挨着结果。
+        print(_verdict_line, file=sys.stderr)
 
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")

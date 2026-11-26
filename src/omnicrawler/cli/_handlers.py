@@ -138,7 +138,12 @@ def _run_field_suggest(args: argparse.Namespace) -> None:
 
 @_register("record-actions")
 def _run_record_actions(args: argparse.Namespace) -> None:
-    _json(cmd_field.execute_record_actions(args.url, args.output, timeout=args.timeout))
+    _json(
+        cmd_field.execute_record_actions(
+            args.url, args.output, timeout=args.timeout,
+            save_session=not getattr(args, "no_save_session", False),
+        )
+    )
 
 
 @_register("api-discover")

@@ -299,6 +299,46 @@ def _testid_field_name(testid: str, sample_texts: list[str]) -> str:
     return _classify_field("", "", sample_texts) or "内容"
 
 
+def suggest_closest_field(name: str, available: list[str]) -> str:
+    """别名/后缀都中不了时，按**字形相似度**再找一个候选；找不到返回空串。
+
+    实测（2026-11-26）：用户说「商品标题」而页面字段就叫「标题」、说「价 格」
+    而页面叫「价格」—— 这类**字形上明显同一回事**的差别，靠枚举同义词永远治不完。
+
+    三条防线，缺一条就会乱配：
+
+    1. **必须唯一**：有多个候选同样像就不猜（歧义不猜是项目既有纪律）；
+    2. **必须够像**：包含关系，或 `SequenceMatcher` 比率 >= 0.5；
+    3. **长度不小于 2**：单字（如「数」「价」）太容易碰巧像。
+
+    ★ 刻意**不**做语义猜测：「卡片标题」不会配到「正文」，
+      那需要模型判断，不是字形相似能解决的 —— 配错了比报错更糟。
+    """
+    import difflib
+
+    target = str(name or "").strip()
+    if len(target) < 2 or not available:
+        return ""
+    candidates: list[tuple[float, str]] = []
+    for field in available:
+        other = str(field).strip()
+        if len(other) < 2:
+            continue
+        if target in other or other in target:
+            score = 0.9
+        else:
+            score = difflib.SequenceMatcher(None, target, other).ratio()
+        if score >= 0.5:
+            candidates.append((score, other))
+    if not candidates:
+        return ""
+    candidates.sort(reverse=True)
+    best_score, best = candidates[0]
+    if len(candidates) > 1 and candidates[1][0] == best_score:
+        return ""   # 两个一样像 ⇒ 不猜
+    return best
+
+
 def _itemprop_field_name(itemprop: str) -> str:
     key = itemprop.lower()
     if key in _ITEMPROP_NAMES:
@@ -982,6 +1022,9 @@ def _ancestor_class_context(desc: DOMNode, pool: list[DOMNode], *, limit: int = 
 _INTERACTION_SIGNALS: tuple[tuple[str, str], ...] = (
     ("iframe", r"<iframe\b"),
     ("form", r"<form\b"),
+    # 2026-11-26: 登录表单单独一类 —— form 里有 password 输入才算。
+    #   只按「有 form」判定会把带搜索框的普通商品页误判成「需要登录」。
+    ("login_form", r"<form\b(?:(?!</form>).)*?type=[\"']password"),
     ("cookie_banner", r"<(?:div|aside|section)[^>]+(?:id|class)=[\"'][^\"']*(?:cookie|consent|gdpr)"),
     ("spa_shell", r"<div[^>]+id=[\"'](?:app|root|__next|__nuxt)[\"']"),
 )
@@ -1066,7 +1109,10 @@ def _interaction_advice(
         # 走查 R5.2：只说"内容在 iframe 里"没法用 —— 给出**定位信息**才指得到那个 frame
         detail = "；".join(iframe_locators[:3])
         manual.append("内容在 iframe 里" + (f"（定位：{detail}）" if detail else ""))
-    if "form" in signals and "infinite_scroll" not in signals:
+    if "login_form" in signals:
+        # 2026-11-26: 登录门槛是常见一类，单独说清（并指出登录态会被保存）。
+        manual.append("登录表单（登录后才有内容；录一次即会保存登录态）")
+    elif "form" in signals and "infinite_scroll" not in signals:
         manual.append("需要提交表单（搜索 / 筛选）")
     if "spa_shell" in signals and not scroll_rounds:
         manual.append("SPA 外壳，内容靠 JS 渲染")
@@ -1083,6 +1129,12 @@ def _interaction_advice(
             + "。这类动作**不自动生成**（猜错选择器可能点到别的东西）——"
             "请用 `omnicrawler record-actions <URL>` 录一遍，它会把动作写进 "
             "`browser.actions`，再重跑 `auto-analyze` 或直接补进配置。"
+        )
+        # 2026-11-26: 录制**同时保存登录态**（这一轮补的能力）。
+        #   必须说出来，否则用户不知道「我登录过一次就够了」。
+        advice.append(
+            "  录制时会一并保存登录态（与抓取共用同一个会话目录）——"
+            "在录制窗口里登录一次，之后 run 会自动复用，不必每次重登。"
         )
     return advice
 

@@ -148,8 +148,25 @@ _RECORDER_SCRIPT = r"""
 """
 
 
-def record_with_playwright(url: str, output: Path, *, timeout_seconds: int = 300) -> dict[str, Any]:
-    """Open a visible browser and record normal user interactions until the window closes."""
+def record_with_playwright(
+    url: str,
+    output: Path,
+    *,
+    timeout_seconds: int = 300,
+    save_session: bool = True,
+) -> dict[str, Any]:
+    """Open a visible browser and record normal user interactions until the window closes.
+
+    ★ 2026-11-26：同时保存**登录态**。
+
+    实测缺口：本函数原来只管录动作，浏览器的 `storage_state` 随手关掉就丢了 ——
+    用户在里面登录一次，下次抓取仍然要重新登录。而产品其实**已经有**这套机制
+    （`fetching/session_state.py` 是路径唯一真源，`PlaywrightPool` 按 context_key
+    自动加载），只是录制这条路径没接上。
+
+    现在：关窗前把 `context.storage_state()` 存到与爬取**同一个**路径，
+    用户「录一次 + 登一次」之后，`run` 直接复用。存不了要**报出来**（不静默丢）。
+    """
 
     from ..core.config import DEFAULTS, AppConfig
     from ..security.policy import NetworkTargetPolicy
@@ -193,6 +210,26 @@ def record_with_playwright(url: str, output: Path, *, timeout_seconds: int = 300
                 page.screenshot(path=str(screenshot), full_page=True)
             except Exception:
                 screenshot = Path()
+        # 2026-11-26：关窗前抓一次登录态。
+        #   与爬取共用同一个路径真源（`session_state.session_state_path`），
+        #   否则「录制时登录的会话」与「抓取时加载的会话」指向两个文件 ⇒ 登了也白登。
+        session_saved = ""
+        session_error = ""
+        if save_session:
+            try:
+                from ..core.models import CrawlRequest
+                from . import session_crypto, session_state
+
+                key = session_state.context_key_for_request(
+                    config, CrawlRequest(url, meta={"root_url": url})
+                )
+                state_path = session_state.session_state_path(config, key)
+                if state_path is not None:
+                    session_crypto.save_storage_state(context.storage_state(), state_path)
+                    session_saved = str(state_path)
+            except Exception as exc:  # noqa: BLE001 - 存不了要报出来，不能让用户以为存了
+                session_error = f"{type(exc).__name__}: {exc}"
+                logger.warning("登录态保存失败（动作已记录）：%s", session_error)
         try:
             context.close()
             browser.close()
@@ -206,6 +243,8 @@ def record_with_playwright(url: str, output: Path, *, timeout_seconds: int = 300
         "events_received": sequence.events_received,
         "timed_out": time.monotonic() - started >= timeout_seconds,
         "final_screenshot": str(screenshot) if screenshot and screenshot.is_file() else "",
+        "session_saved": session_saved,
+        "session_error": session_error,
     }
     diagnostics.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     result["diagnostics"] = str(diagnostics)

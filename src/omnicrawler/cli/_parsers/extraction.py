@@ -27,7 +27,15 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     field_suggest.add_argument("html", help="已保存的 HTML 文件路径（要从中推荐选择器）")
     field_suggest.add_argument("--limit", type=int, default=100, help="最多返回多少个候选字段（默认 100）")
     field_suggest.add_argument("--output", "-o", help="推荐结果的 JSON 输出路径（缺省打印到 stdout）")
-    recorder = sub.add_parser("record-actions", help="打开浏览器并录制点击、输入与滚动操作")
+    recorder = sub.add_parser(
+        "record-actions",
+        help="打开浏览器并录制点击、输入与滚动操作（同时保存登录态，供 run 复用）",
+    )
+    recorder.add_argument(
+        "--no-save-session",
+        action="store_true",
+        help="只录动作、不保存登录态（默认会保存，供 run 直接复用会话）",
+    )
     recorder.add_argument("url", help="要打开并录制的起始网址")
     recorder.add_argument("--output", "-o", required=True, help="录制结果的 JSON 输出路径")
     recorder.add_argument("--timeout", type=int, default=300, help="录制会话超时秒数（默认 300）")
