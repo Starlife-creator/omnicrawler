@@ -254,6 +254,14 @@ def _field_key(node: DOMNode) -> str:
     #   旧实现把两列都命名成兜底的 内容_p / 内容_span。
     if node.testid:
         return f"testid:{node.testid.lower()}"
+    # 2026-11-26: `data-label` / `aria-label` 与 testid 同类 —— 都是站点**显式**
+    #   写下的「这个值是什么」。实测 randomuser.me 的 data-label="name"/"email".
+    # 只认 `data-label`：它是**数据值**的标注（randomuser 的 li[data-label]）。
+    # ★ 刻意**不**把 `aria-label` 当字段身份 —— 实测它主要标在交互控件上
+    #   （`<a aria-label="Navigation category">`、`<button aria-label="Close">`），
+    #   当字段用会把导航整片算成业务列。
+    if node.label:
+        return f"label:{node.label.lower()}"
     if node.classes:
         # ★ 走查 R3.6：值写在 class 名里时（`star-rating Three` / `star-rating Four`），
         #   那个值词**不属于字段身份** —— 带着它聚合，每件商品各成一个键，
@@ -436,7 +444,7 @@ def _infer_item_fields(
             #   只放行不取值，得到的是一列**永远为空**的列，比不出现更糟。
             # 2026-11-26: data-testid 节点也放行 —— 值可能不是文本（如 N 个 svg 的星级），
             #   只按「有文本」枚举会让整列缺席。放行之后必须能取值，见 count 规则。
-            and (n.text or n.is_image or _class_value_node(n) or n.testid)
+            and (n.text or n.is_image or _class_value_node(n) or n.testid or n.label or n.data_value)
         ]
         for candidate in descendants:
             key = _field_key(candidate)
@@ -591,7 +599,7 @@ def _infer_item_fields(
             marker: DOMNode = slot["node"]
             # 2026-11-26: data-testid 也算语义信号 —— 实测 review-stars 的文本恒为空，
             #   只按 class 判定会把它当模板噪声整列丢掉（它的"值"在内层 svg 个数里）。
-            if not (_has_semantic_signal(marker.tag, marker.classes) or marker.testid):
+            if not (_has_semantic_signal(marker.tag, marker.classes) or marker.testid or marker.label):
                 continue
         avg_len = sum(len(t) for t in texts) / max(1, len(texts))
         ranked.append((presence * 0.6 + min(1.0, avg_len / 200) * 0.4, key, slot))
@@ -627,6 +635,16 @@ def _infer_item_fields(
             testid = key.split(":", 1)[1]
             name = _testid_field_name(slot["node"].testid, slot["texts"][:3])
             selector = f'[data-testid="{testid}"]'
+        elif key.startswith("label:"):
+            # 2026-11-26: data-label + data-value 是**成对**的值标注。
+            #   实测 randomuser.me: <li data-label="name" data-value="Bret"> ——
+            #   值在 data-value 属性里、元素文本为空，只写 text 一定取不到。
+            raw = key.split(":", 1)[1]
+            name = _testid_field_name(slot["node"].label, slot["texts"][:3])
+            selector = f'[data-label="{raw}"]'
+            if slot["node"].data_value:
+                # 有 data-value 就取它，否则取文本（slot["attr"] 会在下面组装成 rule）
+                slot["attr"] = "data-value"
         else:
             parts = key.split(":")
             classes_hint = parts[2] if len(parts) > 2 and not parts[2].startswith("@") else ""

@@ -41,6 +41,15 @@ class DOMNode:
     #   `data-testid="review-text"` / `"review-date"` / `"review-stars"`，
     #   旧实现因此把两列都命名成兜底的 `内容_p` / `内容_span`。
     testid: str = ""
+    # 2026-11-26: data-label 是另一种显式语义标注（Bootstrap 示例站与很多模板站
+    #   用它标「这个值是什么」）。实测 randomuser.me：
+    #     <li data-label="name" data-value="...">  <li data-label="email" ...>
+    #   语义比 class 清楚，而旧实现完全没读这个属性。
+    label: str = ""
+    #: aria-label -- 无障碍标注，站点常把它写成可读的名字。
+    aria_label: str = ""
+    #: `data-value` —— 与 data-label 成对出现的值（实测 randomuser.me）。
+    data_value: str = ""
     xpath: str = ""
     css_path: str = ""
     is_link: bool = False
@@ -148,6 +157,9 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int, *,
     src = str(attrs.get("src") or "")
     itemprop = str(attrs.get("itemprop") or "").strip()
     testid = str(attrs.get("data-testid") or "").strip()
+    label = str(attrs.get("data-label") or "").strip()
+    aria_label = str(attrs.get("aria-label") or "").strip()
+    data_value = str(attrs.get("data-value") or "").strip()
 
     children: list[Any] = []
     c = node.child
@@ -185,6 +197,9 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int, *,
             parent_key=parent_key,
             itemprop=itemprop,
             testid=testid,
+            label=label,
+            aria_label=aria_label,
+            data_value=data_value,
             xpath="",
             css_path=css,
             is_link=bool(href and tag == "a"),
@@ -245,6 +260,9 @@ def _walk(element: Any, nodes: list[DOMNode], depth: int, max_nodes: int) -> Non
     src = element.get("src", "") if hasattr(element, "get") else ""
     itemprop = str(element.get("itemprop", "") or "").strip() if hasattr(element, "get") else ""
     testid = str(element.get("data-testid", "") or "").strip() if hasattr(element, "get") else ""
+    label = str(element.get("data-label", "") or "").strip() if hasattr(element, "get") else ""
+    aria_label = str(element.get("aria-label", "") or "").strip() if hasattr(element, "get") else ""
+    data_value = str(element.get("data-value", "") or "").strip() if hasattr(element, "get") else ""
 
     children = [c for c in element if _tag_name(c)] if hasattr(element, "__iter__") else []
     child_tags = [_tag_name(c) for c in children]
@@ -272,6 +290,9 @@ def _walk(element: Any, nodes: list[DOMNode], depth: int, max_nodes: int) -> Non
         parent_key=parent_key,
         itemprop=itemprop,
         testid=testid,
+        label=label,
+        aria_label=aria_label,
+        data_value=data_value,
         xpath="",  # 调用方自行生成
         css_path=css,
         is_link=bool(href and tag == "a"),
