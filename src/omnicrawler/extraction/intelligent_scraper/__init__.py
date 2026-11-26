@@ -827,11 +827,55 @@ def align_requested_fields(
         "url": ("链接地址",),
         "封面": ("图片地址",),
         "图片": ("图片地址",),
+        # ★ 2026-11-26（公开 API 清单实测）：JSON 载荷的字段名常是**英文原键**
+        #   （`first_name` / `last_name` / `email`），而需求写中文。实测 regres：
+        #   站点字段 {编号, 邮箱, first_name, last_name, avatar}，需求「用户姓名」⇒ 整条失败。
+        #   这里只补"中文说法 → 英文原键"这一层，键名本身不改（下游按原键读取）。
+        "姓名": ("姓名", "name", "full_name", "first_name", "名称"),
+        "全名": ("full_name", "姓名", "name", "first_name"),
+        "用户名": ("username", "name", "姓名"),
+        "邮箱": ("email", "邮箱"),
+        "邮件": ("email", "邮箱"),
+        "头像": ("avatar", "图片地址"),
+        "电话": ("phone", "电话"),
+        "手机": ("phone", "电话"),
+        "编号": ("id", "编号"),
+        "ID": ("id", "编号"),
+        "详情链接": ("链接地址", "url", "链接"),
+        "详情页": ("链接地址", "url", "链接"),
     }
+    def _candidates(name: str) -> tuple[str, ...]:
+        """先查同义词表；查不到再按**语义后缀**退一次。
+
+        ★ 2026-11-26：只顾着枚举同义词是治不完的 —— 用户会说「**宝可梦**名称」
+        「**用户**姓名」「**商品**详情链接」，前缀是站点专名，千变万化。
+        真正稳定的是**后缀**（名称 / 姓名 / 链接 / 价格 …）。
+        所以表里查不到时，按后缀再试一次；仍查不到才算"真的没有"。
+        这不会退化成"找不到就忽略" —— 见文件里那条既有契约。
+        """
+        known = aliases.get(name)
+        if known:
+            return known
+        suffix_rules = (
+            ("名称", ("名称", "标题")),
+            ("姓名", ("姓名", "name", "full_name", "first_name", "名称")),
+            ("链接", ("链接地址", "链接", "url")),
+            ("价格", ("价格",)),
+            ("评分", ("评分",)),
+            ("作者", ("作者",)),
+            ("日期", ("日期",)),
+            ("标题", ("标题", "名称")),
+            ("邮箱", ("email", "邮箱")),
+        )
+        for suffix, targets in suffix_rules:
+            if name.endswith(suffix):
+                return (*targets, name)
+        return (name,)
+
     selected: dict[str, Any] = {}
     missing = []
     for name in requested:
-        match = next((candidate for candidate in aliases.get(name, (name,)) if candidate in fields), None)
+        match = next((candidate for candidate in _candidates(name) if candidate in fields), None)
         if match is None:
             missing.append(name)
             continue
@@ -841,7 +885,13 @@ def align_requested_fields(
             selected[name]["all"] = True
             selected[name].pop("join", None)
     if missing:
-        raise ValueError("需求字段没有可靠规则：" + "、".join(missing))
+        # ★ 2026-11-26：原来只说「没有可靠规则」，用户不知道该改哪个字。
+        #   现在把**页面上实际有什么**列出来 —— 这才是能让人下一步就改对的信息。
+        available = "、".join(sorted(fields))
+        raise ValueError(
+            "需求字段没有可靠规则：" + "、".join(missing)
+            + f"（这个页面能取到的字段是：{available}；请改成其中之一，或去掉该项）"
+        )
     return selected or fields
 
 
