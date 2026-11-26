@@ -306,6 +306,75 @@ def _itemprop_field_name(itemprop: str) -> str:
     return f"字段_{itemprop}"
 
 
+def _table_row_columns(items: list) -> list[str]:
+    """第一行数据里**直接子 td** 的签名序列（各列的身份与顺序）。
+
+    ★ 不能按 css_path 去数：同一个列表里所有数据行共用**完全相同的**
+    css_path（`tr.team`），按前缀数会把 25 行 x 9 列数成 225，
+    而且不同行的同类列还会因 class 差异（text-success / text-danger）
+    被当成不同的列（第一版实测数成 11 列）。
+    行内的真实结构只有 `children_keys` 记得住 —— 那是**逐节点**的。
+    """
+    if not items:
+        return []
+    return [k for k in items[0].children_keys if k.split(".", 1)[0] == "td"]
+
+
+def _table_column_headers(items: list, nodes: list) -> dict[int, str]:
+    """HTML 表格：返回 {列序号: 表头文本}，没有可用表头时返回空字典。
+
+    实测（scrapethissite.com/pages/forms）：25 行 x 9 列全是 td，
+    唯一能说明「这一列是什么」的是表头那一行的 th：Team Name / Year / Wins ...
+    旧实现只按标签+类名推断，九列全叫 内容_td / 内容_td_2 ...（值对、名字没意义）。
+
+    判据刻意保守：
+    * 表头必须在**同一张表**内（按 css 前缀判定）；
+    * 数量必须与数据列数一致 —— 不一致说明有 colspan/rowspan，宁可不命名；
+    * 文本必须短且互不重复，否则那是说明段落不是列名。
+    """
+    columns = _table_row_columns(items)
+    width = len(columns)
+    if width < 2 or not items:
+        return {}
+    item_css = items[0].css_path
+    if " > " not in item_css:
+        return {}
+    base = item_css.rsplit(" > ", 1)[0] + " > "
+    headers: list[str] = []
+    for n in nodes:
+        if n.tag != "th" or not n.css_path.startswith(base):
+            continue
+        text = n.text.strip()[:20]
+        if not text:
+            continue
+        headers.append(text)
+        if len(headers) == width:
+            break
+    if len(headers) != width or len(set(headers)) != width:
+        return {}
+    return dict(enumerate(headers))
+
+
+def _table_column_index(items: list, td_css: str) -> int:
+    """某个 td 在它那一行里的**列序号**（0 起）；不是表内 td 时返回 -1。
+
+    各数据行结构相同，所以用第一行的列签名去比：td 的 css 后缀以某列签名开头
+    （`td.pct.text-success` 以 `td.pct` 开头 —— 后缀里的第二个 class 是**取值**，
+    不属于列身份）。
+    """
+    columns = _table_row_columns(items)
+    if not columns or not items:
+        return -1
+    prefix = items[0].css_path + " > "
+    if not td_css.startswith(prefix):
+        return -1
+    rel = td_css[len(prefix):]
+    for idx, column in enumerate(columns):
+        if rel == column or rel.startswith(column + "."):
+            return idx
+    return -1
+
+
 def _infer_item_fields(
     container_css: str,
     items: list[DOMNode],
@@ -522,6 +591,12 @@ def _infer_item_fields(
 
         if not name or not selector:
             continue
+        # 2026-11-26: HTML 表格 -> 用 th 表头给 td 列命名（否则全叫 内容_td）。
+        table_names = _table_column_headers(sample, nodes)
+        if table_names and name.startswith("内容_td") and desc.tag == "td":
+            idx = _table_column_index(sample, desc.css_path)
+            if idx >= 0 and idx < len(table_names):
+                name = table_names[idx]
         name = _unique_field_name(name, used_names, name_seen)
         used_names.add(name)
 

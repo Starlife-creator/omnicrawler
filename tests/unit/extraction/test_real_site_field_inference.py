@@ -221,6 +221,44 @@ def test_non_data_testids_are_not_treated_as_business_fields(testid: str) -> Non
     }
 
 
+# ── ⑦ HTML 表格：<th> 表头给 <td> 列命名 ─────────────────────────────────
+
+
+def test_table_columns_are_named_from_the_header_row() -> None:
+    """★ scrapethissite/pages/forms：25 行 x 9 列全是 td。
+
+    唯一能说明「这一列是什么」的是表头那一行的 `th`（Team Name / Year / Wins …）。
+    旧实现只按标签+类名推断，九列全叫 `内容_td` / `内容_td_2` …
+    —— 值是对的，列名对用户毫无意义，而且用户**没法按名要字段**：
+    说「抓取球队名称和年份」会直接报「需求字段没有可靠规则」。
+    """
+    config = _config("scrapethissite_forms.html", "https://www.scrapethissite.com/pages/forms/")
+    fields = config["extract"]["fields"]
+    assert "Team Name" in fields, f"表头没被用作列名，实际：{list(fields)}"
+    assert "Year" in fields, f"表头没被用作列名，实际：{list(fields)}"
+    assert not [n for n in fields if n.startswith("内容_td")], (
+        f"仍有兜底的 内容_td 列名：{list(fields)}"
+    )
+
+
+def test_table_header_count_must_match_the_data_columns() -> None:
+    """表头数与数据列数不一致（colspan / 假表头）时**宁可不命名**。
+
+    宽松匹配会让「表头描述段落」被当成列名 —— 那是比 `内容_td` 更糟的假信息。
+    """
+    html = (
+        "<html><body><table>"
+        "<tr><th>only one header</th></tr>"
+        + "".join(
+            f"<tr><td>a{i}</td><td>b{i}</td><td>c{i}</td></tr>" for i in range(4)
+        )
+        + "</table></body></html>"
+    )
+    config = analyze_to_config(html, "https://example.org/list")
+    fields = config["extract"]["fields"]
+    assert "only one header" not in fields, f"表头数量不足却拿来命名了：{list(fields)}"
+
+
 # ── ⑤ 夹具本身的完整性 ───────────────────────────────────────────────────
 
 

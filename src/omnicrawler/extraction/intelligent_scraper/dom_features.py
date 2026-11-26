@@ -84,7 +84,11 @@ def _parse_dom_selectolax(html: str, *, max_nodes: int = 5000) -> list[DOMNode] 
     if root is None:
         return []
     nodes: list[DOMNode] = []
-    _walk_lexbor(root, nodes, depth=0, max_nodes=max_nodes)
+    # 2026-11-26: Lexbor 给 table 隐式补 tbody，而抽取引擎（bs4 html.parser）不补。
+    #   分析期生成的 table > tbody > tr 于是与真实 run 的 DOM 对不上（实测 25 条 vs 0 条）。
+    #   只按源文档是否显式写了 tbody 决定要不要把它写进路径。
+    has_tbody = "<tbody" in html.lower()
+    _walk_lexbor(root, nodes, depth=0, max_nodes=max_nodes, include_tbody=has_tbody)
     return nodes
 
 
@@ -100,13 +104,16 @@ def _lexbor_classes(attrs: dict[str, str | None]) -> list[str]:
     return [c for c in cls_raw.split() if c]
 
 
-def _build_css_lexbor(node: Any) -> str:
+def _build_css_lexbor(node: Any, *, include_tbody: bool = True) -> str:
     parts: list[str] = []
     cur = node
     while cur is not None:
         tag = _lexbor_tag(cur)
         if tag in {"html", ""}:
             break
+        if tag == "tbody" and not include_tbody:
+            cur = cur.parent
+            continue
         attrs = cur.attributes
         classes = _lexbor_classes(attrs)
         css = tag
@@ -119,7 +126,7 @@ def _build_css_lexbor(node: Any) -> str:
     return " > ".join(parts)
 
 
-def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int) -> None:
+def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int, *, include_tbody: bool = True) -> None:
     if len(nodes) >= max_nodes:
         return
     tag = _lexbor_tag(node)
@@ -128,7 +135,7 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int) ->
             return
         child = getattr(node, "child", None)
         while child is not None:
-            _walk_lexbor(child, nodes, depth, max_nodes)
+            _walk_lexbor(child, nodes, depth, max_nodes, include_tbody=include_tbody)
             child = child.next
         return
 
@@ -155,7 +162,7 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int) ->
         ch_tag = _lexbor_tag(ch)
         child_keys.append(f"{ch_tag}.{ch_cls[0]}" if ch_cls else ch_tag)
 
-    css = _build_css_lexbor(node)
+    css = _build_css_lexbor(node, include_tbody=include_tbody)
     parent = node.parent
     p_tag = _lexbor_tag(parent) if parent is not None else ""
     p_cls = _lexbor_classes(parent.attributes) if parent is not None and p_tag else []
@@ -187,7 +194,7 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int) ->
         )
     )
     for ch in children:
-        _walk_lexbor(ch, nodes, depth + 1, max_nodes)
+        _walk_lexbor(ch, nodes, depth + 1, max_nodes, include_tbody=include_tbody)
 
 
 def _parse_dom_lxml(html: str, *, max_nodes: int = 5000) -> list[DOMNode]:
