@@ -232,17 +232,32 @@ def test_darwin_launch_requires_seatbelt(monkeypatch: pytest.MonkeyPatch, tmp_pa
         enforcement.darwin_launch(["host"], plugin_root=tmp_path)
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux Landlock ABI")
-def test_native_helper_refuses_to_compile_inside_source_tree(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_native_helper_refuses_to_compile_inside_source_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """编译目录绝不允许落在源码树里。
 
     实测事故（2026-11-24）：临时根不可写时，``mkdtemp`` 会静默回退到 ``cwd``。
     从源码树启动的插件宿主因此把 shim 编译进了 ``src/omnicrawler/plugins/`` 里，
     累积出 65 个空目录 —— 它们被 .gitignore 覆盖，``git status`` 一个都看不见，
     而 mypy 扫 ``src/`` 时会 ``PermissionError`` 直接崩。
+
+    2026-11-26 修正（ubuntu CI 判红后）：本用例原来用**不存在的**路径冒充 ``mkdtemp`` 的
+    返回值。``_probe_writable`` 加进来以后（它要先往新目录里写一个探测文件），
+    探测文件写不进去，失败原因就变成了「不可写」，源码树判定**根本没被走到** ——
+    断言仍在等「inside the source tree」，于是这条守卫在 Linux 上恒定变红。
+    现在改用一棵**真实存在**的假源码树：探测文件写得进去，判定才真正落在
+    「是否在源码树里」这一条上。
+
+    同时去掉 Linux 限制：判据与被测平台无关，留在 Windows 上跳过，等于让开发机
+    （Windows）永远看不见它 —— 这次分叉正是这样攒下来的。
     """
-    package_dir = Path(enforcement.__file__).resolve().parent
-    leaked = package_dir / "omnicrawler-landlock-selftest"
+    fake_package = tmp_path / "src" / "omnicrawler" / "plugins"
+    fake_package.mkdir(parents=True)
+    leaked = fake_package / "omnicrawler-landlock-selftest"
+    leaked.mkdir()
+    monkeypatch.setattr(enforcement, "_PACKAGE_DIR", fake_package)
+    monkeypatch.setattr(enforcement, "_candidate_roots", lambda: (tmp_path,))
     monkeypatch.setattr(enforcement.tempfile, "mkdtemp", lambda **kwargs: str(leaked))
     monkeypatch.setattr(enforcement, "_native_module", None, raising=False)
     monkeypatch.delenv("OMNICRAWL_LANDLOCK_HELPER", raising=False)
