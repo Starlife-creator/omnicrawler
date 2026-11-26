@@ -20,7 +20,23 @@ from typing import Any
 from ..core.config import SOURCE_KINDS
 from .ux_service import QUICK_INTENTS, QuickTaskDraft, draft_quick_task
 
-_URL = re.compile(r"https?://[^\s，。；;]+", re.IGNORECASE)
+#: 裸域名（清单/对话里最常见的写法：「抓取 books.toscrape.com 的书名」）。
+#:
+#: ★ 2026-11-26 修正：原正则只认 `https?://`，于是**不带协议**的域名被当成"没有 URL"，
+#:   整条需求落到 `ambiguous` 分支、URL 变成 `file:///placeholder`，字段与输出格式
+#:   全部丢失且 **warnings 为空**。实测 26 条清单式需求里有 24 条是裸域名写法 ——
+#:   这个缺口不是边缘情况，而是主路径。
+#:
+#: 只认**已知 TLD**，且要求前面不是路径/单词片段（`(?<![\w./-])`）：
+#: 宁可漏掉生僻后缀，也不要把 `data.csv` / `README.md` 当成域名。
+_TLD = r"(?:com|org|net|io|dev|cn|co|uk|de|live|pro|me|ai|app|site|xyz|info|biz|tv|cc|us|edu|gov)"
+_BARE_URL = re.compile(
+    r"(?<![\w./-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+" + _TLD + r"(?::\d+)?(?:/[^\s，。；;]*)?",
+    re.IGNORECASE,
+)
+_URL = re.compile(
+    r"(?:https?://[^\s，。；;]+)|(?:" + _BARE_URL.pattern + r")", re.IGNORECASE
+)
 _FILE_EXT = re.compile(r"(?:^|\s)([\w\-/\\]+\.(?:pdf|docx?|xlsx?|pptx?|txt|csv|扫描件))", re.IGNORECASE)
 # 本地路径分支加 (?<![\w:]) 前置断言，避免把 ftp://host/x 里的 p://host/x 误当本地路径
 _FILE_PATH = re.compile(r"((?<![\w:])[A-Za-z]:[/\\][^\s，。；;]+|[~/][^\s，。；;]+)", re.IGNORECASE)
@@ -59,6 +75,9 @@ _FIELD_MAX_LEN = 6
 #: 这些词出现在 token 里说明它是**处理描述**（"去除货币符号"/"转换为数字"），不是字段名
 _FIELD_TOKEN_REJECT = (
     "去除", "转换", "清洗", "归一", "格式化", "去重", "排序", "统计", "分组", "归档", "下载",
+    # ★ 2026-11-26：这些是**动作**，不是字段。实测把「要翻页」「滚动加载」当成了字段名，
+    #   于是确认单上写着"字段内容：名称、价格、要翻页"——用户看到会当场失去信任。
+    "翻页", "滚动", "加载", "点击", "登录", "抓取", "采集", "获取", "提取",
 )
 
 #: 需求里的「后处理」意图。★ 每一项必须**恰好**落进下面两张表之一：
@@ -428,6 +447,11 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
     """
     match = _URL.search(request)
     url = match.group(0) if match else fallback_url.strip()
+    # ★ 2026-11-26：裸域名补上协议。下游 `auto-analyze` / `run` 都要求真实 URL，
+    #   而「抓取 books.toscrape.com 的书名」是清单与对话里最常见的写法。
+    #   只补 scheme，不动主机与路径 —— 是否可访问由抓取期决定，不在这里猜。
+    if url and "://" not in url:
+        url = "https://" + url.lstrip("/")
 
     # Layer 2: 检测文件路径
     file_paths: list[str] = []
@@ -447,9 +471,21 @@ def compile_natural_language(request: str, *, fallback_url: str = "") -> Natural
         if fallback_url.strip():
             url = fallback_url.strip()
         else:
+            # ★ 2026-11-26：这里原来**静默**返回一个指向 `file:///placeholder` 的草稿，
+            #   `warnings` 为空。CLI 上那是一条看起来成功的 JSON，用户以为任务配好了。
+            #   现在把"缺什么、怎么补"写进 warnings，并明确它还不能直接跑。
+            missing = draft_quick_task("file:///placeholder", "save_page")
+            missing = replace(
+                missing,
+                warnings=(
+                    "需求里没有找到网址：请在需求中写清入口地址（如「抓取 https://example.com 的标题」）。"
+                    "当前确认单里的地址是占位符，**不能直接运行**；请补上真实 URL 后再生成配置。",
+                    *missing.warnings,
+                ),
+            )
             return NaturalLanguageDraft(
                 request=request.strip(),
-                task=draft_quick_task("file:///placeholder", "save_page"),
+                task=missing,
                 topics=(),
                 schedule="manual",
                 mode="ambiguous",
