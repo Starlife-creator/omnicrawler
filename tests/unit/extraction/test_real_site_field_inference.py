@@ -169,6 +169,49 @@ def test_stock_state_written_in_the_item_class_is_captured() -> None:
     assert rule.get("value_map"), "取到 class 原文后必须映射成可读状态"
 
 
+def test_author_inside_plain_wrapper_keeps_its_semantic_class() -> None:
+    """★ 回归：`<span>by <small class="author">Albert Einstein</small></span>`。
+
+    外层 span 的文本更长（多了 "by "），但**只有 small 说出了「这是作者」**。
+    若代表节点按「文本更长」优先，这一列会退化成 `内容_span`，于是用户说
+    「抓语录和作者」直接报「没有可靠规则」—— 实测发生在 quotes.toscrape.com/js
+    渲染后的页面上（该页没有 `itemprop`，只能靠 class）。
+
+    夹具是该页**真实渲染结果**（用产品自己的 `_fetch_rendered()` 抓的）。
+    """
+    config = _config("quotes_js_rendered.html", "https://quotes.toscrape.com/js/")
+    fields = config["extract"]["fields"]
+    assert "作者" in fields, f"作者列丢了，实际：{list(fields)}"
+    assert "内容_span" not in fields, f"退化成兜底名了：{list(fields)}"
+    examples = [str(e) for e in (fields["作者"].get("examples") or [])]
+    assert examples and all("by " not in e for e in examples), (
+        f"作者列混进了外层包装文本：{examples}"
+    )
+
+
+def test_nested_itemprop_price_wins_over_its_outer_offers_wrapper() -> None:
+    """★ 回归：`price` 嵌套在 `offers` 里时，名字必须取到「价格」。
+
+    实测形态（webscraper.io/test-sites/e-commerce/ajax）：
+
+        <h4 itemprop="offers" itemscope itemtype=".../Offer">
+          <span itemprop="price">$1199</span>
+          <meta itemprop="priceCurrency" content="USD">
+        </h4>
+
+    两者是**单链**，按「文本更长」选外层 h4 ⇒ 字段名变成 `字段_offers`，
+    于是「价格」整列消失（用户说「抓商品名称和价格」直接报「没有可靠规则」）。
+
+    修法：`_ITEMPROP_NAMES` 里登记过的 itemprop（`price`）优先于未登记的（`offers`）。
+    """
+    config = _config("webscraper_ajax.html", "https://webscraper.io/test-sites/e-commerce/ajax")
+    fields = config["extract"]["fields"]
+    assert "价格" in fields, f"价格列丢了，实际：{list(fields)}"
+    assert "字段_offers" not in fields, f"不该把 offers 当字段名：{list(fields)}"
+    examples = [str(e) for e in (fields["价格"].get("examples") or [])]
+    assert examples and any("1199" in e for e in examples), f"价格取到的值不对：{examples}"
+
+
 def test_item_selector_does_not_pin_the_stock_value() -> None:
     """★ 选择器不能带值词 —— 否则只匹配到恰好那一种库存状态的商品。
 

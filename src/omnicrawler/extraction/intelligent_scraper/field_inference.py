@@ -529,7 +529,7 @@ def _infer_item_fields(
     #     · 图片的 a>img：两者文本都是空 ⇒ 取更深的 `img`，从而用上它的 `src`。
     remaining = [slot["node"] for slot in by_key.values()]
 
-    def _representative_rank(node: DOMNode) -> tuple[int, int, int]:
+    def _representative_rank(node: DOMNode) -> tuple[int, int, int, int]:
         """嵌套链里"谁最该留下"的排序键（越大越该留）。
 
         三层判据，按优先级：
@@ -542,8 +542,21 @@ def _infer_item_fields(
            两者文本一样长、都没有类名，取 `a` 才能用上 `title`。
         """
         return (
-            len(node.text.strip()),
+            # ★ 2026-11-26 第一优先级：itemprop 是**已登记的业务语义**。
+            #   实测回归（webscraper.io/ajax）：`<h4 itemprop="offers">$1199 USD</h4>`
+            #   里套着 `<span itemprop="price">$1199</span>`，两者单链；
+            #   按「文本更长」选外层 ⇒ 名字变成 `字段_offers`，**价格列整列丢了**。
+            1 if node.itemprop and node.itemprop.lower() in _ITEMPROP_NAMES else 0,
+            # ★ 第二优先级：**类名说清了这是什么** 胜过「文本更长」。
+            #   这一条是修另一个回归时才想明白的（quotes /js/ 渲染后）：
+            #
+            #       <span>by <small class="author">Albert Einstein</small></span>
+            #
+            #   外层 span 文本更长（多了 "by "），但只有 small 说出了「这是作者」。
+            #   按长度优先会让这列退化成 `内容_span`；而价格那种情形里
+            #   `span.price` 与 `bdi` 文本**一样长**，把语义提到长度之前同样成立。
             1 if _has_semantic_signal(node.tag, node.classes) else 0,
+            len(node.text.strip()),
             node.depth,
         )
 
