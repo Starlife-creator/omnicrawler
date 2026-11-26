@@ -17,6 +17,7 @@ ctypes 误用（vtable 槽位错、签名错）是 **AV 崩进程**，不是 Pyt
 
 from __future__ import annotations
 
+import inspect
 import os
 import sys
 from pathlib import Path
@@ -188,6 +189,28 @@ def test_shell_environment_leaves_an_existing_value_alone(
     with win_shortcut._shell_windows_process_environment():
         assert os.environ["SystemDrive"] == "Z:"
     assert os.environ["SystemDrive"] == "Z:"
+
+
+def test_shell_environment_does_not_use_the_host_platform_path_module() -> None:
+    """盘符抽取必须按 **Windows** 语义，不能跟着宿主平台走。
+
+    2026-11-26 实测事故：实现里写的是 `os.path.splitdrive`。在 ubuntu / macos 上
+    `os.path` 是 `posixpath`，`splitdrive("Q:\\Windows")` 返回 `("", "Q:\\Windows")`
+    ⇒ 一个变量都补不上 ⇒ 调用方紧接着 `environ["SystemDrive"]` 直接 KeyError。
+    本机是 Windows，`os.path` 恰好就是 `ntpath`，所以常年全绿，直到第一次推送、
+    第一次上 Linux/macOS CI 才一起暴露。
+
+    **为什么是源码断言而不是跑一遍**：Windows 上 `os.path` **就是** `ntpath` 这个
+    模块对象，`monkeypatch.setattr(os.path, "splitdrive", ...)` 会连 `ntpath.splitdrive`
+    一起换掉（同一个对象），于是「修好了」和「没修好」在测试里看起来一模一样 ——
+    这条守卫如果写成运行时断言，它会**恒绿**（我第一版就是这么写的，当场自证）。
+    所以这里断言的是「不依赖哪个模块」，这才是真正要守的东西。
+    """
+    source = inspect.getsource(win_shortcut._shell_windows_process_environment)
+    assert "ntpath.splitdrive" in source, "盘符必须用 ntpath 抽取（Windows 语义）"
+    assert "os.path.splitdrive" not in source, (
+        "不许用 os.path.splitdrive —— 它在 POSIX 宿主上是 posixpath，抽不出盘符"
+    )
 
 
 def test_shell_environment_derives_drive_from_system_root(

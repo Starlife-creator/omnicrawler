@@ -393,7 +393,15 @@ def _shell_windows_process_environment() -> Any:
     missing: dict[str, str] = {}
     if not os.environ.get("SystemDrive"):
         drive = os.environ.get("SystemRoot") or os.environ.get("windir") or ""
-        letter = os.path.splitdrive(drive)[0]
+        # ★ 必须用 ntpath，不能用 os.path：这个函数服务的对象是 **Windows shell**
+        #   （IPersistFile 展开的是 Windows 路径形态），而 os.path 在 POSIX 上是
+        #   posixpath，splitdrive("Q:\\Windows") 返回 "" ⇒ 什么都不补 ⇒ 调用方
+        #   紧接着 environ["SystemDrive"] 直接 KeyError。
+        #   2026-11-26 实测：这条在 ubuntu / macos 的 CI 上恒红，本机（Windows）
+        #   全绿 —— 判据是 Windows 语义，抽取却依赖了宿主平台的实现。
+        import ntpath
+
+        letter = ntpath.splitdrive(drive)[0]
         if letter:
             missing["SystemDrive"] = letter
             missing.setdefault("SystemRoot", drive)
