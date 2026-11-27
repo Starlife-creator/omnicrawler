@@ -44,6 +44,9 @@ def test_ssr_template_is_recommended_before_browser_fallbacks() -> None:
     report = _inspect(SPA)
     ids = [item["id"] for item in report.recommendations]
     assert "generic/ssr-embedded-data" in ids, ids
+    # ★ 必须排**第一**：同分时按 template_id 字典序，spa-api-discovery 会压过它 ——
+    #   用户于是先看到"开浏览器做 API 发现"，而静态取内嵌数据才是省一个数量级的那条。
+    assert ids[0] == "generic/ssr-embedded-data", ids
     # 且它必须排在"动态页"兜底之前（推荐是有序的，用户按顺序看）
     assert ids.index("generic/ssr-embedded-data") < (
         ids.index("generic/infinite-scroll")

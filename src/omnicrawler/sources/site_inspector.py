@@ -257,6 +257,17 @@ def _recommendations(
         if template_id not in seen:
             values.append({"id": template_id, "score": 10, "reasons": (reason,)})
             seen.add(template_id)
+    # ★ 2026-11-27：**内嵌数据是这类页面的最省路径，必须排第一**。
+    #
+    #   实测：`__NEXT_DATA__` 页面上，`generic/spa-api-discovery` 与
+    #   `generic/ssr-embedded-data` 都靠 `html_contains` 各得 15 分，同分时按
+    #   template_id 字典序 —— 于是"开浏览器做 API 发现"排在"静态取内嵌数据"前面。
+    #   对用户来说这就是"先花一个数量级的时间做错的事"。
+    #
+    #   判据是"这条路径更省且同样正确"，不是"这个模板更好"：没有内嵌载荷时
+    #   该模板根本不会被加入（上面 fallbacks 的条件）。
+    if "embedded-json" in structured:
+        values.sort(key=lambda item: 0 if item["id"] == "generic/ssr-embedded-data" else 1)
     return tuple(values[:limit])
 
 
