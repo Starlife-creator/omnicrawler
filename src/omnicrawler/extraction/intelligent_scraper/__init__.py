@@ -501,6 +501,38 @@ def _json_configs(
 
 # ── 自我验证：把"猜出来的配置"拿真实抽取器跑一遍 ────────────────────────
 
+#: 把 `analyze_to_config` 已经做过的验证结果留给调用方复用。
+#:
+#: 键是 `id(config)`，值是 `(html 的哈希, 验证报告)`。
+#: ★ 必须带 html 哈希：同一个 `id` 在对象被回收后可能被**另一个** dict 复用，
+#:   只按 id 查会拿到另一份 HTML 的报告 —— 那是"张冠李戴"的静默错误。
+#: 上限 32 条：一次 CLI 调用最多几个候选配置（静态 / 渲染），留足余量且不会长跑泄漏。
+_REMEMBERED_REPORTS: dict[int, tuple[int, dict[str, Any]]] = {}
+_REMEMBERED_LIMIT = 32
+
+
+def verified_report(config: dict[str, Any], html: str) -> dict[str, Any] | None:
+    """取 `analyze_to_config` 已经算过的验证报告；没有则返回 None。
+
+    ★ 为什么值得做：`auto-analyze` 会对同一份 HTML 先 `analyze_to_config`（内部已验证）
+      再 `verify_config` 一次，两次都 `parse_html` + 上千次 `select_nodes`。
+      实测 84 行页面这一次重复占 0.4 s（整条命令的 2/3）。
+      判据是「**同一份 config + 同一份 html**」—— 任一边不同就必须重算。
+    """
+    entry = _REMEMBERED_REPORTS.get(id(config))
+    if entry is None:
+        return None
+    digest, report = entry
+    return report if digest == hash(html) else None
+
+
+def remember_report(config: dict[str, Any], html: str, report: dict[str, Any]) -> None:
+    """登记一份验证报告（供 `verified_report` 复用）。"""
+    if len(_REMEMBERED_REPORTS) >= _REMEMBERED_LIMIT:
+        _REMEMBERED_REPORTS.clear()
+    _REMEMBERED_REPORTS[id(config)] = (hash(html), report)
+
+
 class AutoConfigUnverifiedError(RuntimeError):
     """自动生成的配置在真实页面上采不到任何记录。"""
 
@@ -845,7 +877,7 @@ def analyze_to_config(
             item_path_override=item_path_override,
         )
         if json_config is not None:
-            _check_verified(json_config, html)
+            remember_report(json_config, html, _check_verified(json_config, html))
             return json_config
         if item_path_override and advisories is not None:
             advisories.append(
@@ -888,7 +920,7 @@ def analyze_to_config(
                 embedded, html, url, project_name, advisories=advisories
             )
             if embedded_config is not None:
-                _check_verified(embedded_config, html)
+                remember_report(embedded_config, html, _check_verified(embedded_config, html))
                 return embedded_config
 
     fields_dict: dict[str, Any] = {}
@@ -994,7 +1026,12 @@ def analyze_to_config(
     if item_selector:
         config["extract"]["item_selector"] = item_selector
 
-    _check_verified(config, html)
+    # ★ 2026-11-27：把验证结果**留在配置对象旁边**，避免调用方再跑一遍。
+    #   实测 `auto-analyze` 这条路上，同一份 HTML 被 `parse_html` 两次、
+    #   `select_nodes` 上千次 —— 而两次输入完全相同，结果必然相同。
+    #   配置是 dict（要原样写进 YAML），所以结果挂在**模块级**弱引用表里，
+    #   以 id(config)+html 的摘要为键；调用方用 `verified_report()` 取。
+    remember_report(config, html, _check_verified(config, html))
     return config
 
 
@@ -1405,7 +1442,14 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
                 )
             except AutoConfigUnverifiedError:
                 return
-            report_candidate = verify_config(candidate, candidate_html) or {}
+            # ★ 2026-11-27：`analyze_to_config` 刚刚已经在这份 HTML 上试跑过一遍；
+            #   直接复用它的报告，别把上千次 select_nodes 再做一次（实测 84 行页面 0.4 s）。
+            #   判据在 `verified_report` 里：config 与 html 任一边不同就重算。
+            report_candidate = (
+                verified_report(candidate, candidate_html)
+                or verify_config(candidate, candidate_html)
+                or {}
+            )
             records = int(report_candidate.get("records") or 0)
             # 2026-11-26: 胜出判据从「记录数更多」改成「**质量排名更高**」。
             #   实测 randomuser.me：静态 42 条（字段全是 内容_span）vs 渲染后少量但字段有意义。
@@ -1508,7 +1552,7 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
             print(f"提示: {line}", file=sys.stderr)
         output = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
         try:
-            report = verify_config(config, html)
+            report = verified_report(config, html) or verify_config(config, html)
         except AutoConfigUnverifiedError as exc:
             # B-P2-2：最终验证失败同样转友好 SystemExit(3)，不抛 traceback。
             print(f"错误: {exc}", file=sys.stderr)
