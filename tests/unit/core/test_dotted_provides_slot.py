@@ -104,9 +104,11 @@ def test_all_market_components_land_in_one_slot() -> None:
         "ocr-paddle", "ocr-rapidocr", "ocr-easyocr", "ocr-doctr", "tesseract-chi-sim",
     }, f"ocr 槽位的成员不对：{sorted(ocr_ids)}"
 
-    aux_slot = registry.slot("ocr_aux")
-    assert aux_slot is not None, "没有 ocr_aux 槽位（后处理组件无处可去）"
-    assert len(aux_slot.providers()) == len(entries) - 5
+    # ★ 2026-11-27 后：市场数据已改到各自的域，`ocr_aux` **应该不存在**。
+    #   它只是「市场数据还没修好时」的消费侧兜底；数据修好后不该有组件落进去。
+    assert registry.slot("ocr_aux") is None, (
+        "还有组件声明着非引擎的 ocr.*（市场数据被回滚了？）"
+    )
 
     # 每个组件都必须能被**某个**槽位查到，不许有幽灵槽位。
     total = sum(len(slot.providers()) for slot in registry._slots.values())
@@ -119,12 +121,12 @@ def test_all_market_components_land_in_one_slot() -> None:
 def test_non_ocr_component_does_not_enter_the_ocr_slot() -> None:
     """★ 回归（CI 上真实红过）：后处理组件不许进 `ocr` 槽位。
 
-    市场里 11 个后处理组件历史上都声明 `ocr.*`（`provides` 是被创作者签名
-    固定的字节，主仓改不动）。旧实现按域前缀建槽位 ⇒ 它们和 OCR 引擎抢同一个
-    槽位；CI 上内置引擎不可用时，`slot("ocr").active()` 真的选中了
-    `convert-markdown` —— 一个根本不做 OCR 的东西。
+    市场数据已于 2026-11-27 改到各自的域（用真正的创作者钥匙重签）。但历史上
+    11 个后处理组件都声明 `ocr.*`，所以**消费侧仍保留分流**：真引擎进 `ocr`，
+    其余 `ocr.*` 进 `ocr_aux`。这样即便某天市场数据被回滚，OCR 槽位也不会被
+    一个不做 OCR 的东西占走。
 
-    现在消费侧把非引擎的 `ocr.*` 分流到 `ocr_aux`。
+    这条用「显式声明旧形态」来验分流仍在，与市场当前数据无关。
     """
     registry = build_builtin_slot_registry()
     registry.register_manifest_entries(
