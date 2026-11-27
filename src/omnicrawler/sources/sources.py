@@ -24,7 +24,7 @@ from ..core.models import CrawlRequest, FetchResult
 from ..core.pagination import body_location_payload_error
 from ..core.utils import canonicalize_url
 from ..extraction.extractors import decode_body, json_path
-from ..extraction.html_tools import discover_links, parse_html
+from ..extraction.html_tools import discover_links, parse_html_shared
 from ..fetching.http_client import encode_request_payload
 
 LOGGER = logging.getLogger(__name__)
@@ -155,7 +155,8 @@ class GenericSource:
         discovered: list[CrawlRequest] = []
         result.meta["discovery_filtered_links"] = []
         if "html" in result.content_type:
-            document = parse_html(decode_body(result))
+            # ★ 2026-11-27：共享解析（只读契约）—— 提取阶段刚刚解析过同一份字节。
+            document = parse_html_shared(decode_body(result))
             # browser 也参与链接发现：浏览器源同样受 crawl.max_pages / max_depth /
             # same_host 约束（既有模板 authenticated/cookie-session、
             # generic/infinite-scroll 都声明了 max_depth），把它排除在外会让

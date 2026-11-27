@@ -629,9 +629,14 @@ def verify_config(config: dict[str, Any], html: str) -> dict[str, Any]:
                 records += 1
         return {"mode": "json", "items": len(items), "records": records, "fields": json_filled}
 
-    from omnicrawler.extraction.html_tools import node_attr, node_text, parse_html, select_nodes
+    from omnicrawler.extraction.html_tools import (
+        node_attr,
+        node_text,
+        parse_html_shared,
+        select_nodes,
+    )
 
-    document = parse_html(html)
+    document = parse_html_shared(html)
     item_selector = str(extract.get("item_selector", "") or "")
     items = select_nodes(document, item_selector) if item_selector else [document]
     fields = extract.get("fields", {})

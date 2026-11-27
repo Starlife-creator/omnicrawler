@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import re
 from collections.abc import Iterable
@@ -111,11 +112,57 @@ def _mini_select(context: MiniNode, selector: str) -> list[MiniNode]:
 
 
 def parse_html(text: str) -> Any:
+    """解析 HTML，返回一棵**归调用方独占**的树（可以随意改）。
+
+    ★ 需要"同一份 HTML 在提取与链接发现两处共用"时请用 :func:`parse_html_shared` ——
+      本函数每次都新建树，这是**默认安全**的语义（调用方可能 `decompose()` 节点）。
+    """
     if BeautifulSoup is not None:
         return BeautifulSoup(text, "html.parser")
     parser = _MiniParser()
     parser.feed(text)
     return parser.root
+
+
+#: 单槽「共享解析」缓存：`(digest, document)`。
+#:
+#: ★ 为什么是**单槽**而不是 LRU：一条页面在流水线里只会在「提取 → 链接发现」这
+#:   一小段里被重复解析，跨页复用既没有收益（下一条页面内容不同），还会把整棵 DOM
+#:   留在内存里。单槽意味着峰值内存 = 多一棵树，而收益是**省掉一次完整解析**。
+#:
+#: ★ 共享树是**只读**的。任何会改树的消费者（`change_detector` 的 `decompose()`、
+#:   抓取重写等）必须继续用 :func:`parse_html` —— 那是"独占"语义。
+_SHARED_DOCUMENT: tuple[bytes, Any] | None = None
+
+
+def parse_html_shared(text: str) -> Any:
+    """解析 HTML 并**在同一份内容上复用**上一次的结果（只读契约）。
+
+    ★ 2026-11-27 实测（`books.toscrape` / `scrapethissite`）：一条页面在流水线里被
+      解析 **2–3 次**（提取一次、链接发现一次，`auto-analyze` 里还要再来一次），
+      而 HTML 解析占单页 CPU 的 **43%–60%**。同一份字节、同一棵只读树，解析多次
+      是纯粹的重复劳动。
+
+    ★ 判据是**内容摘要相等**而不是对象身份：流水线拿到的是 `FetchResult`，用户侧
+      拿到的是字符串，两者身份无关但内容相同，理应命中。摘要用 sha1（200 KB 约 0.1 ms，
+      对比 59 ms 的解析成本可以忽略），取前 16 字节足够区分。
+
+    ★ 消费者**不得修改**返回的树。要改就调 :func:`parse_html`。
+    """
+    global _SHARED_DOCUMENT
+    digest = hashlib.sha1(text.encode("utf-8", errors="replace")).digest()[:16]
+    cached = _SHARED_DOCUMENT
+    if cached is not None and cached[0] == digest:
+        return cached[1]
+    document = parse_html(text)
+    _SHARED_DOCUMENT = (digest, document)
+    return document
+
+
+def clear_shared_document() -> None:
+    """丢掉共享解析缓存（长跑进程/测试之间清理用）。"""
+    global _SHARED_DOCUMENT
+    _SHARED_DOCUMENT = None
 
 
 #: 编译后的 CSS 选择器缓存。

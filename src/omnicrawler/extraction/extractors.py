@@ -8,7 +8,14 @@ from ..core.config import AppConfig
 from ..core.models import ExtractedRecord, FetchResult, ProcessResult
 from ..core.safe_data import safe_json_loads, safe_regex_search
 from ..core.utils import absolutize_resource_url
-from .html_tools import node_attr, node_markup, node_text, parse_html, select_nodes
+from .html_tools import (
+    node_attr,
+    node_markup,
+    node_text,
+    parse_html,
+    parse_html_shared,
+    select_nodes,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -583,7 +590,9 @@ class HTMLProcessor:
 
     def process(self, result: FetchResult) -> ProcessResult:
         text = decode_body(result)
-        document = parse_html(text)
+        # ★ 2026-11-27：用**共享**解析（只读契约）—— 同一页随后还要被链接发现解析一次，
+        #   而 HTML 解析占单页 CPU 的 43%–60%。这里只读不改（改树的是 change_detector 那条路径）。
+        document = parse_html_shared(text)
         structured = _structured_metadata(document, result, text)
         extract = self.config.section("extract")
         item_selector = str(extract.get("item_selector", ""))
