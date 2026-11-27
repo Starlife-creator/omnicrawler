@@ -166,6 +166,81 @@ def extract_embedded_payloads(html: str) -> list[EmbeddedPayload]:
     return found
 
 
+#: schema.org 里"一串条目"的类型名（大小写不敏感）。
+#: ★ 只认这两个：它们是**列表**语义；其它 @type（Product / Article / BreadcrumbList）
+#:   要么是单对象、要么是导航，当成记录集合会给出一条假列表。
+_ITEM_LIST_TYPES = frozenset({"itemlist", "listitem"})
+
+#: JSON-LD 里条目数组的键名（schema.org 的官方拼写 + 常见变体）。
+_ITEM_LIST_KEYS = ("itemListElement", "itemListElements", "items", "elements")
+
+
+def _ld_documents(html: str) -> list[Any]:
+    """把页面里所有 `application/ld+json` 解析成 Python 对象（失败即跳过）。"""
+    found: list[Any] = []
+    if not html or "ld+json" not in html:
+        return found
+    for match in _SCRIPT_RE.finditer(html):
+        attrs = _attrs(match.group(1))
+        if (attrs.get("type") or "").strip().casefold() != "application/ld+json":
+            continue
+        value = _loads(match.group(2))
+        if value is None:
+            continue
+        if isinstance(value, list):
+            found.extend(value)
+        else:
+            found.append(value)
+    return found
+
+
+def _item_list_entries(document: Any) -> list[dict[str, Any]] | None:
+    """一个 JSON-LD 文档里如果含 ItemList，返回它的条目（只留 dict 条目）。
+
+    `@graph` 是 schema.org 的容器写法（一个 script 里放多个对象），要下探一层。
+    """
+    if not isinstance(document, dict):
+        return None
+    candidates = [document]
+    graph = document.get("@graph")
+    if isinstance(graph, list):
+        candidates.extend(item for item in graph if isinstance(item, dict))
+    for candidate in candidates:
+        type_name = str(candidate.get("@type", "")).casefold()
+        if type_name not in _ITEM_LIST_TYPES:
+            continue
+        for key in _ITEM_LIST_KEYS:
+            entries = candidate.get(key)
+            if isinstance(entries, list):
+                dicts = [item for item in entries if isinstance(item, dict)]
+                if len(dicts) >= 2:
+                    return dicts
+    return None
+
+
+def extract_itemlist_payloads(html: str) -> list[EmbeddedPayload]:
+    """把页面 JSON-LD 里的 `ItemList` 抽成**记录集合**载荷。
+
+## 为什么这是"内嵌数据"而不是 jsonld 来源
+
+`jsonld` 来源的语义是「整页那**一份**描述」——它取一次，单独成一条 document 记录。
+而 `ItemList` 是**列表**：每一条 entry 是一条记录。当成文档级字段取，用户只能拿到
+一个装了几十个 dict 的单元格，或者干脆什么都不生成。
+
+实测（2026-11-27）：一个只在 JSON-LD 里给出 `ItemList` 的页面，走结构分析得到
+`page_type=single`，产出一份只有一个 `标题_1`（取值是页面大标题）的配置 ——
+**看起来成功，实际一条业务记录都没有**。
+
+★ 与 `jsonld` 来源**不重复**：这里只产出 ItemList 的条目数组，不搬运其余 LD 字段。
+"""
+    found: list[EmbeddedPayload] = []
+    for document in _ld_documents(html):
+        entries = _item_list_entries(document)
+        if not entries:
+            continue
+        found.append(EmbeddedPayload("jsonld#ItemList", {"itemListElement": entries}))
+    return found
+
 @dataclass(frozen=True, slots=True)
 class EmbeddedRecords:
     """页面内嵌数据里最像"记录集合"的那一处。"""
@@ -220,7 +295,11 @@ def find_embedded_records(html: str, url: str = "") -> EmbeddedRecords | None:
     3. 遍历有 _MAX_TRAVERSE 配额 —— 载荷再大也不会把分析拖成几十秒。
     """
     best: EmbeddedRecords | None = None
-    for item in extract_embedded_payloads(html):
+    # ★ 2026-11-27：JSON-LD 的 `ItemList` 也是"内嵌数据"，而且常常是**唯一**的结构化列表
+    #   （实测：只有 LD ItemList 的页面产出"一个 标题_1 列"，看起来成功、实际没数据）。
+    #   它与 `jsonld` 来源不重复 —— 这里只取条目数组，不搬运其余 LD 字段。
+    payloads = extract_embedded_payloads(html) + extract_itemlist_payloads(html)
+    for item in payloads:
         ranked = rank_item_paths(
             item.payload,
             url=url,

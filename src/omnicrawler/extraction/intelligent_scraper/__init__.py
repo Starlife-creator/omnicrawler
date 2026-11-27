@@ -513,7 +513,10 @@ def _verify_embedded(
     ★ 这条门禁是必须的：内嵌数据取值的路径写错**不会报错**，只会每条记录都少一列。
       （第一版我把字段路径又拼了一遍 item_path，试跑得到 0 条 —— 正是这条门禁抓的。）
     """
-    from omnicrawler.extraction.embedded_json import extract_embedded_payloads
+    from omnicrawler.extraction.embedded_json import (
+        extract_embedded_payloads,
+        extract_itemlist_payloads,
+    )
     from omnicrawler.extraction.extractors import json_path
 
     extract = config.get("extract", {})
@@ -524,9 +527,12 @@ def _verify_embedded(
     source_pattern = str(spec.get("source", ""))
     item_path = str(spec.get("item_path", "$"))
 
+    # ★ 2026-11-27：JSON-LD 的 ItemList 也算内嵌数据（见 embedded_json 模块）。
+    #   漏掉它会让"只有 LD 列表"的页面在验证阶段显示 0 条 —— 而 run 时能取到，
+    #   那种"分析说不行、运行却可以"的分叉是最难排查的一类。
     payloads = [
         block.payload
-        for block in extract_embedded_payloads(html)
+        for block in (*extract_embedded_payloads(html), *extract_itemlist_payloads(html))
         if not source_pattern or block.source == source_pattern
     ]
     if not payloads:
@@ -738,6 +744,21 @@ def _embedded_config(
     fields, notes = _json_fields(records.sample)
     if not fields:
         return None
+    # ★ 2026-11-27：schema.org 的**结构元数据**不是业务字段。
+    #   实测 JSON-LD ItemList 条目：`@type` / `position` 各占一列，全是同一个值，
+    #   用户拿到的是两列噪声，还得自己删。只去这两类（`@` 前缀 + `position`），
+    #   不按名字猜别的 —— 一个真叫 position 的业务字段在 PDA 场景里是可能的。
+    dropped = [
+        name for name in fields
+        if str(name).startswith("@") or str(name) == "position"
+    ]
+    if dropped:
+        fields = {name: rule for name, rule in fields.items() if name not in dropped}
+        notes.append(
+            "以下 JSON-LD 结构元数据不是业务字段，已略过：" + "、".join(dropped)
+        )
+    if not fields:
+        return None
 
     # 字段规则改写成 embedded_json 来源。
     #
@@ -848,7 +869,19 @@ def analyze_to_config(
     #   判定顺序很重要：**只有 HTML 结构确实给不出列表时才看内嵌数据**。
     #   反过来的话，一个既有 DOM 列表又有 SSR 载荷的站点会突然换成 JSON 链路，
     #   选择器配置、分页语义、字段命名全部变样 —— 那不是优化，是破坏既有行为。
-    if not analysis.fields:
+    # ★ 2026-11-27：判据从「DOM 完全没字段」放宽到「**DOM 里没有列表**」。
+    #
+    #   放宽的理由是实测出来的：一个只在 JSON-LD `ItemList` 里给出列表的页面，
+    #   DOM 分析会产出"只有一个 `标题_1`（取值是页面大标题）"的配置 ——
+    #   `analysis.fields` 非空，于是旧判据直接放过，**用户拿到一份没有业务记录的配置**。
+    #
+    #   但放宽必须加两条闸，否则会把正常页面改坏：
+    #     · 只认**真列表**（>= _MIN_LIST_ITEMS 条），单对象页不换链路；
+    #     · `page_type == "detail"` 时不换 —— 详情页的"一行"就是整页，那是正确的形态。
+    has_dom_list = bool(
+        next((f for f in analysis.fields if f.get("is_container")), None)
+    ) or analysis.page_type == "detail"
+    if not analysis.fields or not has_dom_list:
         embedded = find_embedded_records(html, url)
         if embedded is not None:
             embedded_config = _embedded_config(
