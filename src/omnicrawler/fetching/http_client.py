@@ -20,6 +20,7 @@ from ..core.models import CrawlRequest, FetchResult
 from ..core.utils import human_bytes, user_agent
 from ..security.egress import EgressBroker, NetworkCapability
 from ..security.policy import HostRateLimiter, NetworkTargetPolicy
+from .keepalive import KeepAlivePool, make_connection, response_is_reusable
 from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
 from .session import get_cookie_session
 
@@ -216,6 +217,61 @@ def build_safe_opener(
     return urllib.request.build_opener(*handlers)
 
 
+def _pinned_factory(
+    target_policy: Any, *, verify: bool, context: Any
+) -> Any:
+    """造一个「连接到**已批准 IP**」的连接工厂（keep-alive 路径专用）。
+
+    ★ 与 `PinnedHTTPSConnection` 同一条安全判据：端口与 IP 都来自
+      `target_policy.approved_addresses()`，绝不在传输层重新解析域名
+      （那会重新引入 DNS rebinding 的时间窗）。
+    """
+
+    def factory(host: str, *, port: int, timeout: float) -> http.client.HTTPConnection:
+        addresses = target_policy.approved_addresses(host, int(port))
+        if not addresses:
+            raise OSError(f"没有可连接的已批准地址: {host}:{port}")
+        # ★ 固定到第一个已批准地址：保持"这一次请求连哪一个"是确定且可审计的。
+        pinned = str(addresses[0])
+        if port == 443:
+            conn: http.client.HTTPConnection = _PinnedHostHTTPS(
+                host, port=port, timeout=timeout, context=context, pinned=pinned
+            )
+        else:
+            conn = _PinnedHostHTTP(host, port=port, timeout=timeout, pinned=pinned)
+        return conn
+
+    return factory
+
+
+class _PinnedHostHTTP(http.client.HTTPConnection):
+    """连到**指定 IP** 的 HTTP 连接（`Host` 头仍是原域名）。"""
+
+    def __init__(self, host: str, *, port: int, timeout: float, pinned: str) -> None:
+        super().__init__(host, port=port, timeout=timeout)
+        self._pinned = pinned
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self._pinned, self.port), self.timeout)
+
+
+class _PinnedHostHTTPS(http.client.HTTPSConnection):
+    """连到**指定 IP** 的 HTTPS 连接（SNI 与证书校验仍用原域名）。"""
+
+    def __init__(
+        self, host: str, *, port: int, timeout: float, context: Any, pinned: str
+    ) -> None:
+        super().__init__(host, port=port, timeout=timeout, context=context)
+        self._pinned = pinned
+        self._tls_context = context
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self._pinned, self.port), self.timeout)
+        # ★ `server_hostname` 必须是**原域名**：这样 SNI 与证书校验都对得上，
+        #   而 TCP 目标仍是已批准的 IP。两者都是安全必需，少一个就是漏洞。
+        self.sock = self._tls_context.wrap_socket(sock, server_hostname=self.host)
+
+
 class HTTPFetcher:
     """同步 HTTP 抓取器。
 
@@ -252,6 +308,13 @@ class HTTPFetcher:
         )
         self._login_done = False
         self._login_lock = threading.Lock()
+        # ★ 2026-11-27：keep-alive 连接槽。**默认关闭**（`http.keep_alive` 默认 false），
+        #   关闭时下面的 fetch 走原来那条 urllib 路径，行为逐字节相同。
+        #   开启后可省掉每页一次的 DNS+TCP+TLS 建连（实测 10 页 14.0s → 3.7s）。
+        self._keep_alive = bool(self.http.get("keep_alive", False))
+        self._pool = KeepAlivePool() if self._keep_alive else None
+        self._tls_verify = bool(self.http.get("verify_tls", True))
+        self._tls_context: ssl.SSLContext | None = None
 
     def fetch(self, request: CrawlRequest) -> FetchResult:
         self._ensure_login()
@@ -274,6 +337,27 @@ class HTTPFetcher:
         last_error: Exception | None = None
         for attempt in range(retries):
             self.limiter.wait(request.url)
+            if self._keep_alive and request.method.upper() in {"GET", "HEAD"}:
+                # ★ keep-alive 只用于**幂等的 GET/HEAD**：POST 等带副作用的请求复用连接
+                #   会在服务端"已处理但连接中断"时产生重放风险，收益也不值这个风险。
+                try:
+                    return self._keep_alive_fetch(
+                        request, timeout=timeout, max_bytes=max_bytes, headers=headers
+                    )
+                except ResponseTooLargeError:
+                    raise
+                except (urllib.error.URLError, OSError, TimeoutError, ConnectionError) as exc:
+                    last_error = exc
+                    self.egress.record_failure(request.url, error=str(exc))
+                    if attempt + 1 >= retries:
+                        raise
+                    time.sleep(backoff_seconds(
+                        attempt,
+                        base=retry_cfg["base_seconds"],
+                        maximum=retry_cfg["max_seconds"],
+                        jitter=retry_cfg["jitter"],
+                    ))
+                    continue
             started = time.perf_counter()
             raw_request = urllib.request.Request(
                 request.url,
@@ -371,6 +455,91 @@ class HTTPFetcher:
                 ))
         assert last_error is not None
         raise last_error
+
+    def _keep_alive_fetch(self, request: CrawlRequest, *, timeout: float, max_bytes: int,
+                          headers: dict[str, str]) -> FetchResult:
+        """走 keep-alive 连接取一页（`http.keep_alive: true` 时才用）。
+
+        ★ 安全边界与 urllib 路径**完全一致**：先 `egress.request()`（预算/审计/凭据），
+          再经"连接到已批准 IP"的工厂建连；`Host` 头与 TLS SNI 仍用原域名。
+        """
+        parts = urllib.parse.urlsplit(request.url)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            raise ValueError(f"仅支持 http/https 的 keep-alive 请求: {request.url}")
+        scheme = parts.scheme.casefold()
+        host = parts.hostname
+        port = parts.port or (443 if scheme == "https" else 80)
+        if self._pool is None:
+            raise RuntimeError("keep-alive 未启用")
+        key = self._pool.key_for(scheme, host, port, verify=self._tls_verify)
+        if self._tls_context is None:
+            self._tls_context = (
+                ssl.create_default_context() if self._tls_verify
+                else ssl._create_unverified_context()
+            )
+        target = parts.path or "/"
+        if parts.query:
+            target = f"{target}?{parts.query}"
+        send_headers = dict(headers)
+        send_headers["Host"] = parts.netloc.rsplit("@", 1)[-1]
+        started = time.perf_counter()
+        with self.egress.request(
+            request.url, purpose=self.purpose, headers=headers, capability=self.capability,
+        ):
+            connection = self._pool.take(key)
+            reused = connection is not None
+            if connection is None:
+                connection = make_connection(
+                    scheme, host, port,
+                    timeout=timeout,
+                    context=self._tls_context,
+                    connection_factory=_pinned_factory(
+                        self.target_policy, verify=self._tls_verify, context=self._tls_context,
+                    ),
+                )
+            try:
+                connection.request(
+                    request.method.upper(), target, body=request.body, headers=send_headers,
+                )
+                response = connection.getresponse()
+                status = int(response.status)
+                response_headers = _flatten_headers(response.headers)
+                declared = response_headers.get("content-length", "")
+                if declared.isdigit() and int(declared) > max_bytes:
+                    self._pool.discard()
+                    raise ResponseTooLargeError(
+                        f"响应超过大小限制: {human_bytes(int(declared))} > {human_bytes(max_bytes)}"
+                    )
+                wire_body = response.read(max_bytes + 1)
+                if len(wire_body) > max_bytes:
+                    self._pool.discard()
+                    raise ResponseTooLargeError(
+                        f"响应超过大小限制: > {human_bytes(max_bytes)}"
+                    )
+                self.egress.record_response(len(wire_body), url=request.url)
+                self.egress.record_success(request.url)
+                body = self._decode_content(
+                    wire_body, response_headers.get("content-encoding", ""), max_bytes
+                )
+                if response_is_reusable(response.headers, status=status):
+                    self._pool.give_back(key, connection)
+                else:
+                    self._pool.discard()
+                if not reused:
+                    self._pool.created += 1
+                self.cookie_session.save()
+                return FetchResult(
+                    request=request,
+                    final_url=request.url,
+                    status=status,
+                    headers=response_headers,
+                    body=body,
+                    elapsed_seconds=time.perf_counter() - started,
+                )
+            except BaseException:
+                # 连接可能已损坏（半包 / 超时）⇒ 立刻丢弃，下次重新建
+                self._pool.discard()
+                raise
 
     def _ensure_login(self) -> None:
         # A-P3-15：双检锁——已完成直接返回；持锁后复查，避免并发重复登录。

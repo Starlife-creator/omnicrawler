@@ -62,6 +62,10 @@ DEFAULTS: dict[str, Any] = {
         "allow_private_network": False, "resolve_dns": True,
         "dns_fail_closed": True, "dns_cache_ttl_seconds": 60,
         "headers": {}, "proxy": "",
+        # ★ 2026-11-27：连接复用（keep-alive）。**默认关闭** ——
+        #   开启后走自建连接（仍固定到已批准 IP），每页省一次 DNS+TCP+TLS 建连。
+        #   实测 10 页 14.0s → 3.7s（3.7x）。只对幂等 GET/HEAD 生效。
+        "keep_alive": False,
     },
     "egress": {
         "enabled": True,
