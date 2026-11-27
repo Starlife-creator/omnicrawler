@@ -126,7 +126,16 @@ def inspect_result(
         pagination.append("next-link")
     if re.search(r"[?&](?:page|p|offset)=\d+", lower):
         pagination.append("numbered-or-offset")
-    if any(marker in lower for marker in ("intersectionobserver", "infinite-scroll", "load-more")):
+    # ★ 2026-11-27 修：`IntersectionObserver` 出现在**正文**里不等于页面在用它。
+    #
+    #   事故实测：一个讲解 IntersectionObserver 的文档页，正文写着
+    #   「Use IntersectionObserver to detect visibility」，于是被判成无限滚动页，
+    #   推荐第一位变成 `generic/infinite-scroll`（「已配置滚动动作」）——
+    #   而那个页面既没有滚动加载也没有列表。
+    #
+    #   判据：这些标记必须出现在**可执行上下文**里（`<script>` 内容，或作为
+    #   `class=` / `id=` 的取值），散文文本里出现不算。
+    if _marker_in_executable_context(lower, ("intersectionobserver", "infinite-scroll", "load-more")):
         pagination.append("infinite-scroll")
     if parsed_json is not None and _contains_key(parsed_json, {"next", "cursor", "continuation", "has_next_page"}):
         pagination.append("cursor-or-next-url")
@@ -191,7 +200,16 @@ def inspect_result(
     auth: list[str] = []
     if re.search(r"<input\b[^>]+type=['\"]password", lower):
         auth.append("password-form")
-    if any(marker in lower for marker in ("oauth", "openid", "saml")):
+    # ★ 2026-11-27 修：**正文提到 OAuth 不等于这个页面要登录**。
+    #
+    #   事故实测：一个讲解 OAuth 的文档页，正文写着
+    #   「OAuth 2.0 is a delegation protocol. OpenID Connect builds on it.」
+    #   ⇒ `auth = (federated-login,)`，用户会以为这站需要联邦登录。
+    #
+    #   判据：这些名字要出现在**登录控件/跳转地址**的上下文里 ——
+    #   `href` / `action` / `data-*` 的取值，或 `<script>` 内容里。
+    #   散文解释一种协议不构成登录要求。
+    if _marker_in_executable_context(lower, ("oauth", "openid", "saml")):
         auth.append("federated-login")
 
     articles = len(re.findall(r"<article\b", lower))
@@ -323,6 +341,34 @@ def _recommendations(
     if "embedded-json" in structured:
         values.sort(key=lambda item: 0 if item["id"] == "generic/ssr-embedded-data" else 1)
     return tuple(values[:limit])
+
+
+_SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.DOTALL)
+#: 属性取值形态：`class="infinite-scroll"` / `id=load-more` 等。
+#: 属性取值形态。
+#:
+#: 覆盖三类载体（缺任何一类都会漏判真实的登录/滚动信号）：
+#:   · `class` / `id` / `data-*` —— 样式与行为钩子（`class="load-more"`）；
+#:   · `href` / `action` / `src` —— **跳转与提交目标**（`href="/oauth/authorize"`）；
+#:   · `content` —— meta 声明（`<meta name="openid.server" content="…">`）。
+_ATTR_VALUE_RE = re.compile(
+    r"(?:class|id|data-[\w-]+|href|action|src|content|name|rel)\s*=\s*[\"\']([^\"\']*)[\"\']"
+)
+
+
+def _marker_in_executable_context(lower: str, markers: tuple[str, ...]) -> bool:
+    """这些标记是否出现在**可执行上下文**里。
+
+    事故背景（2026-11-27）：一个讲解 `IntersectionObserver` 的文档页，
+    正文里写着「Use IntersectionObserver to detect visibility」，
+    旧判据（纯子串）把它判成无限滚动页，推荐 `generic/infinite-scroll`。
+
+    判据：标记要么在 `<script>` 内容里，要么是 `class` / `id` / `data-*` 的**取值**。
+    散文里提到一个 API 名字不构成"页面在用它"。
+    """
+    executable = " ".join(_SCRIPT_BLOCK_RE.findall(lower))
+    executable += " " + " ".join(_ATTR_VALUE_RE.findall(lower))
+    return any(marker in executable for marker in markers)
 
 
 def _signals(text: str, definitions: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
