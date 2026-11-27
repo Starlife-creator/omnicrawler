@@ -197,11 +197,22 @@ def inspect_result(
     articles = len(re.findall(r"<article\b", lower))
     links = len(re.findall(r"<a\b", lower))
     search_form = bool(re.search(r"<form\b[^>]*(?:search|query)|<input\b[^>]+type=['\"]search", lower))
-    if search_form:
+    # ★ 2026-11-27 修：**有搜索框 ≠ 这是搜索结果页**。
+    #
+    #   事故实测：一个 20 张卡片的商品列表页，顶部有最常见的导航搜索框
+    #   （`<form action="/search"><input name="q"></form>`）⇒ 旧判据把整页判成
+    #   `page_type = "search"` ⇒ 推荐 `generic/single-page`（**单页**模板，不翻页、
+    #   不进详情）；去掉那个搜索框同一页就判成 `list` ⇒ 推荐 `generic/list-detail`。
+    #   也就是一个导航控件把整条采集策略带偏了。
+    #
+    #   判据：搜索框只在**页面主体不是列表**时才决定类型。列表信号（重复文章块或
+    #   足够多的链接）优先 —— 那才是"这页是干什么的"。
+    list_like = articles > 1 or links >= 20
+    if search_form and not list_like:
         page_type = "search"
     elif articles == 1 or any(marker in lower for marker in ("articlebody", "datepublished")):
         page_type = "detail"
-    elif articles > 1 or links >= 20:
+    elif list_like:
         page_type = "list"
     else:
         page_type = "unknown"
