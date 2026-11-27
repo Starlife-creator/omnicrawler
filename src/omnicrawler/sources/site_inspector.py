@@ -131,6 +131,12 @@ def inspect_result(
     if parsed_json is not None and _contains_key(parsed_json, {"next", "cursor", "continuation", "has_next_page"}):
         pagination.append("cursor-or-next-url")
 
+    # ★ 2026-11-27：页面里若出现 sitemap 链接/声明，说明这个站有**全站发现**入口。
+    #   对"没识别出列表"的站点，这是最实用的一条下一步（`protocols/sitemap` 模板）。
+    sitemap_hint = bool(
+        re.search(r"sitemap[^\"'<\s]{0,40}\.xml", text, re.IGNORECASE)
+    )
+
     structured: list[str] = []
     # ★ 2026-11-27：**页面内嵌的 SSR 数据**是一种独立的数据来源，不是"动态渲染"的旁证。
     #   实测：Next.js / Nuxt 站点把整页数据放在 __NEXT_DATA__ 里，DOM 只有一个空挂载点 ——
@@ -138,6 +144,8 @@ def inspect_result(
     #   这条信号让 `auto-analyze` / `templates recommend` 能把人引到正确的那条路上。
     if any(marker in lower for marker in ("__next_data__", "__nuxt_data__", "__initial_state__", "__apollo_state__")):
         structured.append("embedded-json")
+    if sitemap_hint:
+        structured.append("sitemap")
     if "application/ld+json" in lower:
         structured.append("json-ld")
     if "property=\"og:" in lower or "property='og:" in lower:
@@ -242,6 +250,10 @@ def _recommendations(
     #   推荐浏览器等于让用户白付一个数量级的成本。
     if "embedded-json" in structured:
         fallbacks.append(("generic/ssr-embedded-data", "embedded-json"))
+    # ★ 2026-11-27：站点声明了 sitemap ⇒ 全站发现最省事的入口。
+    #   对"没识别出列表"的页面，这是最实用的一条下一步。
+    if "sitemap" in structured:
+        fallbacks.append(("protocols/sitemap", "sitemap-declared"))
     if dynamic:
         fallbacks.append(("generic/infinite-scroll", "dynamic-page"))
     if has_downloads:

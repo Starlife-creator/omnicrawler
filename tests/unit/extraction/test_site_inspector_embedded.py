@@ -75,3 +75,41 @@ def test_initial_state_assignment_is_also_detected() -> None:
     )
     report = _inspect(html)
     assert "embedded-json" in report.structured_data, report.structured_data
+
+
+# ── sitemap 声明（2026-11-27）────────────────────────────────────────────
+
+
+def test_declared_sitemap_is_reported_and_recommended() -> None:
+    """★ 站点声明了 sitemap ⇒ 全站发现最省事的入口。
+
+    对「没识别出列表」的页面，这是最实用的一条下一步 —— 而不是让用户自己猜
+    `sitemap.xml` 在哪。
+    """
+    html = (
+        "<html><head>"
+        '<link rel="sitemap" type="application/xml" href="/sitemap.xml">'
+        "</head><body><div class='item'><h3>T1</h3></div></body></html>"
+    )
+    report = _inspect(html)
+    assert "sitemap" in report.structured_data, report.structured_data
+    ids = [item["id"] for item in report.recommendations]
+    assert "protocols/sitemap" in ids, ids
+
+
+def test_inline_sitemap_url_in_the_page_is_reported() -> None:
+    """正文里出现 `.../sitemap.xml` 也算（很多站点把它写在页脚）。"""
+    html = (
+        "<html><body><footer>"
+        '<a href="/sitemap_index.xml">Sitemap</a>'
+        "</footer><div class='item'><h3>T1</h3></div></body></html>"
+    )
+    report = _inspect(html)
+    assert "sitemap" in report.structured_data, report.structured_data
+
+
+def test_plain_page_does_not_claim_a_sitemap() -> None:
+    """反方向：没有 sitemap 声明的普通页面不许被报成有。"""
+    html = "<html><body><div class='item'><h3>T1</h3></div></body></html>"
+    report = _inspect(html)
+    assert "sitemap" not in report.structured_data, report.structured_data
