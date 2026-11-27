@@ -24,9 +24,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-import omnicrawler.extraction.intelligent_scraper as scraper_module
 from omnicrawler.extraction.intelligent_scraper import main
-
 
 _PAGE = """
 <html><body>
