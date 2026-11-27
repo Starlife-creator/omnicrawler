@@ -224,7 +224,7 @@ docker compose up
 
 ---
 
-## 模板库（44 套）
+## 模板库（45 套）
 
 ```powershell
 omnicrawler templates list              # 按类别列出
@@ -588,7 +588,7 @@ pytest tests/gui/visual/ -v                      # 像素级对比
 完整第三方声明见 [`NOTICE`](NOTICE) 文件和 [`docs/RESEARCH_AND_FUSION.md`](docs/RESEARCH_AND_FUSION.md)。
 
 <!-- current-facts:start -->
-当前内置模板：**44** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
+当前内置模板：**45** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
 <!-- current-facts:end -->
 
 

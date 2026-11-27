@@ -57,7 +57,7 @@ OmniCrawler 是一个面向桌面与单机生产环境的模块化采集平台�
 | 能力 | 说明 | 入口 |
 |------|------|------|
 | **任务工作台** | GUI 持续编辑、试跑和运行；CLI 保留六步问答生成配置 | GUI 首页或 `omnicrawler wizard` |
-| **44 套内置模板** | 覆盖认证、文档、通用、行业、协议、配方、场景等 | `omnicrawler templates list` |
+| **45 套内置模板** | 覆盖认证、文档、通用、行业、协议、配方、场景等 | `omnicrawler templates list` |
 | **可视化选择器** | 浏览器中右键点选元素，自动生成配置 | `omnicrawler visual-select` |
 | **智能页面分析** | 零配置：贴 URL → 自动推断字段和分页 | `omnicrawler auto-analyze` |
 | **EasySpider 导入** | 兼容 EasySpider JSON 任务格式 | `omnicrawler import-easyspider` |
@@ -1094,7 +1094,7 @@ src/omnicrawler/
 ├── services/                # 应用服务编排、统一进度协议、场景基因
 ├── state/                   # SQLite WAL schema + StateStore/SceneStore/CapsuleStore
 ├── sdk/                     # Python SDK（稳定性标记）
-├── templates/               # 44 套内置 YAML 模板 + recipe
+├── templates/               # 45 套内置 YAML 模板 + recipe
 ├── pdfx/                    # PDF 解析/OCR/抽取子系统
 ├── convertx/                # 任意格式互转（表格/文档/图片 + watch + preset）
 ├── sources/                 # 数据源适配器、镜像注册表
@@ -1180,5 +1180,5 @@ Apache License 2.0（SPDX 标识 `Apache-2.0`）— 详见 `LICENSE` 文件。
 当前 1.1.1 版本额外提供本地可复用 E2E：它只使用临时本机 HTTP 服务，不会采集互联网或生产数据。首页会优先接收自然语言任务描述，并将其转化为可检查的配置草案；其余必填项也集中在第一页，减少向导中途被阻断的情况。开发者可在仓库根目录执行 `./e2e/run.ps1 -Browser`（Windows）或 `./e2e/run.sh --browser`（macOS/Linux）复验完整链路；结果写入 `docs/E2E_TEST_REPORT.md`。
 
 <!-- current-facts:start -->
-当前内置模板：**44** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
+当前内置模板：**45** 个稳定 ID；真源：`omnicrawler templates list`。配置协议：**v5**。
 <!-- current-facts:end -->
