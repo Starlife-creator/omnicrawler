@@ -114,20 +114,8 @@ def inspect_result(
     #   讲解 Discuz 的文档页正文写「Legacy apps used forum.php」⇒ `cms=(discuz,)`。
     #   这些都是"散文里提到一个名字"，不是"页面在用它"。
     executable = _executable_text(lower)
-    cms = _signals(executable, {
-        "wordpress": ("/wp-content/", "wp-json"),
-        "drupal": ("drupal.settings", "/core/misc/drupal.js"),
-        "mediawiki": ("mw.config", "/w/load.php"),
-        "discourse": ("discourse-application", "discourse_theme_id"),
-        "discuz": ("discuz_uid", "forum.php"),
-        "shopify": ("shopify.theme", "/cdn/shop/"),
-    })
-    frameworks = _signals(executable, {
-        "react/next": ("__next_data__", "data-reactroot", "id=\"__next\""),
-        "vue/nuxt": ("__nuxt__", "data-v-", "id=\"__nuxt\""),
-        "angular": ("ng-version", "app-root"),
-        "svelte": ("__svelte", "sveltekit"),
-    })
+    cms = _signals(executable, CMS_MARKERS)
+    frameworks = _signals(executable, FRAMEWORK_MARKERS)
     pagination: list[str] = []
     if re.search(r"rel=['\"]next|class=['\"][^'\"]*(?:next|pagination)", lower):
         pagination.append("next-link")
@@ -142,7 +130,7 @@ def inspect_result(
     #
     #   判据：这些标记必须出现在**可执行上下文**里（`<script>` 内容，或作为
     #   `class=` / `id=` 的取值），散文文本里出现不算。
-    if _marker_in_executable_context(lower, ("intersectionobserver", "infinite-scroll", "load-more")):
+    if _marker_in_executable_context(lower, INFINITE_SCROLL_MARKERS):
         pagination.append("infinite-scroll")
     if parsed_json is not None and _contains_key(parsed_json, {"next", "cursor", "continuation", "has_next_page"}):
         pagination.append("cursor-or-next-url")
@@ -216,7 +204,7 @@ def inspect_result(
     #   判据：这些名字要出现在**登录控件/跳转地址**的上下文里 ——
     #   `href` / `action` / `data-*` 的取值，或 `<script>` 内容里。
     #   散文解释一种协议不构成登录要求。
-    if _marker_in_executable_context(lower, ("oauth", "openid", "saml")):
+    if _marker_in_executable_context(lower, FEDERATED_LOGIN_MARKERS):
         auth.append("federated-login")
 
     articles = len(re.findall(r"<article\b", lower))
@@ -348,6 +336,35 @@ def _recommendations(
     if "embedded-json" in structured:
         values.sort(key=lambda item: 0 if item["id"] == "generic/ssr-embedded-data" else 1)
     return tuple(values[:limit])
+
+
+#: CMS 识别标记。★ 必须只在**可执行上下文**里匹配（见 `_executable_text`）。
+#:
+#: 这两张表被 `tests/unit/extraction/test_signal_marker_exhaustive.py` **穷举**：
+#: 每个标记单独出现在散文里必须**不触发**，出现在可执行上下文里必须**触发**。
+#: 新增标记自动被这两条覆盖 —— 不需要记得"顺手加个测试"。
+CMS_MARKERS: dict[str, tuple[str, ...]] = {
+    "wordpress": ("/wp-content/", "wp-json"),
+    "drupal": ("drupal.settings", "/core/misc/drupal.js"),
+    "mediawiki": ("mw.config", "/w/load.php"),
+    "discourse": ("discourse-application", "discourse_theme_id"),
+    "discuz": ("discuz_uid", "forum.php"),
+    "shopify": ("shopify.theme", "/cdn/shop/"),
+}
+
+#: 前端框架识别标记。同上。
+FRAMEWORK_MARKERS: dict[str, tuple[str, ...]] = {
+    "react/next": ("__next_data__", "data-reactroot", 'id="__next"'),
+    "vue/nuxt": ("__nuxt__", "data-v-", 'id="__nuxt"'),
+    "angular": ("ng-version", "app-root"),
+    "svelte": ("__svelte", "sveltekit"),
+}
+
+#: 无限滚动标记。同上。
+INFINITE_SCROLL_MARKERS: tuple[str, ...] = ("intersectionobserver", "infinite-scroll", "load-more")
+
+#: 联邦登录标记。同上。
+FEDERATED_LOGIN_MARKERS: tuple[str, ...] = ("oauth", "openid", "saml")
 
 
 _SCRIPT_STYLE_BLOCK_RE = re.compile(r"<(script|style)\b[^>]*>(.*?)</\1\s*>", re.DOTALL)
