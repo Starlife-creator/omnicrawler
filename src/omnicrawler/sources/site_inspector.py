@@ -160,10 +160,25 @@ def inspect_result(
         ("fetch", r"\bfetch\s*\("),
         ("xhr", r"xmlhttprequest|\.ajax\s*\("),
         ("graphql", r"/graphql\b|\bgraphql\b"),
-        ("rest-json", r"/api/|/wp-json/|application/json"),
+        # ★ 2026-11-27 修：`application/json` **不能单独**当 API 信号。
+        #
+        #   事故实测：一个讲解 HTTP 头的**文档页**，正文里写着
+        #   「Send Content-Type: application/json to the server」，
+        #   于是被判成有 background API，推荐第一位变成
+        #   `generic/spa-api-discovery`（「开浏览器去抓 API」）——
+        #   而那个页面根本没有 API。
+        #
+        #   真正的 API 信号是**路径形态**（`/api/`、`/wp-json/`）或**确实有调用**
+        #   （`fetch(` / `xhr` / `graphql`）。`application/json` 只作为
+        #   「有路径信号时的补充确认」，见下面第二条判据。
+        ("rest-json", r"/api/|/wp-json/"),
     ):
         if re.search(pattern, lower):
             api_signals.append(label)
+    # 路径信号之外，`application/json` **配合**任一真实调用才算 API 页 ——
+    # 单凭字面量出现（文档、代码示例、content-type 说明）不构成调用。
+    if "rest-json" not in api_signals and api_signals and "application/json" in lower:
+        api_signals.append("rest-json")
 
     asset_candidates = re.findall(r"(?:href|src)\s*=\s*['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
     allowed_extensions = {"pdf", "doc", "docx", "xls", "xlsx", "csv", "zip", "ppt", "pptx", "json"}
