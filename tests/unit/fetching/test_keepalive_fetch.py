@@ -750,3 +750,42 @@ def test_bad_connection_is_not_kept_in_the_pool(tmp_path: Path) -> None:
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=5)
+
+def test_stale_pooled_connection_is_retried_on_a_fresh_one(
+    server: str, tmp_path: Path
+) -> None:
+    """★ 复用的连接可能已被服务端静默关闭 —— 必须换新连接重试一次。
+
+    这条对应 CI 上真实红过的用例：
+
+        ConnectionAbortedError: [WinError 10053]
+        An established connection was aborted by the software in your host machine
+
+    服务端在空闲超时后**静默关闭**连接，客户端要到下一次 `send`/`read` 才发现。
+    任何 keep-alive 客户端都会遇到，与代码正确性无关 ——
+    **正确处理是丢弃死连接、换一条重试一次**（RFC 9112 §9.6）。
+
+    复现方式：把池里那条连接换成一个「对端已关闭」的 socket。
+    """
+    import socket as _socket
+
+    fetcher = HTTPFetcher(_config(tmp_path, server))
+    try:
+        first = fetcher.fetch(CrawlRequest(f"{server}/hello"))
+        assert first.status == 200, "前置条件：第一次请求成功并留下可复用连接"
+
+        pool = fetcher._pool
+        assert pool is not None
+        slot = getattr(pool, "_slot", None)
+        assert slot is not None, "前置条件：池里应有一条可复用连接"
+        # 把那条连接换成一个**已关闭**的 socket：模拟服务端静默断开。
+        dead = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        dead.close()
+        slot.connection.sock = dead  # type: ignore[attr-defined]
+
+        again = fetcher.fetch(CrawlRequest(f"{server}/hello"))
+        assert again.status == 200, "复用死连接后必须自动换新连接重试"
+        assert again.body == b"hello"
+    finally:
+        if fetcher._pool is not None:
+            fetcher._pool.close()

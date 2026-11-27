@@ -6,6 +6,7 @@ import json
 import logging
 import socket
 import ssl
+import sys
 import threading
 import time
 import urllib.error
@@ -78,6 +79,33 @@ class _CookieExtractionResponse:
 
 #: 需要跟随的重定向状态码（与 urllib 的 `HTTPRedirectHandler` 口径一致）。
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+#: 「复用的 keep-alive 连接已经死了」这一类异常。
+#:
+#: 服务端在空闲超时后通常会**静默关闭**连接，客户端要到下一次 `send`/`read`
+#: 才发现。不同平台报的不是同一个异常：
+#:
+#: | 平台 | 典型异常 |
+#: |---|---|
+#: | Windows | `ConnectionAbortedError`（`WinError 10053`）|
+#: | Linux/macOS | `ConnectionResetError` / `BrokenPipeError` |
+#: | 对端干净关闭 | `http.client.RemoteDisconnected`（`BadStatusLine` 子类）|
+#:
+#: 只把它们用于「**复用**连接的首个请求」重试一次；新建连接报这些错说明是真故障。
+_STALE_CONNECTION_ERRORS: tuple[type[BaseException], ...] = (
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    http.client.RemoteDisconnected,
+    http.client.BadStatusLine,
+    # ★ 也接 `OSError`：`sendall` 里对端已关的 socket 在不同 Windows 版本上报的
+    #   errno 不一样（10053 / 10054 / 10038 都见过），它们都是 `OSError` 但不是
+    #   上面任一具体子类。
+    #
+    #   这不放宽安全性：重试**只发生一次**，且**只在连接是从池里复用的**时候
+    #   （见调用点）。新建连接立刻 `OSError` 说明是真故障，照原样抛出。
+    OSError,
+)
 
 
 @lru_cache(maxsize=1)
@@ -596,22 +624,54 @@ class HTTPFetcher:
         with self.egress.request(
             request.url, purpose=self.purpose, headers=headers, capability=self.capability,
         ):
-            connection = self._pool.take(key)
-            reused = connection is not None
-            if connection is None:
-                connection = make_connection(
-                    scheme, host, port,
-                    timeout=timeout,
-                    context=self._tls_context,
-                    connection_factory=_pinned_factory(
-                        self.target_policy, verify=self._tls_verify, context=self._tls_context,
-                    ),
-                )
+            # ★ 2026-11-27 修（CI 上真实红过）：**复用的连接可能已经死了**。
+            #
+            #   连接池只保留一条连接，服务端在空闲超时后通常会静默关闭它。
+            #   客户端下一次 `send` 时才会发现 —— Windows 上是
+            #   `ConnectionAbortedError: [WinError 10053]`，Linux 上多是
+            #   `ConnectionResetError` / `BrokenPipeError` / `RemoteDisconnected`。
+            #
+            #   这不是"偶发"：任何 keep-alive 的客户端都会遇到，只是取决于
+            #   服务端的空闲超时与本机调度。修前实测 CI 的 windows job 就红在这一条。
+            #
+            #   正确处理是 HTTP 客户端的常识（RFC 9112 §9.6）：**拿到已复用的连接
+            #   时，若首个请求就失败于"连接已断"，丢弃它、换一条新连接重试一次**。
+            #   换新连接后仍然失败 ⇒ 是真故障，照原样抛出。
+            #
+            #   只重试**复用**的连接，且只重试**一次** —— 新建的连接立刻失败
+            #   说明问题不在"陈旧"，重试只是白白多打一次请求。
+            for attempt in (0, 1):
+                connection = self._pool.take(key)
+                reused = connection is not None
+                if connection is None:
+                    connection = make_connection(
+                        scheme, host, port,
+                        timeout=timeout,
+                        context=self._tls_context,
+                        connection_factory=_pinned_factory(
+                            self.target_policy, verify=self._tls_verify, context=self._tls_context,
+                        ),
+                    )
+                try:
+                    connection.request(
+                        request.method.upper(), target, body=request.body, headers=send_headers,
+                    )
+                    response = connection.getresponse()
+                except _STALE_CONNECTION_ERRORS:
+                    # 先把死连接清掉（`discard` 会把它关掉），再决定要不要重试。
+                    self._pool.discard()
+                    if reused and attempt == 0:
+                        LOGGER.debug(
+                            "keep-alive 复用连接已断（%s），换新连接重试一次: %s",
+                            request.url, type(sys.exc_info()[1]).__name__,
+                        )
+                        continue
+                    raise
+                break
+            # 走到这里 `connection` 必然非 None（要么从池里取到、要么新建）；
+            # 断言只是为了把类型收窄给 mypy —— 循环结束时它已确定有值。
+            assert connection is not None  # noqa: S101 - 类型收窄，不是运行时校验
             try:
-                connection.request(
-                    request.method.upper(), target, body=request.body, headers=send_headers,
-                )
-                response = connection.getresponse()
                 status = int(response.status)
                 response_headers = _flatten_headers(response.headers)
                 # ★ 先把 `Set-Cookie` 收进 jar，再决定后续（含重定向）。
