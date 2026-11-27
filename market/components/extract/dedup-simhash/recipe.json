@@ -6,7 +6,7 @@
   "description": "近重复内容检测",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.dedup-simhash"
+    "dedupe.simhash"
   ],
   "platforms": [
     "windows",

@@ -1,1 +1,13 @@
-{"creator_fingerprint":"4c3014804d85de2568f85e62a3048429","files":{"creator.identity":"sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58","recipe.json":"sha256:e704e8a52646bff7bf26ccb9ca6b5dcb867114e95d665cd80a17f2dc341a817e"},"package_id":"export-xlsx-stream","package_type":"component","requested_username":"starlife","schema_version":1,"version":"1.0.0"}
+{
+  "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+  "files": {
+    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
+    "deps.lock.json": "sha256:0fe2de114aa79207792bd3f46befefbc247e19bc6834726edf6e26cdd2a11b5e",
+    "recipe.json": "sha256:a78c2707f630906e953086d4ef4f801a52fb3080ecbd7ed60e30d2d4a2cebb8b"
+  },
+  "package_id": "export-xlsx-stream",
+  "package_type": "component",
+  "requested_username": "starlife",
+  "schema_version": 1,
+  "version": "1.0.0"
+}

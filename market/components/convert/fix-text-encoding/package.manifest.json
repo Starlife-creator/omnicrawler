@@ -1,1 +1,13 @@
-{"creator_fingerprint":"4c3014804d85de2568f85e62a3048429","files":{"creator.identity":"sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58","recipe.json":"sha256:552becec4253b2f16f31372df5d0be5b58217e495539c066442f401785603ae4"},"package_id":"fix-text-encoding","package_type":"component","requested_username":"starlife","schema_version":1,"version":"1.0.0"}
+{
+  "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+  "files": {
+    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
+    "deps.lock.json": "sha256:84315053545579fb2fb038676a3f016b58da068a19a4e50eed48c4bda2fbc4e5",
+    "recipe.json": "sha256:a6f3925c3d5d42d49de1548c8c84c392b288fa70c22f5405e2640183c3eedaf1"
+  },
+  "package_id": "fix-text-encoding",
+  "package_type": "component",
+  "requested_username": "starlife",
+  "schema_version": 1,
+  "version": "1.0.0"
+}

@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "150858ae0e3e31edd35dc1e83c0b1d6dc24fca9ea0c8c4a131a48f2de613b9a5",
+  "recipe_digest": "8eebdc5cccc3ec9b6227454c314bed9ff0cddc30cb3c49f12ee0aeef0b7868d0",
   "python_version": "3.13",
   "packages": [
     "backports-functools-lru-cache",

@@ -6,7 +6,7 @@
   "description": "多语言日期解析归一",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.parse-datetime"
+    "parse.datetime"
   ],
   "platforms": [
     "windows",

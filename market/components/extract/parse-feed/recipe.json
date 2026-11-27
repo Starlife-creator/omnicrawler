@@ -6,7 +6,7 @@
   "description": "RSS/Atom/JSON Feed 解析（订阅源采集基础能力）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.parse-feed"
+    "parse.feed"
   ],
   "platforms": [
     "windows",

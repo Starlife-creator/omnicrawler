@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "90d1348f5bcf9089ea713f468a9723b6bebcd1557ac73c1a41ecd012123113a2",
+  "recipe_digest": "775e34f02ecf5df656a08c770696a805e5a324e8d59b08ed442423a53cbedeb3",
   "python_version": "3.13",
   "packages": [
     "beautifulsoup4",

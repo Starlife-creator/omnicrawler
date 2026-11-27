@@ -6,7 +6,7 @@
   "description": "表格文本化（把结构化数据渲染成对齐的文本/Markdown 表）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.format-table"
+    "convert.table"
   ],
   "platforms": [
     "windows",

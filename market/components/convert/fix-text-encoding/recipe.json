@@ -6,7 +6,7 @@
   "description": "修复乱码文本（mojibake/双重编码/错误码页）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.fix-text-encoding"
+    "text.fix-encoding"
   ],
   "platforms": [
     "windows",

@@ -1,1 +1,13 @@
-{"creator_fingerprint":"4c3014804d85de2568f85e62a3048429","files":{"creator.identity":"sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58","recipe.json":"sha256:0480b1286afc3305f29ddc442c917ab76f99ddf6aeb521aebf4dfa545c4d7255"},"package_id":"extract-article","package_type":"component","requested_username":"starlife","schema_version":1,"version":"1.0.0"}
+{
+  "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+  "files": {
+    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
+    "deps.lock.json": "sha256:e241d37e669582c00a54c41ca04c57d90d95a1b68a3ceb5e03a7d1fb9a9749c3",
+    "recipe.json": "sha256:b08c045099e9d502af0a84b95ccede550bac16603da0a483f0359a27b514cac8"
+  },
+  "package_id": "extract-article",
+  "package_type": "component",
+  "requested_username": "starlife",
+  "schema_version": 1,
+  "version": "1.0.0"
+}

@@ -6,7 +6,7 @@
   "description": "正文抽取（去导航/广告，爬虫最核心痛点）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.extract-article"
+    "extract.article"
   ],
   "platforms": [
     "windows",

@@ -6,7 +6,7 @@
   "description": "Cron 表达式解析（定时抓取的基础能力）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.schedule-cron"
+    "schedule.cron"
   ],
   "platforms": [
     "windows",

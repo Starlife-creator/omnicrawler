@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-27T08:15:57+00:00",
-  "sequence": 1791080253,
+  "generated_at": "2026-11-27T14:07:49+00:00",
+  "sequence": 1791080254,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -1368,7 +1368,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/convert/convert-markdown/recipe.json",
-      "recipe_digest": "90d1348f5bcf9089ea713f468a9723b6bebcd1557ac73c1a41ecd012123113a2",
+      "recipe_digest": "775e34f02ecf5df656a08c770696a805e5a324e8d59b08ed442423a53cbedeb3",
       "platforms": [
         "windows",
         "linux",
@@ -1383,7 +1383,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.convert-markdown"
+        "convert.markdown"
       ],
       "platform_architectures": {},
       "entry": {
@@ -1431,7 +1431,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/dedup-simhash/recipe.json",
-      "recipe_digest": "01005b198de103fc38b3d647fe5c01a3418ecd6195a29a273c00c3a2461e8222",
+      "recipe_digest": "a8edb91f0990a9953a575c857e6d00e18f13cb3dc6103cd736e1c90ac074067d",
       "platforms": [
         "windows",
         "linux",
@@ -1446,7 +1446,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.dedup-simhash"
+        "dedupe.simhash"
       ],
       "platform_architectures": {},
       "entry": {
@@ -1536,7 +1536,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/export/export-docx/recipe.json",
-      "recipe_digest": "ddd7a576bf8c405f2fd2174a29a1ba44c36b02dfe3cbed65b61422b3c9516ac2",
+      "recipe_digest": "fd686631ce58264ea3e9b6145869f08c95b1aa6c8f8105723c57e4ccbe31cc21",
       "platforms": [
         "windows",
         "linux"
@@ -1550,7 +1550,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.export-docx"
+        "doc.docx"
       ],
       "platform_architectures": {},
       "entry": {
@@ -1604,7 +1604,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/export/export-xlsx-stream/recipe.json",
-      "recipe_digest": "c7dd3b10305fa7a9ab13e98fad6b80a98eb486693d904cb16f8ec838b462c9d4",
+      "recipe_digest": "41320fe26f169f02ae665d0ef45b151bf1fa6effc354d8304bd7ec5766f12d4a",
       "platforms": [
         "windows",
         "linux",
@@ -1619,7 +1619,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.export-xlsx-stream"
+        "doc.xlsx"
       ],
       "platform_architectures": {},
       "entry": {
@@ -1649,7 +1649,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/extract-article/recipe.json",
-      "recipe_digest": "150858ae0e3e31edd35dc1e83c0b1d6dc24fca9ea0c8c4a131a48f2de613b9a5",
+      "recipe_digest": "8eebdc5cccc3ec9b6227454c314bed9ff0cddc30cb3c49f12ee0aeef0b7868d0",
       "platforms": [
         "windows",
         "linux"
@@ -1662,7 +1662,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.extract-article"
+        "extract.article"
       ],
       "platform_architectures": {},
       "entry": {
@@ -1800,7 +1800,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/extract-table/recipe.json",
-      "recipe_digest": "5d3ce0cad9582de459731b0fe589d57ebeb685f9314375501ad9d64b1a033e0f",
+      "recipe_digest": "7cae441de938f2d47984a6b57e06bb6b05ae8156798c9bb717e234d92b2e88e2",
       "platforms": [
         "windows",
         "linux",
@@ -1815,7 +1815,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.extract-table"
+        "extract.table"
       ],
       "platform_architectures": {},
       "entry": {
@@ -1857,7 +1857,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/convert/fix-text-encoding/recipe.json",
-      "recipe_digest": "23197a1322ac32ddceb6177a02666ec4b84df2b94a5b8a69ba401d21ebb0142e",
+      "recipe_digest": "43af3bb99524d5ede5e23c34267b65386713024a4c9d3ead890e748abfb3a3c5",
       "platforms": [
         "windows",
         "linux",
@@ -1872,7 +1872,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.fix-text-encoding"
+        "text.fix-encoding"
       ],
       "platform_architectures": {},
       "entry": {
@@ -1938,7 +1938,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/convert/format-table/recipe.json",
-      "recipe_digest": "1a018f7c9337904847e5929314f46fd279a0f5eb4f3c36a136cf1ba6b80f09ec",
+      "recipe_digest": "d73b84670883898dcb3afb3865cfc048de94e378de12627e2897867e57ab897f",
       "platforms": [
         "windows",
         "linux",
@@ -1953,7 +1953,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.format-table"
+        "convert.table"
       ],
       "platform_architectures": {},
       "entry": {
@@ -3495,7 +3495,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/parse-datetime/recipe.json",
-      "recipe_digest": "d6c11288f03a6b0de9f2c488037300d20436877dad66650238f24487d4577535",
+      "recipe_digest": "16b36495cc397c1262955a382587e0d061fdd8992dfee08a28fb3f05d56e10c7",
       "platforms": [
         "windows",
         "linux",
@@ -3510,7 +3510,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.parse-datetime"
+        "parse.datetime"
       ],
       "platform_architectures": {},
       "entry": {
@@ -3594,7 +3594,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/extract/parse-feed/recipe.json",
-      "recipe_digest": "ae9ef7f3798d76bd8924a24e4e51e1d126752b0b67480926eb2f210dfb218da3",
+      "recipe_digest": "0e6e873cbb0cb1ecbd53b41eb7678a0f7d81e1d71746d7a9bece0798b135f1fc",
       "platforms": [
         "windows",
         "linux",
@@ -3609,7 +3609,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.parse-feed"
+        "parse.feed"
       ],
       "platform_architectures": {},
       "entry": {
@@ -3645,7 +3645,7 @@
       "version": "1.0.0",
       "publisher": "starlife",
       "recipe_file": "components/schedule/schedule-cron/recipe.json",
-      "recipe_digest": "fbc8b46791e344dbeee35a7f430bb4405edac207535c09cccae8d9fb25b7335b",
+      "recipe_digest": "cad71b49bfcb17e34376824cece7cb923e495111c53a2f09b93b19c8f7a2e903",
       "platforms": [
         "windows",
         "linux",
@@ -3660,7 +3660,7 @@
       ],
       "kind": "wheel-pack",
       "provides": [
-        "ocr.schedule-cron"
+        "schedule.cron"
       ],
       "platform_architectures": {},
       "entry": {

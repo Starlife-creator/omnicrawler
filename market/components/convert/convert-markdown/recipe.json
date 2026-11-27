@@ -6,7 +6,7 @@
   "description": "HTML 转 Markdown（正文交付形态）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.convert-markdown"
+    "convert.markdown"
   ],
   "platforms": [
     "windows",

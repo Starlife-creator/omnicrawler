@@ -1,6 +1,6 @@
 {
   "_comment": "依赖闭包快照（工具生成，勿手改）：改配方后请重新运行 component_deps_lock.py",
-  "recipe_digest": "1a018f7c9337904847e5929314f46fd279a0f5eb4f3c36a136cf1ba6b80f09ec",
+  "recipe_digest": "d73b84670883898dcb3afb3865cfc048de94e378de12627e2897867e57ab897f",
   "python_version": "3.13",
   "packages": [
     "tabulate"

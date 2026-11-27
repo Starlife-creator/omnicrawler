@@ -6,7 +6,7 @@
   "description": "流式写 Excel（XlsxWriter，大结果集低内存）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.export-xlsx-stream"
+    "doc.xlsx"
   ],
   "platforms": [
     "windows",

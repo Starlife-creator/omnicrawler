@@ -6,7 +6,7 @@
   "description": "HTML 表格抽取（含 colspan/rowspan 归一，容错残缺 HTML）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.extract-table"
+    "extract.table"
   ],
   "platforms": [
     "windows",

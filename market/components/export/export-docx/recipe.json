@@ -6,7 +6,7 @@
   "description": "导出 Word（python-docx，交付形态）",
   "kind": "wheel-pack",
   "provides": [
-    "ocr.export-docx"
+    "doc.docx"
   ],
   "platforms": [
     "windows",
