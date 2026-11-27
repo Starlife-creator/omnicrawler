@@ -298,12 +298,26 @@ class RobotsPolicy:
             self._record_robots_outcome(origin, kind, detail, allowed)
             return allowed
 
+    #: 4xx 的 robots.txt 是**正常情况**（站点没有配 robots），不是"加载失败"。
+    #: ★ 2026-11-27 实测：books.toscrape / quotes.toscrape 都返回 404，
+    #:   于是每次运行第一屏都有一行 WARNING「robots.txt 加载失败 … 判定=允许」——
+    #:   一句话里同时说了"失败"和"允许"，用户只能怀疑是不是哪里坏了。
+    _NO_ROBOTS_STATUS = frozenset({404, 410})
+
     def _record_robots_outcome(self, origin: str, kind: str, detail: str, allowed: bool) -> None:
         self.last_error = {"kind": kind, "detail": detail, "allowed": allowed, "origin": origin}
-        LOGGER.warning(
-            "robots.txt 加载失败 [%s] %s: %s（fail_closed=%s，判定=%s）",
-            kind, origin, detail, self.fail_closed, "允许" if allowed else "拒绝",
-        )
+        if self._is_simply_absent(kind, detail, allowed):
+            # 站点根本没写 robots.txt：这是**正常状态**，不是故障，也不该占 WARNING。
+            # 但仍要留痕（排查"为什么抓了不该抓的"时需要它），所以降到 INFO。
+            LOGGER.info(
+                "站点未配置 robots.txt [%s] %s: %s（按允许处理）",
+                kind, origin, detail,
+            )
+        else:
+            LOGGER.warning(
+                "robots.txt 加载失败 [%s] %s: %s（fail_closed=%s，判定=%s）",
+                kind, origin, detail, self.fail_closed, "允许" if allowed else "拒绝",
+            )
         if self._egress is not None:
             try:
                 self._egress.record_robots_issue(
@@ -311,6 +325,22 @@ class RobotsPolicy:
                 )
             except Exception:  # 审计事件写入失败不得反向阻断 robots 判定
                 LOGGER.debug("robots 审计事件写入失败", exc_info=True)
+
+    @classmethod
+    def _is_simply_absent(cls, kind: str, detail: str, allowed: bool) -> bool:
+        """这次 robots 结果是"站点没有 robots.txt"（正常）还是真故障？
+
+        ★ 判据要**窄**：只有 `kind == "http"` 且状态码在 `_NO_ROBOTS_STATUS` 且判定为允许，
+          才算"没有配"。5xx / DNS / 超时 / 解析失败都是真问题，必须继续占 WARNING ——
+          把它们一起降级等于把诊断信号关掉。
+        """
+        if kind != "http" or not allowed:
+            return False
+        status = str(detail).strip()
+        for candidate in cls._NO_ROBOTS_STATUS:
+            if f"HTTP {candidate}" == status:
+                return True
+        return False
 
     def _safe_opener(self) -> Any:
         if self._opener is not None:
