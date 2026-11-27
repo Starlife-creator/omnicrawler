@@ -84,12 +84,24 @@
 QWidget、绘制器或播放器回调。确实需要自定义 QWidget 时才使用 `register_ui_panel`，并维持最高
 风险提示。
 
-市场 `view` 当前只允许 label、button、directory_picker、slider、select、resource_list 和
-rich_text。面板可在
+市场 `view` 当前只允许以下 **9 种**组件：`label`、`button`、`directory_picker`、`slider`、
+`select`、`resource_list`、`rich_text`、`text`、`progress`。
+（清单的唯一真源是 `plugins/plugin_declarative.py` 的 `COMPONENT_TYPES`；
+门禁 `tools/gates/check_view_component_docs.py` 断言本文与代码一致，漏写任一组件即判红。）
+
+面板可在
 宿主允许的左、右、底部区域移动、浮动和调整尺寸；插件不能覆盖核心菜单、中央工作区或安全提示。
-`rich_text`（P2.1，2026-09-24）是**受限长文本**组件：内容为结构化文本段
-（heading / paragraph / bullet / link），宿主纯文本渲染、绝不解释 HTML；单组件段数 ≤64、
-总字符 ≤4096；link 段仅允许 http(s) URL 且必须经用户确认后才在系统浏览器打开。
+
+- `rich_text`（P2.1，2026-09-24）是**受限长文本**组件：内容为结构化文本段
+  （heading / paragraph / bullet / link），宿主纯文本渲染、绝不解释 HTML；单组件段数 ≤64、
+  总字符 ≤4096；link 段仅允许 http(s) URL 且必须经用户确认后才在系统浏览器打开。
+- `text`（2026-09-24）是**单行文本输入**：值经 `view.action` 以 `{"value": 文本}` 上送，
+  与 `select` 同通道（宿主只挂 `editingFinished`，回车与失焦都触发一次；
+  不再挂 `returnPressed`，否则同一次回车会双重派发）。
+- `progress`（2026-09-24）是**运行进度占位区**：数值**不由描述符携带**，
+  只由 `view.progress` 推送刷新。推送体中宿主只认
+  `done` / `total` / `current_doi` / `eta_seconds` / `success` / `failed` 这六个字段，
+  其余键忽略（`plugin_broker_host.py` 的 `_PROGRESS_FIELDS`）。
 需要该组件的插件在 `required_capabilities` 声明 `"view.richtext": ">=1"`（宿主版本不足时
 在启动插件代码前拒载）。
 目录选择返回插件会话专属的不透明句柄。媒体背景由 `surface.background.*` 控制，不暴露 QWidget；

@@ -500,6 +500,17 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_view_component_docs",
+        args=("tools/gates/check_view_component_docs.py",),
+        sets=_STATIC,
+        description="view 组件清单：文档必须逐个覆盖代码里的 COMPONENT_TYPES",
+        script="tools/gates/check_view_component_docs.py",
+        ci_note=(
+            "零网络、纯导入+正则。文档与代码不同步时，插件作者会按错的清单写 view；"
+            "这类漂移不报错也不红测试，只能靠门禁钉住。"
+        ),
+    ),
+    Gate(
         name="check_walk_pruning",
         args=("tools/gates/check_walk_pruning.py",),
         sets=_STATIC,
