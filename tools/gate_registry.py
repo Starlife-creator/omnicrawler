@@ -533,6 +533,19 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_component_capability_domains",
+        args=("tools/gates/check_component_capability_domains.py",),
+        sets=_STATIC,
+        description="组件 provides 的域前缀必须与组件职责一致（`ocr.` 是保留前缀）",
+        script="tools/gates/check_component_capability_domains.py",
+        ci_note=(
+            "零网络、纯 JSON。2026-11-27 实测：16 个组件里只有 5 个真做 OCR，"
+            "其余 11 个全声明 ocr.*，而主仓按域建能力槽位 ⇒ 它们和 OCR 引擎抢同一个槽位。"
+            "CI 上内置引擎不可用时 slot(ocr).active() 真的选中了 convert-markdown。"
+            "这类错误**不报错也不红测试**，只有在引擎恰好不可用的机器上才暴露。"
+        ),
+    ),
+    Gate(
         name="check_schema_derived_whitelists",
         args=("tools/gates/check_schema_derived_whitelists.py",),
         sets=_STATIC,
