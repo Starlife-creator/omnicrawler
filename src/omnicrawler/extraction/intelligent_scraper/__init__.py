@@ -1549,6 +1549,16 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
             used_render=chosen_from_render,
         )
         _verdict_line = f"结论: {_verdict}" + (f" —— {_why}" if _why else "")
+        # ★ 2026-11-27：把结论**写进配置文件本身**，不只是打到 stderr。
+        #   实测 docs.python.org：stdout 里那份 YAML 看起来完全正常（有 source / crawl /
+        #   extract），用户 `-o cfg.yaml` 之后就把 stderr 的「未找到业务列表」丢掉了，
+        #   于是一份**取到的全是兜底列名**的配置被当成可用配置带走。
+        #   注释不改变 YAML 语义，但会跟着文件走。
+        _verdict_header = (
+            f"# 自动分析结论: {_verdict}"
+            + (f" —— {_why}" if _why else "")
+            + "\n"
+        )
         if task_settings is not None:
             try:
                 apply_task_goal(config, task_settings)
@@ -1583,7 +1593,9 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
         # 走查 R4.2：记录路径拿不太准（单对象 / 候选接近）、或有嵌套没展开时，如实说出来。
         for line in chosen_advisories:
             print(f"提示: {line}", file=sys.stderr)
-        output = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        output = _verdict_header + yaml.dump(
+            config, allow_unicode=True, default_flow_style=False, sort_keys=False
+        )
         try:
             report = verified_report(config, html) or verify_config(config, html)
         except AutoConfigUnverifiedError as exc:
