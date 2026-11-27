@@ -74,10 +74,11 @@ def remove_work_dir() -> None:
         shutil.rmtree(_WORK, ignore_errors=True)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _restore_work_dir_after_session() -> None:
-    """session 结束后把 `work/.gitkeep` 放回去（仓库依赖这个空目录）。"""
-    yield
+def _ensure_work_gitkeep() -> None:
+    """把 `work/.gitkeep` 放回去（仓库依赖这个 0 字节占位）。
+
+    ★ 幂等且失败静默：这是**清理**动作，不该因为权限/并发而让测试失败。
+    """
     try:
         _WORK.mkdir(parents=True, exist_ok=True)
         keep = _WORK / ".gitkeep"
@@ -85,6 +86,13 @@ def _restore_work_dir_after_session() -> None:
             keep.write_bytes(b"")
     except OSError:
         pass
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _restore_work_dir_after_session() -> None:
+    """session 结束后把 `work/.gitkeep` 放回去（仓库依赖这个空目录）。"""
+    yield
+    _ensure_work_gitkeep()
 
 
 @pytest.fixture(autouse=True)
@@ -96,3 +104,11 @@ def _isolate_shared_workspace() -> None:
     remove_work_dir()
     yield
     remove_work_dir()
+    # ★ 2026-11-27：**每个测试**结束后都要把 `.gitkeep` 放回去，不能只等 session 结束。
+    #
+    #   实测事故：某次在"测试刚删掉 work/、还没到 session 结束"的窗口里跑了
+    #   `git add -A` ⇒ 把 `work/.gitkeep` 的**删除**一起提交了 ⇒ CI 的
+    #   `check_test_cleanliness` 判红（它看到工作区里 `.gitkeep` 是删除状态）。
+    #   这两次提交都是"我的操作时机"造成的，不是产品缺陷；但从"仓库依赖这个空占位"
+    #   这条约束看，**缩窄不一致窗口**才是真修法。
+    _ensure_work_gitkeep()
