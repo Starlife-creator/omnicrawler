@@ -132,6 +132,12 @@ def inspect_result(
         pagination.append("cursor-or-next-url")
 
     structured: list[str] = []
+    # ★ 2026-11-27：**页面内嵌的 SSR 数据**是一种独立的数据来源，不是"动态渲染"的旁证。
+    #   实测：Next.js / Nuxt 站点把整页数据放在 __NEXT_DATA__ 里，DOM 只有一个空挂载点 ——
+    #   旧实现只报 `dynamic=True`，于是推荐"开浏览器"，而**静态抓取就能拿全**。
+    #   这条信号让 `auto-analyze` / `templates recommend` 能把人引到正确的那条路上。
+    if any(marker in lower for marker in ("__next_data__", "__nuxt_data__", "__initial_state__", "__apollo_state__")):
+        structured.append("embedded-json")
     if "application/ld+json" in lower:
         structured.append("json-ld")
     if "property=\"og:" in lower or "property='og:" in lower:
@@ -232,6 +238,10 @@ def _recommendations(
         fallbacks.append(("incremental", "intent:updates"))
     if api_signals and dynamic:
         fallbacks.append(("generic/spa-api-discovery", "background-api-signals"))
+    # ★ 2026-11-27：内嵌数据优先于"开浏览器" —— 这类页面静态即可取全，
+    #   推荐浏览器等于让用户白付一个数量级的成本。
+    if "embedded-json" in structured:
+        fallbacks.append(("generic/ssr-embedded-data", "embedded-json"))
     if dynamic:
         fallbacks.append(("generic/infinite-scroll", "dynamic-page"))
     if has_downloads:
