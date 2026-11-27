@@ -37,13 +37,24 @@ DEFAULT_MARKET_REPO = REPO_ROOT.parent / "OmniCrawler-market"
 
 
 def _content_equal(left: bytes, right: bytes) -> bool:
-    """B02-008：换行归一化内容比对。
+    """**字节级**比对（不做任何换行归一化）。
 
-    Windows autocrlf 会把 git 检出的 LF 转成 CRLF，导致「全新检出快照 vs 市场仓
-    LF 源」全部误报漂移。签名/指纹相关文件必须内容级比对，因此按统一 LF 归一化
-    后比较字节，而不是降级为 mtime/size。
+    ★ 2026-11-27 修：这里原本做 `\r\n` → `\n` 归一化，理由是「Windows autocrlf
+      会把 git 检出的 LF 转成 CRLF」。那个理由现在**不成立**：两个仓都有
+      `.gitattributes` 的 `* text=auto eol=lf`，检出就是 LF。
+
+      归一化的实际后果：市场仓里某个文件是 LF、快照里是旧的 CRLF 时，
+      比对判定「相等」⇒ **不复制** ⇒ 快照里留着字节不同的陈旧文件。
+      而这些文件的字节**进了 `package.manifest.json` 的 sha256 清单**，
+      于是 `check_component_recipes` 报「清单与文件不一致」，且只发生在快照上
+      （本地市场是好的，CI 读快照）—— 表现为「本地绿、CI 红」。
+
+      实测（2026-11-27）：`deps.lock.json` 市场仓 sha256 `468ee94d…`（340 字节，LF），
+      快照 `7194b5ca…`（351 字节，CRLF），归一化比对认为相等而跳过复制。
+
+      判据：**快照必须逐字节等于市场仓**。字节完整性的唯一准据是字节本身。
     """
-    return left.replace(b"\r\n", b"\n") == right.replace(b"\r\n", b"\n")
+    return left == right
 DEFAULT_DEST = REPO_ROOT / "market"
 DEFAULT_REF_FILE = REPO_ROOT / "constraints" / "market-ref.txt"
 
@@ -102,6 +113,36 @@ def _mirror(src: Path, dest: Path, stats: dict[str, int], *, top: bool = True) -
     """
     dest.mkdir(parents=True, exist_ok=True)
     items = SYNC_ITEMS if top else tuple(p.name for p in src.iterdir())
+    # ★ 2026-11-27 修：**整个子目录从源里消失时，dest 里那份不会被删**。
+    #
+    #   原实现只在「某个源子目录内部」做「dest 多余项」清理（遍历的是 `src` 的
+    #   孩子）。若一个子目录在源里**整体不存在**，它根本不在遍历范围内 ⇒
+    #   dest 里那份永远留着。
+    #
+    #   实测：市场仓 `components/browser/` 在 6cc76ff 被 revert 后为空目录，
+    #   而主仓 `market/components/browser/` 仍留着 3 个已撤回的内核组件（19 个文件），
+    #   `sync_snapshot` 每次都报「删除 0 项」。
+    #
+    #   后果不是「多几个文件」：快照是**出包内容**，里面躺着三个从未验证成功的内核，
+    #   `browser_kernels` 会照着它们列出「可装」——而市场里根本没有。
+    #
+    #   判据：镜像 = 源是准据。非顶层调用时，dest 里源已无的条目必须删掉。
+    #   顶层不删（那里按 `SYNC_ITEMS` 白名单工作，删别的会误伤）。
+    # ★ 而且**空目录不算存在**：git 不跟踪空目录，市场仓 revert 后 `components/browser/`
+    #   只是磁盘上的空壳（git 里 0 个文件），若按「名字在就算存在」判定，
+    #   快照里那份永远删不掉。判据：子目录里**没有任何文件** ⇒ 视为不存在。
+    def _has_files(path: Path) -> bool:
+        return any(p.is_file() for p in path.rglob("*"))
+
+    if not top:
+        src_names = {p.name for p in src.iterdir() if not p.is_dir() or _has_files(p)}
+        for old in list(dest.iterdir()):
+            if old.name not in src_names:
+                if old.is_dir():
+                    shutil.rmtree(old)
+                else:
+                    old.unlink()
+                stats["removed"] += 1
     for item in items:
         s = src / item
         d = dest / item

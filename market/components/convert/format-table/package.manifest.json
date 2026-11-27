@@ -1,8 +1,8 @@
 {
   "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
   "files": {
-    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
-    "deps.lock.json": "sha256:67b8180ac65670d93c5ad907987fbea405772daf571640de06ec6c30cb801904",
+    "creator.identity": "sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58",
+    "deps.lock.json": "sha256:412d82537d0167f57f793f7987bd4dca00b1cc74a3c775e167dc2df8f91e1a06",
     "recipe.json": "sha256:7b634059ed635b2a356eb76c8849448b26d104d33f5678b51f21c6fe41ce0817"
   },
   "package_id": "format-table",

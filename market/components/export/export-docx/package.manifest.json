@@ -1,8 +1,8 @@
 {
   "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
   "files": {
-    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
-    "deps.lock.json": "sha256:8dc847b420e9e2a011d6b7005d443f7925f071bf74d140229b70bcd03156216f",
+    "creator.identity": "sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58",
+    "deps.lock.json": "sha256:c9028eb15d7d211cf3678eb650a5429268b20bfc826ae6e1db4cbb8219eedac2",
     "recipe.json": "sha256:4ac462f79d20ce9f493e96a08df054df7405053cc42f98ae578ff53c771a0caa"
   },
   "package_id": "export-docx",

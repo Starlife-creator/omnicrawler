@@ -1,8 +1,8 @@
 {
   "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
   "files": {
-    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
-    "deps.lock.json": "sha256:e241d37e669582c00a54c41ca04c57d90d95a1b68a3ceb5e03a7d1fb9a9749c3",
+    "creator.identity": "sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58",
+    "deps.lock.json": "sha256:60d6368e74559a3b5189dd830af127c0b0b1c9c3608f6c3140e0b82c773f0b82",
     "recipe.json": "sha256:b08c045099e9d502af0a84b95ccede550bac16603da0a483f0359a27b514cac8"
   },
   "package_id": "extract-article",

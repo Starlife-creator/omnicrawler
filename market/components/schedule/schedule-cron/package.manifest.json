@@ -1,8 +1,8 @@
 {
   "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
   "files": {
-    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
-    "deps.lock.json": "sha256:e8d63919a212716d30e99908c21cb7ff865bbd8013fd19c476efff500427c74a",
+    "creator.identity": "sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58",
+    "deps.lock.json": "sha256:c0ea5b267cbfb519efac6d2b0af9e1dcab1a70296941db45e0dcff0a2202794e",
     "recipe.json": "sha256:dff5781caff7010161272b0bcdaf7f991bb17b8558a44daa4fe299dd6381ba27"
   },
   "package_id": "schedule-cron",

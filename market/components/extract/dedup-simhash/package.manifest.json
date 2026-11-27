@@ -1,8 +1,8 @@
 {
   "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
   "files": {
-    "creator.identity": "sha256:4e24c9c23cf3ed5c8c9b8af30b16230b26239ff4001be84ae95d6c5339c3a1f6",
-    "deps.lock.json": "sha256:648c26d47cef4d3946ce6e2173d5c4a0938c6ec2ea90f7d0c2071f2dbc0f970b",
+    "creator.identity": "sha256:37b6ea536be1f8122cddf475aee18d5d66bf4957deb8a5fc9da86126e9bb8b58",
+    "deps.lock.json": "sha256:531614a345e394a92b74a8ca26a49168450fd7115b309dc1d90bbb582b076726",
     "recipe.json": "sha256:2e8a443263dd03607f19105382fbec8acf5ee6c6327c50e4c4a72ed763810d0e"
   },
   "package_id": "dedup-simhash",
