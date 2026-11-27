@@ -357,6 +357,9 @@ def build_plugin_upload(
         "input_files": list(metadata.get("input_files") or []),
         "dependencies": list(metadata.get("dependencies") or []),
         "required_capabilities": dict(metadata.get("required_capabilities") or {}),
+        # ★ 2026-11-27：组件能力需求必须进 plugin.yaml，否则市场侧看不到它，
+        #   `check_market()` 也就无从判断。
+        "requires_components": list(metadata.get("requires_components") or []),
         "state_schema_version": int(metadata.get("state_schema_version") or 1),
         "compatible_core": f">={metadata.get('min_core_version') or '0.7.0'}",
         # 门 2（Phase 1，方案 A1）：license 必填——删除隐式 MIT 回退，

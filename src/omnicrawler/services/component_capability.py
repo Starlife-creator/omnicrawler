@@ -123,10 +123,24 @@ def resolve(
         required_raw = plugin.get("required_capabilities") or {}
         if not isinstance(required_raw, dict):
             required_raw = {}
-        # 只取**组件式**能力；核心能力由宿主 SDK 保证，不参与这里的匹配。
-        required = [
-            _normalize(name) for name in required_raw if is_component_capability(name)
+        # ★ 2026-11-27：**两个字段都要读**，因为它们语义不同。
+        #
+        #   · `requires_components`（新）= 组件能力需求，如 `("ocr.paddle",)`。
+        #     这是**唯一合法的表达方式**。
+        #   · `required_capabilities`（旧）= 宿主协议版本，键必须先过
+        #     `CAPABILITY_VERSIONS`，因此**永远不可能含 `ocr.*`**。
+        #
+        #   这里仍扫一遍旧字段，只取其中恰好是组件式的项 —— 那是历史数据的兼容路径
+        #   （理论上不会命中，因为校验会先拒），保留它比"假定它一定为空"安全。
+        explicit = [
+            _normalize(item) for item in (plugin.get("requires_components") or [])
         ]
+        required = [name for name in explicit if name]
+        required.extend(
+            _normalize(name) for name in required_raw if is_component_capability(name)
+        )
+        # 去重保序（同一能力写在两个字段里不该重复计一次缺失）
+        required = list(dict.fromkeys(required))
         check = PluginCapabilityCheck(plugin_id=pid, required=required)
         for capability in required:
             owners = provided.get(capability) or []
@@ -142,6 +156,35 @@ def resolve(
         if capability not in all_required:
             report.unused_components[capability] = list(owners)
     return report
+
+
+def check_market(
+    plugins: list[dict[str, Any]], components: list[dict[str, Any]]
+) -> list[str]:
+    """市场发版门禁用：返回**阻塞发布**的问题清单（空列表 = 通过）。
+
+    判据只有一条：**任何插件的组件式能力若无人覆盖 ⇒ 判红**。
+    不让一个「注定跑不起来」的组合发出去 —— 用户装完插件只会在运行期撞
+    `ModuleNotFoundError`，那时已经太晚。
+
+    ★ 本函数此前**只存在于模块 docstring 里**（原文写着「`check_market(...)` ——
+      市场发版门禁用」，而文件里 `def` 只有 resolve/install_hint 等）。
+      一段写在注释里的承诺比没有承诺更糟：读代码的人会以为门禁已经在了。
+
+    **空集合判红**：`plugins` 为空时返回一条问题而不是通过 —— 否则
+    「没有插件」和「所有插件都 OK」给出同样的绿。
+    """
+    if not plugins:
+        return ["市场里没有任何插件：无法评估能力覆盖（空集合不是通过）"]
+    report = resolve(plugins, components)
+    problems: list[str] = []
+    for check in report.broken:
+        missing = "、".join(check.missing)
+        problems.append(
+            f"插件 {check.plugin_id} 的组件能力无人覆盖：{missing}"
+            "（用户装完插件也跑不起来；请补组件，或从插件里去掉该需求）"
+        )
+    return problems
 
 
 def install_hint(check: PluginCapabilityCheck, components: list[dict[str, Any]]) -> str:

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +64,12 @@ SUBPROCESS_ADAPTER_PLUGIN_TYPES = frozenset(
     }
 )
 
+#: 组件能力名的形态：小写点分（`ocr.paddle` / `pdf.extract`）。
+#: 与 `component_capability.COMPONENT_CAPABILITY_DOMAINS` 互补 ——
+#: 那里列「哪些域算组件式」，这里只校验**名字形态**。
+_COMPONENT_CAPABILITY_RE = re.compile(r"^[a-z][a-z0-9_]*\.[a-z0-9][a-z0-9_.-]*$")
+
+
 @dataclass(frozen=True, slots=True)
 class PluginMetadata:
     name: str
@@ -76,7 +83,21 @@ class PluginMetadata:
     capabilities: tuple[str, ...] = ()
     # Contract 2 宿主能力协议的最低版本，例如 {"records.read": ">=1"}。
     # 它不同于 capabilities（展示用能力标签），会在启动子进程前 fail-closed。
+    #
+    # ★ 它**只能**写宿主协议名（受 `CAPABILITY_VERSIONS` 校验）：写 `{"ocr.paddle": ">=1"}`
+    #   会当场 `ValueError: 宿主不支持插件要求的能力`。组件式能力请用
+    #   `requires_components`（见下）。
     required_capabilities: dict[str, int | str] = field(default_factory=dict)
+    # ★ 2026-11-27 新增：**组件能力**需求，例如 ("ocr.paddle",)。
+    #
+    #   为什么要单独一个字段：`required_capabilities` 的每个键必须先过
+    #   `CAPABILITY_VERSIONS`（宿主协议版本表），而 `ocr.*` 永远不在那张表里。
+    #   于是「插件的组件需求」此前**没有任何合法字段可以表达** ——
+    #   `services/component_capability.py` 的 `resolve()` 拿一个不可能含
+    #   `ocr.*` 的字段去匹配只认 `ocr.*` 的索引，**从诞生起恒为空**。
+    #
+    #   由 `component_capability.resolve()` 消费；缺失时给「装 X 组件」提示。
+    requires_components: tuple[str, ...] = ()
     state_schema_version: int = 1
     domains: tuple[str, ...] = ()
     config_schema: dict[str, Any] = field(default_factory=dict)
@@ -188,6 +209,27 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
     from .plugin_broker import validate_required_capabilities
 
     validate_required_capabilities(required_capabilities)
+    # ★ 2026-11-27：组件能力需求（`ocr.paddle` 这类）单独一个字段。
+    #   它**不**过 `CAPABILITY_VERSIONS`（那张表只列宿主协议），
+    #   但必须是不重复的非空字符串，且必须是组件式能力的形态（点分、小写）。
+    raw_requires = result.requires_components
+    if isinstance(raw_requires, str) or not isinstance(raw_requires, (list, tuple)):
+        raise ValueError(
+            f"插件 {result.name} requires_components 必须是列表或元组; file={path}"
+        )
+    requires_components: tuple[str, ...] = tuple(
+        str(item).strip() for item in raw_requires if str(item).strip()
+    )
+    if len(set(requires_components)) != len(requires_components):
+        raise ValueError(
+            f"插件 {result.name} requires_components 含重复项; file={path}"
+        )
+    for capability in requires_components:
+        if not _COMPONENT_CAPABILITY_RE.match(capability):
+            raise ValueError(
+                f"插件 {result.name} requires_components 项 {capability!r} 不是合法的点分能力名"
+                f"（应形如 ocr.paddle）; file={path}"
+            )
     if not isinstance(result.state_schema_version, int) or result.state_schema_version < 1:
         raise ValueError(f"插件 {result.name} state_schema_version 必须是正整数; file={path}")
     if (
@@ -198,6 +240,7 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
         and deps is result.dependencies
         and input_files is result.input_files
         and required_capabilities == result.required_capabilities
+        and requires_components == result.requires_components
     ):
         return result
     return PluginMetadata(
@@ -210,6 +253,7 @@ def _normalize_schema_fields(result: PluginMetadata, path: Path) -> PluginMetada
         tags=tags,
         capabilities=result.capabilities,
         required_capabilities=required_capabilities,
+        requires_components=requires_components,
         state_schema_version=result.state_schema_version,
         domains=result.domains,
         config_schema=result.config_schema,
