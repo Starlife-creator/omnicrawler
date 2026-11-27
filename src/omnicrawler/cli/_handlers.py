@@ -438,9 +438,22 @@ def _run_auto_analyze(args: argparse.Namespace) -> None:
         if getattr(args, "request", ""):
             from ..commands.task import compile_request
 
-            settings = compile_request(args.request, fallback_url=args.input)["task"]
-            if settings["url"] != args.input:
-                raise ValueError("需求中的入口网址与分析网址不一致")
+            # ★ 2026-11-27 修：比较对象必须是**被分析的网址**，不是 `args.input`。
+            #
+            #   `auto-analyze` 支持「本地 HTML 文件 + `--url` 指定原始网址」
+            #   （离线夹具、抓下来再分析的常见用法）。旧实现拿需求里的网址去比
+            #   `args.input`（那是文件路径），于是**只要用文件输入就一定报**
+            #   「需求中的入口网址与分析网址不一致」—— 而用户什么都没做错，
+            #   提示里的修复建议（去 `source.seeds` 补网址）也无从下手。
+            settings = compile_request(
+                args.request, fallback_url=str(getattr(args, "url", "") or args.input)
+            )["task"]
+            analysis_url = str(getattr(args, "url", "") or args.input)
+            if settings["url"] != analysis_url:
+                raise ValueError(
+                    "需求中的入口网址与分析网址不一致："
+                    f"需求写的是 {settings['url']}，本次分析的是 {analysis_url}"
+                )
         if settings is None:
             is_main()
         else:

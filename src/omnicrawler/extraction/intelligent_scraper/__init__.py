@@ -503,12 +503,34 @@ def _json_configs(
 
 #: 把 `analyze_to_config` 已经做过的验证结果留给调用方复用。
 #:
-#: 键是 `id(config)`，值是 `(html 的哈希, 验证报告)`。
+#: 键是 `id(config)`，值是 `(html 哈希, 配置签名, 验证报告)`。
+#:
 #: ★ 必须带 html 哈希：同一个 `id` 在对象被回收后可能被**另一个** dict 复用，
 #:   只按 id 查会拿到另一份 HTML 的报告 —— 那是"张冠李戴"的静默错误。
+#:
+#: ★ 也**必须带配置签名**（2026-11-27 实测到的真缺陷）：`apply_task_goal` 会**原地改**
+#:   `config["extract"]["fields"]`（按用户需求收窄）。配置对象身份没变、HTML 也没变，
+#:   但验证结果早就过期了 —— 复用它会让 `--request` 后的自检报告显示**旧的字段集**
+#:   （实测：需求要 2 个字段，报告仍说 4 个）。
+#:
 #: 上限 32 条：一次 CLI 调用最多几个候选配置（静态 / 渲染），留足余量且不会长跑泄漏。
-_REMEMBERED_REPORTS: dict[int, tuple[int, dict[str, Any]]] = {}
+_REMEMBERED_REPORTS: dict[int, tuple[int, int, dict[str, Any]]] = {}
 _REMEMBERED_LIMIT = 32
+
+
+def _config_signature(config: dict[str, Any]) -> int:
+    """配置里**影响验证结果**的那部分的签名（`extract` 段）。
+
+    ★ 只取 `extract` 是刻意的：验证只读它（mode / fields / item_selector /
+      embedded_json / record_grain）。把整个 config 一起哈希会把 `crawl` / `outputs`
+      这些无关段也算进去 —— 那只会让缓存更容易失效，不会更正确。
+    """
+    extract = config.get("extract") if isinstance(config, dict) else None
+    try:
+        payload = json.dumps(extract, sort_keys=True, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return 0  # 不可序列化 ⇒ 恒定 0，调用方会当成"签名不同"而重算
+    return hash(payload)
 
 
 def verified_report(config: dict[str, Any], html: str) -> dict[str, Any] | None:
@@ -517,20 +539,26 @@ def verified_report(config: dict[str, Any], html: str) -> dict[str, Any] | None:
     ★ 为什么值得做：`auto-analyze` 会对同一份 HTML 先 `analyze_to_config`（内部已验证）
       再 `verify_config` 一次，两次都 `parse_html` + 上千次 `select_nodes`。
       实测 84 行页面这一次重复占 0.4 s（整条命令的 2/3）。
-      判据是「**同一份 config + 同一份 html**」—— 任一边不同就必须重算。
+
+    ★ 复用条件**三个都比**：`id(config)` 相同、html 哈希相同、配置签名相同。
+      少任何一个都会返回过期结论。
     """
     entry = _REMEMBERED_REPORTS.get(id(config))
     if entry is None:
         return None
-    digest, report = entry
-    return report if digest == hash(html) else None
+    digest, signature, report = entry
+    if digest != hash(html):
+        return None
+    if signature != _config_signature(config):
+        return None
+    return report
 
 
 def remember_report(config: dict[str, Any], html: str, report: dict[str, Any]) -> None:
     """登记一份验证报告（供 `verified_report` 复用）。"""
     if len(_REMEMBERED_REPORTS) >= _REMEMBERED_LIMIT:
         _REMEMBERED_REPORTS.clear()
-    _REMEMBERED_REPORTS[id(config)] = (hash(html), report)
+    _REMEMBERED_REPORTS[id(config)] = (hash(html), _config_signature(config), report)
 
 
 class AutoConfigUnverifiedError(RuntimeError):
