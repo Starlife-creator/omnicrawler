@@ -310,10 +310,25 @@ class CapabilitySlotRegistry:
         """Register providers declared via ``provides`` in plugin/component manifests.
 
         Supported ``provides`` item shapes:
-        - ``"ocr"`` (string slot name)
+        - ``"ocr"`` (bare slot name)
+        - ``"ocr.paddle"`` (dotted capability name ⇒ slot is the **domain prefix** ``ocr``)
         - ``{"slot": "ocr", "id": "custom-id", "display_name": "...", "priority": 130}``
+
         Also recognizes component ``runtime.engine`` for ``ocr-file-v1`` recipes so
         existing installed OCR components participate without manifest migration.
+
+        ★ 2026-11-27 修：**点分名此前会被当成槽位名本身**。
+
+          市场 16 个组件的 `provides` 全是 `ocr.<name>` 形态 ⇒ 旧实现建出 16 个叫
+          `ocr.convert-markdown` / `ocr.paddle` / … 的槽位，**而消费方查的是 `ocr`**
+          （`build_builtin_slot_registry` 建的就是 `"ocr"`）。
+
+          后果：这些组件**一个都不会被看见** —— 不是报错，是"注册成功了但没人查得到"，
+          正是本项目反复出现的「定义了没有生产者」的镜像：**有生产者，没有消费者对得上**。
+
+          判据：点分名的**域前缀**就是槽位（`ocr.paddle` ⇒ 槽位 `ocr`）；
+          `provider_id` 仍用组件自己的 id，`metadata["capability"]` 记完整能力名，
+          这样"同一槽位里有多个 provider"这件事才成立，`slot.active()` 才有得选。
         """
         count = 0
         for raw in entries:
@@ -337,18 +352,30 @@ class CapabilitySlotRegistry:
 
             for item in declared_items:
                 if isinstance(item, str) and item.strip():
-                    slot_name = item.strip()
+                    declared = item.strip()
+                    # 点分名 ⇒ 槽位取**域前缀**；裸名 ⇒ 它本身就是槽位名。
+                    slot_name = declared.split(".", 1)[0] if "." in declared else declared
                     provider_id = base_id
                     display_name = base_title
                     priority = int(raw.get("priority", 110))
+                    # 完整能力名留在 metadata 里：一个槽位下可能有多个 provider，
+                    # 消费方需要能分辨"这个 provider 提供的是哪个具体能力"。
+                    capability_name = declared
                 elif isinstance(item, Mapping) and str(item.get("slot", "")).strip():
+                    # 字典形态是**扩展语法**（显式指定槽位/优先级），此时 slot 字段
+                    # 就是槽位名，不做点分拆分 —— 那是它自己的语义，不是 `provides` 的。
                     slot_name = str(item["slot"]).strip()
                     provider_id = str(item.get("id") or base_id).strip()
                     display_name = str(item.get("display_name") or base_title).strip()
                     priority = int(item.get("priority", raw.get("priority", 110)))
+                    capability_name = slot_name
                 else:
                     continue
 
+                metadata: dict[str, Any] = {"manifest_id": base_id}
+                if capability_name != slot_name:
+                    # 只有点分名才有"完整能力名 ≠ 槽位名"，记下来供消费方分辨。
+                    metadata["capability"] = capability_name
                 self.register(
                     CapabilityProvider(
                         provider_id=provider_id,
@@ -357,7 +384,7 @@ class CapabilitySlotRegistry:
                         display_name=display_name,
                         priority=priority,
                         description=purpose,
-                        metadata={"manifest_id": base_id},
+                        metadata=metadata,
                     )
                 )
                 count += 1
