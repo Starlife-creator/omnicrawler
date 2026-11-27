@@ -1,4 +1,4 @@
-"""JSON「记录在哪」的判据：候选打分（走查 R4.2）。
+"""JSON 「记录在哪」的判据：候选打分（走查 R4.2）。
 
 ## 背景（0.13.0 端到端走查，`.audit-tmp/w71/cases/c26`、`c47`、`c48`）
 
@@ -192,9 +192,64 @@ def _array_candidate(
     return ItemPathCandidate(path, values, round(score, 3), tuple(reasons))
 
 
+def _shared_prefix_records(value: list[Any]) -> list[dict[str, Any]] | None:
+    """识别 **Nuxt 2 式共享前缀**列表并合并成记录；不是该形态返回 None。
+
+    实测形态（Nuxt 2 的 payload 序列化）：
+
+        data = [
+          [{"id": 1, "brand": "Acme"}, {"id": 2, "brand": "Acme"}],   <- 公共前缀
+          {"name": "Alpha", "price": 9.9},                            <- 第 1 条
+          {"name": "Beta",  "price": 19.9},                           <- 第 2 条
+        ]
+
+    分开看：`data[*]` 里只有两个 dict（外加一个 list），`data[0][*]` 只有 ID，
+    两处都"不像记录集合"，于是整页被判成"没有可用数据" —— 而记录其实都在。
+
+    ★ 判据必须包含「**共享前缀与记录互补**」这一条：只看形状的话，
+      `[[{a:1}], {a:2, name:"x"}]` 这种普通嵌套也会被误拼成一条假记录。
+    """
+    if len(value) < 2 or not isinstance(value[0], list):
+        return None
+    head, rows = value[0], value[1:]
+    if not rows or not all(isinstance(row, dict) for row in rows):
+        return None
+    if head and not all(isinstance(item, dict) for item in head):
+        return None
+    shared = set(head[0]) if head else set()
+    if shared and shared <= set(rows[0]):
+        # 公共前缀的键在记录里**全都有** ⇒ 它不是被抽出去的共享值，只是普通嵌套数组
+        return None
+    merged: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        base = dict(head[index % len(head)]) if head else {}
+        base.update(row)
+        merged.append(base)
+    return merged
+
+
 def _dict_candidates(
-    prefix: str, mapping: dict[str, Any], words: frozenset[str], depth: int
+    prefix: str,
+    mapping: dict[str, Any],
+    words: frozenset[str],
+    depth: int,
+    *,
+    shared_prefix: bool = False,
+    budget: list[int] | None = None,
+    max_depth: int = _MAX_ARRAY_DEPTH,
 ) -> list[ItemPathCandidate]:
+    """把一个 dict 里"可能是记录集合"的嵌套数组都变成候选。
+
+    ``shared_prefix`` 是给**内嵌 SSR 数据**用的（见 ``embedded_json``）：那些框架会
+    把公共字段抽到第一个元素里做去重，于是同一份列表被拆成"只有 ID 的公共前缀"
+    与"只有业务字段的剩余行"。分开看全是残片，合起来才是完整记录。
+
+    ★ 刻意**不**默认开启：普通 REST 响应里的嵌套数组是**各自独立的数据**，
+      硬拼会给出一条字段对不上的假记录。
+
+    ``budget`` 是遍历配额（单元素列表，跨递归共享）：内嵌载荷可能有成千上万个
+    嵌套对象，深度优先全扫一遍既慢又没必要 —— 真正的记录集合几乎总在浅层。
+    """
     out: list[ItemPathCandidate] = []
     for key, value in mapping.items():
         if not isinstance(value, list) or not value:
@@ -203,18 +258,45 @@ def _dict_candidates(
         if segment is None:
             continue
         out.append(_array_candidate(f"{prefix}{segment}[*]", str(key), value, words))
-    if depth + 1 < _MAX_ARRAY_DEPTH:
+        if shared_prefix:
+            merged = _shared_prefix_records(value)
+            if merged:
+                out.append(
+                    _array_candidate(f"{prefix}{segment}[*]", str(key), merged, words)
+                )
+    if depth + 1 < max_depth:
         for key, value in mapping.items():
             if not isinstance(value, dict) or not value:
                 continue
             segment = _segment(str(key))
             if segment is None:
                 continue
-            out.extend(_dict_candidates(f"{prefix}{segment}", value, words, depth + 1))
+            if budget is not None:
+                if budget[0] <= 0:
+                    return out
+                budget[0] -= 1
+            out.extend(
+                _dict_candidates(
+                    f"{prefix}{segment}",
+                    value,
+                    words,
+                    depth + 1,
+                    shared_prefix=shared_prefix,
+                    budget=budget,
+                    max_depth=max_depth,
+                )
+            )
     return out
 
 
-def rank_item_paths(payload: Any, *, url: str = "") -> tuple[ItemPathCandidate, ...]:
+def rank_item_paths(
+    payload: Any,
+    *,
+    url: str = "",
+    shared_prefix: bool = False,
+    budget: int | None = None,
+    max_depth: int = _MAX_ARRAY_DEPTH,
+) -> tuple[ItemPathCandidate, ...]:
     """给「记录路径」的所有候选打分，按分数降序（同分按路径字典序）返回。
 
     候选来自两处：
@@ -222,13 +304,20 @@ def rank_item_paths(payload: Any, *, url: str = "") -> tuple[ItemPathCandidate, 
       以及 URL 是否以资源 id 收尾；
     - **嵌套数组**（`$.a[*]` / `$.a.b[*]`）—— 得分看数组规模、元素字段数、标识字段、
       键名是否集合语义、键名是否与 URL 路径词吻合。
+
+    ``shared_prefix`` 见 ``_dict_candidates``；``budget`` 限制嵌套遍历次数。
     """
     words = _url_words(url)
     candidates: list[ItemPathCandidate] = []
+    limit = [budget] if budget is not None else None
 
     if isinstance(payload, list):
         if payload:
             candidates.append(_array_candidate("$[*]", "", payload, words))
+            if shared_prefix:
+                merged = _shared_prefix_records(payload)
+                if merged:
+                    candidates.append(_array_candidate("$[*]", "", merged, words))
     elif isinstance(payload, dict):
         scalar_count = _scalar_count(payload)
         if scalar_count:
@@ -241,15 +330,27 @@ def rank_item_paths(payload: Any, *, url: str = "") -> tuple[ItemPathCandidate, 
                 score += _W_SINGLE_RECORD
                 reasons.append("URL 以资源 id 收尾（单对象）")
             candidates.append(ItemPathCandidate("$", [payload], round(score, 3), tuple(reasons)))
-        candidates.extend(_dict_candidates("$", payload, words, 0))
+        candidates.extend(
+            _dict_candidates(
+                "$",
+                payload,
+                words,
+                0,
+                shared_prefix=shared_prefix,
+                budget=limit,
+                max_depth=max_depth,
+            )
+        )
 
     candidates.sort(key=lambda item: (-item.score, item.path))
     return tuple(candidates)
 
 
-def choose_item_path(payload: Any, *, url: str = "") -> ItemPathCandidate | None:
+def choose_item_path(
+    payload: Any, *, url: str = "", shared_prefix: bool = False
+) -> ItemPathCandidate | None:
     """取分数最高的候选；没有任何候选时返回 ``None``。"""
-    ranked = rank_item_paths(payload, url=url)
+    ranked = rank_item_paths(payload, url=url, shared_prefix=shared_prefix)
     return ranked[0] if ranked else None
 
 

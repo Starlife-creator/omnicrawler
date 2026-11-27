@@ -284,6 +284,9 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         "extract": set(DEFAULTS["extract"]) | {
             "item_path", "enrich", "scene",
             "parser_options", "processor_options", "extractor_options", "deduplicate_by",
+            # 2026-11-27：内嵌 JSON 数据（Next.js / Nuxt 的 SSR 载荷）作为**兜底**数据源。
+            # 静态 DOM 里没有列表、但页面内嵌了完整数据时，用它补齐而不是直接判失败。
+            "embedded_json",
         },
         "http": set(DEFAULTS["http"]) | {"retry_max"},
         "incremental": set(DEFAULTS["incremental"]) | {"since_date"},

@@ -147,4 +147,17 @@ omnicrawler components run --component-dir <已装配目录> --payload '{"...":1
 
 自动列表中，标题属性仅在对应可见标题时采用；标签用 `all: true` 保留数组。稳定详情链接对应 `extract.deduplicate_by` 时，同实体、同数据在同轮只交付一次，内容变化或标识缺失保留原记录，不按同名标题合并。
 
+### SPA 的内嵌数据（2026-11-27）
+
+现代前端（Next.js / Nuxt / Gatsby）把整页数据放在 `<script type="application/json">`
+或 `window.__INITIAL_STATE__ = {...}` 里，DOM 只剩一个空挂载点。这类页面**不必开浏览器**：
+
+* `auto-analyze` 在「HTML 结构给不出列表」时会自动改用内嵌数据，产出
+  `extract.embedded_json`（`item_path` + `source`）与 `source.kind: static_html`；
+* 手工配置时字段规则写 `source: embedded_json` 即从**整页**取一次（文档级）；
+  再加 `record_level: true` 才是「相对当前记录取值」—— 不加就会广播给每一行；
+* `application/ld+json` 仍归 `jsonld` 来源，两者不重复提取。
+
+判断顺序是**先 DOM 后内嵌数据**：有可用列表 DOM 的站点行为完全不变。
+
 发现遗漏用 `recovery coverage --limit 100 --offset 0`，可用 `--run-id` 核对历史。明确选择父请求后 `recovery retry-discovery --fingerprint ...`，再 `resume -c <配置>`；范围、robots 与预算仍生效。参见 [发现清单与补采](DISCOVERY_COVERAGE.md)。

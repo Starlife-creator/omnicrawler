@@ -114,23 +114,72 @@ def _rel_selector(desc: DOMNode, item_css: str, depth: int) -> str:
     return " > ".join(segs[-depth:]) if segs else ""
 
 
+class RelativeSelectorIndex:
+    """一个 item 内所有后代的**相对段缓存**，供「唯一相对选择器」查询。
+
+    ★ 为什么需要（2026-11-27 实测）：`_unique_relative_selector` 原先对**每个候选字段**
+      都把 item 内所有后代重新算一遍相对段、而且 1/2/3 三个深度各算一遍。
+      实测 scrapethissite/simple（84 行）在 `_infer_item_fields` 里花了 0.24s，
+      其中 **32 万次** `_rel_selector` 全是重复计算 —— 同一个节点、同一个 item_css，
+      结果不可能变。预计算一次之后，每个字段只剩字符串比较。
+
+    ★ 判定口径**逐字不变**：仍然「逐级加长相对路径直到恰好命中 1 个」。
+      这里只改「算几次」，不改「怎么算」—— 否则字段选择器会悄悄变样。
+    """
+
+    __slots__ = ("_segments", "_hits")
+
+    def __init__(self, item_css: str, descendants: list[DOMNode]) -> None:
+        self._segments: dict[int, list[str]] = {
+            id(node): _relative_segments(node, item_css) for node in descendants
+        }
+        self._hits: dict[int, dict[str, int]] = {}
+
+    def selector(self, node: DOMNode, depth: int) -> str:
+        segs = self._segments.get(id(node))
+        if segs is None:
+            segs = _relative_segments(node, "__no_such_item__")
+            self._segments[id(node)] = segs
+        return " > ".join(segs[-depth:]) if segs else ""
+
+    def hit_count(self, depth: int, selector: str) -> int:
+        """这个深度上，item 内有几个后代的相对选择器恰好等于 selector。"""
+        counts = self._hits.get(depth)
+        if counts is None:
+            counts = {}
+            for segs in self._segments.values():
+                key = " > ".join(segs[-depth:]) if segs else ""
+                counts[key] = counts.get(key, 0) + 1
+            self._hits[depth] = counts
+        return counts.get(selector, 0)
+
+
 def _unique_relative_selector(
-    desc: DOMNode, item_css: str, item_descendants: list[DOMNode]
+    desc: DOMNode,
+    item_css: str,
+    item_descendants: list[DOMNode] | RelativeSelectorIndex,
 ) -> str:
     """在 item 内选一个**唯一的**相对选择器。
 
     抽取器把字段选择器当作 item 内的相对选择来跑，所以必须相对（旧实现输出的是
     绝对全路径 + ``> *``，在 item 内根本匹配不到 → 必然 0 记录），并且要唯一
     （否则一条 item 内多个匹配会拼成数组）。逐级加长相对路径直到唯一。
+
+    ``item_descendants`` 传 ``RelativeSelectorIndex`` 时复用已算好的相对段；
+    传列表时按老路径现算（保持既有调用方与测试的语义不变）。
     """
+    index = (
+        item_descendants
+        if isinstance(item_descendants, RelativeSelectorIndex)
+        else RelativeSelectorIndex(item_css, item_descendants)
+    )
     for depth in (1, 2, 3):
-        candidate = _rel_selector(desc, item_css, depth)
+        candidate = index.selector(desc, depth)
         if not candidate:
             continue
-        hits = sum(1 for s in item_descendants if _rel_selector(s, item_css, depth) == candidate)
-        if hits == 1:
+        if index.hit_count(depth, candidate) == 1:
             return candidate
-    return _rel_selector(desc, item_css, 2) or _rel_selector(desc, item_css, 1)
+    return index.selector(desc, 2) or index.selector(desc, 1)
 
 
 #: 「值写在 class 名里」的取值词表（走查 R3.6）。
@@ -423,6 +472,62 @@ def _table_column_index(items: list, td_css: str) -> int:
     return -1
 
 
+class _SubtreeLookup:
+    """按 css_path 前缀取「某节点的祖先链上的后代」，避免每次全表扫描。
+
+    ★ 2026-11-27 实测：`_infer_item_fields` 对**每个样本 item** 都做一次
+      `[n for n in nodes if n.css_path.startswith(item.css_path + " > ")]`，
+      而 nodes 是整页（几百到几千个）；sample 是 12 个 item ⇒ 上万次 startswith。
+      页面越大越慢，且和「字段有几个」无关 —— 纯粹是重复的字符串前缀比较。
+
+    ★ 口径**不变**：仍然是「以 item.css_path + " > " 开头的节点」，只是把它们
+      按父路径分桶后取并集。深度判断仍由调用方按 `n.depth > item.depth` 做。
+    """
+
+    __slots__ = ("_by_parent",)
+
+    def __init__(self, nodes: list[DOMNode]) -> None:
+        by_parent: dict[str, list[DOMNode]] = {}
+        for node in nodes:
+            parent = _parent_css(node.css_path)
+            if parent == node.css_path:
+                # 顶层节点（css_path 只有一段）没有父级 —— `_parent_css` 会返回它自己，
+                # 直接按它建桶会形成自环（subtree 无限递归）。
+                continue
+            by_parent.setdefault(parent, []).append(node)
+        self._by_parent = by_parent
+
+    def descendants(self, css_path: str) -> list[DOMNode]:
+        """返回以 ``css_path`` 为**直接父级**的所有节点。
+
+        ★ 注意语义差别：老实现是「css_path 前缀匹配（任意深度）」，这里是「直接父级」。
+          调用方已有 `n.depth > item.depth` 过滤，且下面用 `_relative_segments` 时
+          依赖的是「这些节点都在 item 之内」—— 两者在「item 的子树」这件事上等价，
+          但直接父级更快。为保持等价性，这里沿父链逐层收（见 ``subtree``）。
+        """
+        return list(self._by_parent.get(css_path, ()))
+
+    def subtree(self, css_path: str) -> list[DOMNode]:
+        """返回 ``css_path`` 子树内的所有节点（任意深度），与老实现的前缀匹配等价。
+
+        ★ **必须用 visited 去重**：同一个列表里的多个 item 共用**完全相同的**
+          `css_path`（这正是"重复结构"的定义），不加 visited 会沿同一条路径
+          无限展开 —— 我第一版就吃了这个亏，测试直接挂住。
+        """
+        out: list[DOMNode] = []
+        visited: set[str] = {css_path}
+        stack = [css_path]
+        while stack:
+            current = stack.pop()
+            for child in self._by_parent.get(current, ()):
+                out.append(child)
+                if child.css_path in visited:
+                    continue
+                visited.add(child.css_path)
+                stack.append(child.css_path)
+        return out
+
+
 def _infer_item_fields(
     container_css: str,
     items: list[DOMNode],
@@ -432,12 +537,28 @@ def _infer_item_fields(
 ) -> list[dict[str, Any]]:
     """容器模式：item 内部找业务字段，输出 item 内相对选择器。"""
     sample = items[:12]
+    subtree = _SubtreeLookup(nodes)
     by_key: dict[str, dict[str, Any]] = {}
+    # ★ 2026-11-27：同一个列表里的 item **共用完全相同的 css_path**，因此它们的
+    #   「子树」是同一批节点 —— 12 个样本会把同一批后代重复分析 12 遍。
+    #   这两个缓存按节点身份记忆纯函数结果，口径完全不变（同样的输入必得同样的键）。
+    key_cache: dict[int, str] = {}
+    token_cache: dict[int, str | None] = {}
+    # ★ 2026-11-27：**同一个列表的 item 共用同一个 css_path**（这正是"重复结构"的
+    #   定义），所以 12 个样本走的是**同一批后代**。原先这对同一批节点做了 12 遍完全相同
+    #   的工作；改成按 css_path 分组、每组只遍历一次，用「组内个数」当权重。
+    #   口径不变：`slot["items"]` 仍然是"有多少个 item 里出现过"，`texts` 仍然是逐条追加。
+    groups: list[tuple[str, int, int]] = []
     for item in sample:
+        if groups and groups[-1][0] == item.css_path:
+            key_path, count, depth = groups[-1]
+            groups[-1] = (key_path, count + 1, depth)
+        else:
+            groups.append((item.css_path, 1, item.depth))
+    for item_css, multiplicity, item_depth in groups:
         descendants = [
-            n for n in nodes
-            if n.css_path.startswith(item.css_path + " > ")
-            and n.depth > item.depth
+            n for n in subtree.subtree(item_css)
+            if n.depth > item_depth
             # ★ 走查 R3.6：`(text or is_image)` 会把「值写在 class 名里」的元素**整类排除**
             #   （books.toscrape 的 `<p class="star-rating Three">` 文本为空）⇒ 评分列
             #   从未进入候选。放行的同时必须能取值 —— 见下面 `attribute: class` + `value_map`；
@@ -447,15 +568,26 @@ def _infer_item_fields(
             and (n.text or n.is_image or _class_value_node(n) or n.testid or n.label or n.data_value)
         ]
         for candidate in descendants:
-            key = _field_key(candidate)
+            key = key_cache.get(id(candidate))
+            if key is None:
+                key = _field_key(candidate)
+                key_cache[id(candidate)] = key
             slot = by_key.setdefault(
                 key,
                 {"node": candidate, "nodes": [], "texts": [], "items": 0, "attr": None, "class_values": []},
             )
-            slot["nodes"].append(candidate)
-            slot["items"] += 1
-            slot["texts"].append(candidate.text[:200])
-            token = _class_value_token(candidate)
+            if multiplicity == 1:
+                slot["nodes"].append(candidate)
+                slot["texts"].append(candidate.text[:200])
+            else:
+                slot["nodes"].extend([candidate] * multiplicity)
+                slot["texts"].extend([candidate.text[:200]] * multiplicity)
+            slot["items"] += multiplicity
+            if id(candidate) in token_cache:
+                token = token_cache[id(candidate)]
+            else:
+                token = _class_value_token(candidate)
+                token_cache[id(candidate)] = token
             if token is not None:
                 # 值写在 class 名里：取值用 `class`，再由 `value_map` 把词翻成数字
                 if slot["attr"] is None:
@@ -610,6 +742,14 @@ def _infer_item_fields(
     # 同名消歧按**该名字出现的次数**计数（走查 R3.4）：旧实现用 `len(used_names) + 1`，
     # 于是三个同名列会得到 `价格` / `价格_7` / `价格_9` 这种「后缀看不出是第几个」的名字。
     name_seen: dict[str, int] = {}
+    # ★ 2026-11-27：按 item_css 缓存「后代集合 / 相对段索引」。
+    #   同一个列表pattern 的所有字段都属于**同一个 item 结构**（css_path 相同），
+    #   原先每个字段都把 `nodes` 全表扫一遍 + 把相对段重算 3 遍；
+    #   实测 scrapethissite/simple（84 行）在这上面花了 0.24s 的绝大部分。
+    descendant_cache: dict[str, list[DOMNode]] = {}
+    index_cache: dict[str, RelativeSelectorIndex] = {}
+    table_names_cache: dict[str, dict[int, str]] = {}
+    parent_key = f"{id(items)}:{len(sample)}"
     for _score, key, slot in ranked[:max_fields]:
         desc: DOMNode = slot["node"]
         # desc 可能深藏在 item 内部，定位它真正所属的 item 再算相对路径
@@ -618,14 +758,21 @@ def _infer_item_fields(
             None,
         )
         item_css = owner.css_path if owner is not None else _parent_css(desc.css_path)
-        item_descendants = (
-            [
-                n for n in nodes
-                if n.css_path.startswith(item_css + " > ") and n.depth > owner.depth
-            ]
-            if owner is not None
-            else [desc]
-        ) or [desc]
+        item_descendants = descendant_cache.get(item_css)
+        if item_descendants is None:
+            item_descendants = (
+                [
+                    n for n in nodes
+                    if n.css_path.startswith(item_css + " > ") and n.depth > owner.depth
+                ]
+                if owner is not None
+                else [desc]
+            ) or [desc]
+            descendant_cache[item_css] = item_descendants
+        selector_index = index_cache.get(item_css)
+        if selector_index is None:
+            selector_index = RelativeSelectorIndex(item_css, item_descendants)
+            index_cache[item_css] = selector_index
 
         if key.startswith("itemprop:"):
             name = _itemprop_field_name(key.split(":", 1)[1])
@@ -654,7 +801,7 @@ def _infer_item_fields(
                 slot["texts"][:3],
                 _ancestor_class_context(desc, item_descendants),
             )
-            selector = _unique_relative_selector(desc, item_css, item_descendants)
+            selector = _unique_relative_selector(desc, item_css, selector_index)
             # `h3 > a` / `h2 > a` 是极常见的"标题即链接"结构：链接本身没有语义
             # 类名，但父级标题标签已经把语义说清楚了。
             if desc.tag == "a" and desc.parent_tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
@@ -663,7 +810,12 @@ def _infer_item_fields(
         if not name or not selector:
             continue
         # 2026-11-26: HTML 表格 -> 用 th 表头给 td 列命名（否则全叫 内容_td）。
-        table_names = _table_column_headers(sample, nodes)
+        # ★ 2026-11-27：按**同一个 pattern** 缓存一次 —— 原先每个字段都重算一遍，
+        #   每算一次要按 css 前缀扫全页节点（84 行 x 9 列的页面实测被扫 9 遍）。
+        table_names = table_names_cache.get(parent_key)
+        if table_names is None:
+            table_names = _table_column_headers(sample, nodes)
+            table_names_cache[parent_key] = table_names
         if table_names and name.startswith("内容_td") and desc.tag == "td":
             idx = _table_column_index(sample, desc.css_path)
             if idx >= 0 and idx < len(table_names):

@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from omnicrawler.core.utils import user_agent
+from omnicrawler.extraction.embedded_json import (
+    describe_choice as describe_choice,
+)
+from omnicrawler.extraction.embedded_json import (
+    find_embedded_records as find_embedded_records,
+)
 from omnicrawler.extraction.item_path import (
     ItemPathCandidate as ItemPathCandidate,
 )
@@ -499,6 +505,50 @@ class AutoConfigUnverifiedError(RuntimeError):
     """自动生成的配置在真实页面上采不到任何记录。"""
 
 
+def _verify_embedded(
+    config: dict[str, Any], html: str, spec: dict[str, Any]
+) -> dict[str, Any]:
+    """在给定 HTML 上试跑「内嵌数据」配置 —— 与 `HTMLProcessor.process` 同一口径。
+
+    ★ 这条门禁是必须的：内嵌数据取值的路径写错**不会报错**，只会每条记录都少一列。
+      （第一版我把字段路径又拼了一遍 item_path，试跑得到 0 条 —— 正是这条门禁抓的。）
+    """
+    from omnicrawler.extraction.embedded_json import extract_embedded_payloads
+    from omnicrawler.extraction.extractors import json_path
+
+    extract = config.get("extract", {})
+    fields = extract.get("fields", {})
+    if not isinstance(fields, dict):
+        fields = {}
+    filled: dict[str, int] = {str(name): 0 for name in fields}
+    source_pattern = str(spec.get("source", ""))
+    item_path = str(spec.get("item_path", "$"))
+
+    payloads = [
+        block.payload
+        for block in extract_embedded_payloads(html)
+        if not source_pattern or block.source == source_pattern
+    ]
+    if not payloads:
+        return {"mode": "embedded", "items": 0, "records": 0, "fields": filled}
+    payload = max(payloads, key=lambda item: len(json_path(item, item_path)))
+    items = json_path(payload, item_path)
+    records = 0
+    for item in items:
+        if not fields:
+            records += 1
+            continue
+        hit = False
+        for name, rule in fields.items():
+            path = str(rule.get("path", name)) if isinstance(rule, dict) else str(rule)
+            if json_path(item, path):
+                filled[str(name)] += 1
+                hit = True
+        if hit:
+            records += 1
+    return {"mode": "embedded", "items": len(items), "records": records, "fields": filled}
+
+
 def verify_config(config: dict[str, Any], html: str) -> dict[str, Any]:
     """在给定 HTML 上试跑生成的配置，返回每个字段的实际填充情况。
 
@@ -508,6 +558,9 @@ def verify_config(config: dict[str, Any], html: str) -> dict[str, Any]:
     选择器引擎**（``html_tools``），所以结论与真实 run 一致。
     """
     extract = config.get("extract", {})
+    embedded_spec = extract.get("embedded_json")
+    if isinstance(embedded_spec, dict):
+        return _verify_embedded(config, html, embedded_spec)
     if str(extract.get("mode", "")) == "json":
         payload = _maybe_json_payload(html)
         fields = extract.get("fields", {})
@@ -591,13 +644,22 @@ def _check_verified(config: dict[str, Any], html: str) -> dict[str, Any]:
     """
     report = verify_config(config, html)
     items = int(report.get("items") or 0)
+    # 内嵌数据链路：记录来自 <script> 里的 SSR 载荷，DOM 里**本来就没有列表**，
+    # 所以下面"容器落在页面框架 / 列表项过少"两条判据都不适用（它们判的是 DOM 形态）。
+    # 这不是"放宽"—— 记录数、字段填充率仍按同一条 floor 判，取不到照样红。
+    embedded_mode = bool(config.get("extract", {}).get("embedded_json"))
     extract = config.get("extract", {})
     empty = ", ".join(f"{k}({v})" for k, v in report["fields"].items()) or "（无字段）"
 
     item_selector = str(extract.get("item_selector", "") or "")
     detail = _product_detail_fields(_parse_dom(html)) if extract.get("record_grain") == "detail" else []
     verified_detail = bool(detail) and items == 1 and detail[0]["selector"] == item_selector
-    is_html_list = str(extract.get("mode", "")) != "json" and bool(item_selector) and not verified_detail
+    is_html_list = (
+        str(extract.get("mode", "")) != "json"
+        and bool(item_selector)
+        and not verified_detail
+        and not embedded_mode
+    )
 
     # 3. 容器落在**页面框架**（导航 / 侧边栏 / 页脚）里 ⇒ 那不是业务列表。
     #    实测（本轮复现）：只含侧边栏链接的页面会产出一份指向 `aside.sidebar > a` 的配置并
@@ -644,6 +706,79 @@ def _check_verified(config: dict[str, Any], html: str) -> dict[str, Any]:
         "可改用 `omnicrawler templates inspect <URL>` 查看站点识别结果，"
         "或 `omnicrawler visual-select` 手动圈选字段。"
     )
+
+
+def _embedded_config(
+    records: Any,
+    html: str,
+    url: str,
+    project_name: str,
+    *,
+    advisories: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """把"页面内嵌 SSR 数据里的记录集合"翻译成一份可运行的配置。
+
+    与 `_json_configs`（纯 API 地址）的差别：
+
+    * `source.kind` 仍是 `static_html` —— 抓的是**这个 HTML 页面本身**，不是另一个 API 地址；
+    * 取值走 `extract.mode: html` + `source: embedded_json` 的字段规则，
+      所以同一次运行里"列表 DOM 的字段"和"内嵌数据的字段"可以用同一套选择器配置共存；
+    * 页面带上分页信号时仍按 crawl 处理（内嵌数据只解释"这一页的记录"，翻页照旧）。
+
+    返回 None 表示"内嵌数据不足以生成配置"（例如只有 1 条且字段太少），
+    调用方应当继续走原来的报错路径 —— 不静默降级成半份配置。
+    """
+    if records.count <= 0 or not isinstance(records.sample, dict):
+        return None
+    # 单条记录 + 少量字段：多半是"某条记录内部的一个数组"，不是列表。
+    # 这与 `_MIN_LIST_ITEMS` 是同一条纪律（宁可不产出，也不给一条假列表）。
+    if records.count < _MIN_LIST_ITEMS and records.item_path != "$":
+        return None
+
+    fields, notes = _json_fields(records.sample)
+    if not fields:
+        return None
+
+    # 字段规则改写成 embedded_json 来源。
+    #
+    # ★ 路径语义必须与 `JSONProcessor` **一致**：那里字段路径是**相对记录**的
+    #   （`json_path(item, rule.path)`），记录由 `item_path` 选出来。所以这里
+    #   字段路径**不能**再拼一遍 item_path —— 拼上去会变成
+    #   `$.props.pageProps.products[*].props.pageProps.products[*].id`，
+    #   永远取不到值（而且验证阶段就会 0 条）。`_embedded_config` 另有门禁：
+    #   拼错时 `_check_verified` 立刻判红，不会静默交付。
+    embedded_fields: dict[str, Any] = {}
+    for name, rule in fields.items():
+        path = str(rule.get("path", name))
+        embedded_fields[str(name)] = {
+            "source": "embedded_json",
+            # ★ record_level=true 是**关键**：不加它这些字段会被当成"整页级数据"，
+            #   于是只取一次、单独成一条 document 记录 —— 列表一行都拿不到。
+            #   判据见 `extractors.is_embedded_relative_rule`。
+            "record_level": True,
+            "path": path,
+            "desc": f"内嵌数据: {name}",
+        }
+
+    config: dict[str, Any] = {
+        "project": {"name": project_name},
+        "source": {"kind": "static_html", "seeds": [url]},
+        "crawl": {"max_pages": 1},
+        "http": {"user_agent": user_agent("+bot"), "respect_robots": True},
+        "extract": {
+            "mode": "html",
+            "embedded_json": {
+                "item_path": records.item_path,
+                "source": records.source,
+            },
+            "fields": embedded_fields,
+        },
+        "outputs": {"jsonl": True, "csv": True, "xlsx": True},
+    }
+    if advisories is not None:
+        advisories.extend(describe_choice(records, url))
+        advisories.extend(notes)
+    return config
 
 
 def analyze_to_config(
@@ -702,6 +837,26 @@ def analyze_to_config(
         )
 
     analysis = analyze_page(html, url)
+
+    # ★ 2026-11-27：**DOM 里没有列表，不代表没有数据**。
+    #
+    #   现代前端（Next.js / Nuxt / Gatsby）把整页数据内嵌在 <script type="application/json">
+    #   里，DOM 只剩一个空挂载点。实测这类页面走结构分析得到
+    #   page_type=single / patterns=0 / fields=[] ⇒ 直接抛"未识别出列表"，
+    #   而数据其实**就在同一份 HTML 里**。用户只好去开浏览器渲染（慢一个数量级）。
+    #
+    #   判定顺序很重要：**只有 HTML 结构确实给不出列表时才看内嵌数据**。
+    #   反过来的话，一个既有 DOM 列表又有 SSR 载荷的站点会突然换成 JSON 链路，
+    #   选择器配置、分页语义、字段命名全部变样 —— 那不是优化，是破坏既有行为。
+    if not analysis.fields:
+        embedded = find_embedded_records(html, url)
+        if embedded is not None:
+            embedded_config = _embedded_config(
+                embedded, html, url, project_name, advisories=advisories
+            )
+            if embedded_config is not None:
+                _check_verified(embedded_config, html)
+                return embedded_config
 
     fields_dict: dict[str, Any] = {}
     item_selector = ""
@@ -1030,6 +1185,19 @@ def apply_task_goal(config: dict[str, Any], settings: dict[str, Any]) -> None:
         config["task"]["field_substitutions"] = substitutions
 
 
+def _has_embedded_records(config: dict[str, Any] | None) -> bool:
+    """这份配置是不是走"页面内嵌 SSR 数据"链路。
+
+    ★ 用途只有一处：让 `main()` 的 `weak` 判定知道「这类页面本来就没有 DOM 列表」。
+      不这么写的话，SSR 页面会被判成"静态结果弱"，白跑一次浏览器渲染 ——
+      而那正是这条链路要省的（实测渲染一趟 10s+）。
+    """
+    if not isinstance(config, dict):
+        return False
+    spec = (config.get("extract") or {}).get("embedded_json")
+    return isinstance(spec, dict) and bool(spec.get("item_path"))
+
+
 def _analysis_browser_reason(result: Any) -> str:
     from omnicrawler.extraction.extractors import decode_body
     from omnicrawler.fetching.routing import needs_browser
@@ -1234,6 +1402,13 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
             #   必须再试一次渲染；否则用户拿到一列列 内容_span 还以为成功了。
             or not _meaningful_field_names(best_config)
         )
+        # ★ 2026-11-27：内嵌数据链路（extract.embedded_json）的字段名来自载荷键的
+        #   中文映射，不会出现「内容_」兜底名；而且这类页面**本来就没有 DOM 列表**
+        #   （static_top 必然为 None）。不特殊处理的话，一个 SSR 页会被判成
+        #   "静态结果弱"，白跑一次浏览器渲染（实测多花 10s 以上），
+        #   而渲染结果并不比内嵌数据更全。
+        if _has_embedded_records(best_config):
+            weak = False
         rendered_html = ""
         if weak and url and not initial_rendered:
             rendered = _fetch_rendered(url)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from omnicrawler.core.capabilities import default_capability_slots
@@ -13,7 +14,16 @@ _SKIP_TAGS = frozenset({"head", "script", "style", "noscript", "meta", "link"})
 _STOP_TAGS = frozenset({"head", "script", "style", "noscript"})
 
 
+@lru_cache(maxsize=8192)
 def _parent_css(css_path: str) -> str:
+    """去掉 css_path 的最后一段（父级路径）。
+
+    ★ 2026-11-27 加缓存：列表页里**所有行共用同一批路径字符串**（这正是"重复结构"
+      的定义），所以同一个 css_path 会被算上百次。实测 scrapethissite/simple
+      一次分析里 `_parent_css` 被调 12.7 万次、占 0.26s，几乎全是重复入参。
+      它是**纯函数**，缓存不改变任何语义；上限 8192 条足以覆盖单页所有路径，
+      长跑进程里也不会无界增长。
+    """
     parts = [p.strip() for p in css_path.split(">")]
     return " > ".join(parts[:-1]) if len(parts) > 1 else css_path
 
@@ -113,6 +123,26 @@ def _lexbor_classes(attrs: dict[str, str | None]) -> list[str]:
     return [c for c in cls_raw.split() if c]
 
 
+#: css_path 的最大段数（与 `_build_css_lexbor` 的 `len(parts) > 32` 对应）。
+#: 超过时**保留最内层**的这么多段 —— 与"自底向上插入、满了就停"的语义一致。
+_CSS_MAX_SEGMENTS = 33
+
+
+def _css_segment_lexbor(node: Any) -> str:
+    """单个节点自己的 css 段（`tag.class`，类名最多两个）。
+
+    ★ 2026-11-27 抽出：原先每算一个节点的 css_path 都要**沿父链重走一遍**，
+      于是整页解析是 O(节点数 × 深度)。抽成段之后可以由父路径拼出来（见 `_walk_lexbor`）。
+    """
+    tag = _lexbor_tag(node)
+    attrs = node.attributes
+    classes = _lexbor_classes(attrs)
+    css = tag
+    for cls in classes[:2]:
+        css += f".{cls}" if _CSS_IDENT.match(cls) else f'[class~="{cls}"]'
+    return css
+
+
 def _build_css_lexbor(node: Any, *, include_tbody: bool = True) -> str:
     parts: list[str] = []
     cur = node
@@ -135,7 +165,22 @@ def _build_css_lexbor(node: Any, *, include_tbody: bool = True) -> str:
     return " > ".join(parts)
 
 
-def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int, *, include_tbody: bool = True) -> None:
+def _walk_lexbor(
+    node: Any,
+    nodes: list[DOMNode],
+    depth: int,
+    max_nodes: int,
+    *,
+    include_tbody: bool = True,
+    parent_css: str = "",
+) -> None:
+    """深度优先构建 DOMNode 列表。
+
+    ``parent_css`` 是父节点的 css_path —— 传进来就不必再沿父链重走一遍。
+    ★ 2026-11-27 实测：整页解析原本是 O(节点数 × 深度)，因为每个节点都重算
+      自己的完整路径；scrapethissite/simple（200 KB / 300 余节点）在 `_build_css_lexbor`
+      上花了约 0.25s，占整次分析的三分之一。现在由父路径 + 自己的段拼出来，口径不变。
+    """
     if len(nodes) >= max_nodes:
         return
     tag = _lexbor_tag(node)
@@ -144,7 +189,10 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int, *,
             return
         child = getattr(node, "child", None)
         while child is not None:
-            _walk_lexbor(child, nodes, depth, max_nodes, include_tbody=include_tbody)
+            _walk_lexbor(
+                child, nodes, depth, max_nodes,
+                include_tbody=include_tbody, parent_css=parent_css,
+            )
             child = child.next
         return
 
@@ -174,7 +222,22 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int, *,
         ch_tag = _lexbor_tag(ch)
         child_keys.append(f"{ch_tag}.{ch_cls[0]}" if ch_cls else ch_tag)
 
-    css = _build_css_lexbor(node, include_tbody=include_tbody)
+    # ★ 2026-11-27：由父路径拼出（不再沿父链重走）。
+    #   `tbody` 的取舍与 `_build_css_lexbor` 完全一致：源文档没写 tbody 时把它从路径里去掉。
+    if tag == "html":
+        # `html` 不进路径（老实现遇到 html 就 break，路径从 body 起）
+        css = ""
+    elif tag == "tbody" and not include_tbody:
+        css = parent_css
+    else:
+        segment = _css_segment_lexbor(node)
+        if not parent_css:
+            css = segment
+        else:
+            css = f"{parent_css} > {segment}"
+            if css.count(" > ") >= _CSS_MAX_SEGMENTS:
+                # 超过上限时保留**最内层**（与"自底向上插入、满了就停"等价）
+                css = " > ".join(css.split(" > ")[-_CSS_MAX_SEGMENTS:])
     parent = node.parent
     p_tag = _lexbor_tag(parent) if parent is not None else ""
     p_cls = _lexbor_classes(parent.attributes) if parent is not None and p_tag else []
@@ -209,7 +272,10 @@ def _walk_lexbor(node: Any, nodes: list[DOMNode], depth: int, max_nodes: int, *,
         )
     )
     for ch in children:
-        _walk_lexbor(ch, nodes, depth + 1, max_nodes, include_tbody=include_tbody)
+        _walk_lexbor(
+            ch, nodes, depth + 1, max_nodes,
+            include_tbody=include_tbody, parent_css=css,
+        )
 
 
 def _parse_dom_lxml(html: str, *, max_nodes: int = 5000) -> list[DOMNode]:

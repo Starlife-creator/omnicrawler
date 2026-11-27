@@ -141,7 +141,7 @@ def decode_body(result: FetchResult) -> str:
     return result.body.decode("utf-8", errors="replace")
 
 
-def _structured_metadata(document: Any, result: FetchResult) -> dict[str, Any]:
+def _structured_metadata(document: Any, result: FetchResult, text: str = "") -> dict[str, Any]:
     jsonld: list[Any] = []
     for node in select_nodes(document, 'script[type="application/ld+json"]'):
         raw = node_text(node).strip()
@@ -173,9 +173,17 @@ def _structured_metadata(document: Any, result: FetchResult) -> dict[str, Any]:
     browser_responses = result.meta.get("api_responses", [])
     if not isinstance(browser_responses, list):
         browser_responses = []
+    # 2026-11-27：内嵌 SSR 数据（__NEXT_DATA__ / __NUXT__ / __INITIAL_STATE__…）
+    # 单独成桶，来源名就叫 embedded_json —— 与 jsonld 平级、互不覆盖。
+    from .embedded_json import extract_embedded_payloads
+
+    embedded = [
+        {"source": item.source, "json": item.payload}
+        for item in extract_embedded_payloads(text)
+    ]
     return {
         "jsonld": jsonld, "open_graph": open_graph, "twitter": twitter, "meta": meta,
-        "browser_responses": browser_responses,
+        "browser_responses": browser_responses, "embedded_json": embedded,
     }
 
 
@@ -188,7 +196,10 @@ def _structured_metadata(document: Any, result: FetchResult) -> dict[str, Any]:
 #:   技术上叫广播，数据上是**假数据**，而且完全看不出来。
 _DOCUMENT_LEVEL_SOURCES = frozenset(
     {"jsonld", "opengraph", "open_graph", "twitter", "meta",
-     "browser_response", "network_response", "api_response"}
+     "browser_response", "network_response", "api_response",
+     # 2026-11-27：内嵌 SSR 载荷（__NEXT_DATA__ 之类）描述的是**整页**的那份数据，
+     # 不是列表某一行 —— 与 jsonld 同族，必须走文档级、不许广播到每一行。
+     "embedded_json"}
 )
 
 
@@ -259,6 +270,38 @@ def _structured_rule(
             value, meta_trace, kind=_address_rule_kind(rule, key_path=key), base_url=base_url
         )
         return True, value, meta_trace
+    if source == "embedded_json":
+        # 2026-11-27：从页面内嵌的 SSR 载荷里取值（__NEXT_DATA__ / __NUXT__ 等）。
+        # 与 jsonld 的差别：那个取的是"给搜索引擎的整页描述"，这个取的是"页面自己的业务数据"。
+        path = str(rule.get("path", rule.get("jsonld_path", field_name)))
+        source_pattern = str(rule.get("source_pattern", ""))
+        embedded_values: list[Any] = []
+        embedded_sources: list[str] = []
+        for block in structured.get("embedded_json", []):
+            if not isinstance(block, dict):
+                continue
+            block_name = str(block.get("source", ""))
+            if source_pattern and not re.search(source_pattern, block_name):
+                continue
+            matched = json_path(block.get("json"), path)
+            embedded_values.extend(matched)
+            embedded_sources.extend([block_name] * len(matched))
+        value = embedded_values if rule.get("all") else (
+            embedded_values[0] if embedded_values else rule.get("default")
+        )
+        embedded_trace = {
+            "source": "embedded_json", "path": path,
+            "block": embedded_sources[0] if embedded_sources else None,
+            "matches": len(embedded_values),
+            "raw_value": embedded_values[0] if embedded_values else None,
+            "clean_value": value, "rule": dict(rule),
+            "confidence": 1.0 if embedded_values else 0.0,
+        }
+        value, embedded_trace = _with_absolutized_value(
+            value, embedded_trace, kind=_address_rule_kind(rule, key_path=path),
+            base_url=base_url,
+        )
+        return True, value, embedded_trace
     if source in {"browser_response", "network_response", "api_response"}:
         path = str(rule.get("path", "$"))
         url_pattern = str(rule.get("url_pattern", ""))
@@ -464,6 +507,76 @@ def _apply_rule(
     )
 
 
+def is_embedded_relative_rule(rule: Any) -> bool:
+    """这条字段规则是不是"从**当前记录**里按 JSONPath 取值"（内嵌数据链路）。
+
+    ★ 与 `is_document_level_rule` 的分工要说清：两者都从内嵌载荷取值，但**粒度**不同 ——
+      * 本函数判的是「这条记录自己的字段」：路径相对 `item`，每条记录各取各的；
+      * `is_document_level_rule` 判的是「整页那一份数据」：只取一次，单独成一条 document 记录。
+
+      判据是 `record_level: true`：生成器写它，人工也能写。默认**不是**记录级 ——
+      "内嵌数据"在用户心里首先是"整页的那份数据"，默认广播给每一行正是踩过的坑。
+    """
+    if not isinstance(rule, dict):
+        return False
+    source = str(rule.get("source", "")).casefold().replace("-", "_")
+    return source == "embedded_json" and bool(rule.get("record_level"))
+
+
+def _embedded_value(
+    item: Any, rule: dict[str, Any], *, base_url: str = ""
+) -> tuple[Any, dict[str, Any]]:
+    """按规则从**当前记录**取值（内嵌数据链路）。
+
+    ★ 取值语义与 `JSONProcessor` 完全一致：字段 path 是**相对记录**的 JSONPath。
+      这里刻意不碰 `structured` —— 那份是整页载荷，用它取字段就成了广播
+      （30 行拿到同一个值的假数据，本项目已经踩过一次）。
+    """
+    path = str(rule.get("path", ""))
+    values = json_path(item, path) if path else [item]
+    value: Any = values if rule.get("all") else (values[0] if values else rule.get("default"))
+    trace = {
+        "source": "embedded_json",
+        "path": path,
+        "matches": len(values),
+        "raw_value": values[0] if values else None,
+        "clean_value": value,
+        "rule": dict(rule),
+        "confidence": 1.0 if values else 0.0,
+    }
+    return _with_absolutized_value(
+        value, trace, kind=_address_rule_kind(rule, key_path=path), base_url=base_url
+    )
+
+
+def _embedded_items(spec: dict[str, Any], structured: dict[str, Any]) -> list[Any]:
+    """按 ``extract.embedded_json`` 的规格，从页面内嵌载荷里取出记录集合。
+
+    ``spec`` 两个键：
+
+    * ``source`` —— 用哪一块（``script#__NEXT_DATA__`` 这种）；空表示"取能取到最多的那块"；
+    * ``item_path`` —— 载荷内的 JSONPath，与 ``JSONProcessor`` 的 ``item_path`` 同义。
+
+    ★ 取不到时返回 ``[]`` 而不是抛错：一块脚本可能只在部分页面上存在（例如某些
+      路由不注入 SSR 数据），让"这一页没有"表现为 0 条记录，比整次运行失败更符合预期。
+    """
+    blocks = structured.get("embedded_json") or []
+    if not isinstance(blocks, list):
+        return []
+    source_pattern = str(spec.get("source", "") or "")
+    path = str(spec.get("item_path", "$") or "$")
+    best: list[Any] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        if source_pattern and str(block.get("source", "")) != source_pattern:
+            continue
+        values = json_path(block.get("json"), path)
+        if len(values) > len(best):
+            best = values
+    return best
+
+
 class HTMLProcessor:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
@@ -471,7 +584,7 @@ class HTMLProcessor:
     def process(self, result: FetchResult) -> ProcessResult:
         text = decode_body(result)
         document = parse_html(text)
-        structured = _structured_metadata(document, result)
+        structured = _structured_metadata(document, result, text)
         extract = self.config.section("extract")
         item_selector = str(extract.get("item_selector", ""))
         # B-P2-1：坏 item_selector 不中断整页提取，回退整文档并留告警。
@@ -482,6 +595,12 @@ class HTMLProcessor:
                            type(exc).__name__, exc)
             items = [document]
         fields = extract.get("fields", {})
+        # ★ 2026-11-27：内嵌 SSR 数据的记录集合（__NEXT_DATA__ / __NUXT__ …）。
+        #   DOM 里没有列表容器，记录来自 <script> 里的 JSON。见 `embedded_json` 模块。
+        embedded_spec = extract.get("embedded_json")
+        embedded_items: list[Any] | None = None
+        if isinstance(embedded_spec, dict):
+            embedded_items = _embedded_items(embedded_spec, structured)
         # ★ 2026-11-27：把**文档级**字段从列表字段里摘出来，单独成一条记录。
         #
         #   不摘出来的后果（实测 thunderbit.com）：列表 30 行，每行的「定价」
@@ -491,6 +610,22 @@ class HTMLProcessor:
         #   ★ 只在**确实有列表容器**时才拆：单页单对象（无 item_selector）时
         #     「一行」就等于「整页」，拆开只会平白多出一条重复记录。
         doc_fields: dict[str, Any] = {}
+        # ★ 2026-11-27：内嵌数据当数据源时，记录的「父容器」就是载荷里的记录集合本身。
+        #   字段规则里的 path 是**相对那条记录**的 JSONPath（与 JSONProcessor 一致）。
+        if embedded_items is not None:
+            if not fields:
+                # 没有字段规则 ⇒ 整条记录原样交付（与 JSON 模式 `fields: {}` 同义）。
+                return ProcessResult(records=[
+                    ExtractedRecord(
+                        result.final_url,
+                        "embedded_item",
+                        item if isinstance(item, dict) else {"value": item},
+                        {"item": index, "source": "embedded_json"},
+                    )
+                    for index, item in enumerate(embedded_items, 1)
+                ])
+            items = list(embedded_items)
+            item_selector = ""
         if item_selector and isinstance(fields, dict):
             for _name, _rule in fields.items():
                 if is_document_level_rule(_rule):
@@ -506,11 +641,16 @@ class HTMLProcessor:
                     # B-P2-1：单条规则 CSS/XPath 语法异常按字段隔离，失败字段记入 trace
                     # （错误类型 + 消息）并跳过，其余字段继续提取。
                     try:
-                        handled, value, trace = _structured_rule(
-                            str(name), rule, structured, base_url=result.final_url
-                        )
-                        if not handled:
-                            value, trace = _apply_rule(item, rule, base_url=result.final_url)
+                        if is_embedded_relative_rule(rule):
+                            value, trace = _embedded_value(
+                                item, rule, base_url=result.final_url
+                            )
+                        else:
+                            handled, value, trace = _structured_rule(
+                                str(name), rule, structured, base_url=result.final_url
+                            )
+                            if not handled:
+                                value, trace = _apply_rule(item, rule, base_url=result.final_url)
                     except Exception as exc:  # noqa: BLE001 - 字段级隔离，禁止冒泡中断整页
                         LOGGER.warning("字段 %s 选择器/规则执行失败，已跳过: %s: %s",
                                        name, type(exc).__name__, exc)
