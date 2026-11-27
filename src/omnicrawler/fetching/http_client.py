@@ -33,6 +33,10 @@ def _flatten_headers(headers: Any) -> dict[str, str]:
     return {str(k).lower(): str(v) for k, v in headers.items()}
 
 
+#: 需要跟随的重定向状态码（与 urllib 的 `HTTPRedirectHandler` 口径一致）。
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
 @lru_cache(maxsize=1)
 def _accept_encoding() -> str:
     """S2.5.6：按**进程内**已安装的解码库声明 Accept-Encoding（br/zstd）。
@@ -462,7 +466,20 @@ class HTTPFetcher:
 
         ★ 安全边界与 urllib 路径**完全一致**：先 `egress.request()`（预算/审计/凭据），
           再经"连接到已批准 IP"的工厂建连；`Host` 头与 TLS SNI 仍用原域名。
+
+        ★ 2026-11-27 修：**必须自己跟随重定向**。第一版漏了这一步，实测 301 会被
+          当成正文返回（`status=301, body=b"moved"`）—— 那是**静默的错误数据**：
+          用户以为抓到了页面，实际拿到的是一个跳转提示。urllib 那条路径由
+          `SafeRedirectHandler` 负责，这里必须补同一条。
         """
+        return self._keep_alive_fetch_following(request, timeout=timeout, max_bytes=max_bytes,
+                                                 headers=headers, remaining_redirects=int(
+            self.http.get("max_redirects", 10)))
+
+    def _keep_alive_fetch_following(
+        self, request: CrawlRequest, *, timeout: float, max_bytes: int,
+        headers: dict[str, str], remaining_redirects: int,
+    ) -> FetchResult:
         parts = urllib.parse.urlsplit(request.url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
             raise ValueError(f"仅支持 http/https 的 keep-alive 请求: {request.url}")
@@ -504,6 +521,43 @@ class HTTPFetcher:
                 response = connection.getresponse()
                 status = int(response.status)
                 response_headers = _flatten_headers(response.headers)
+                # ★ 重定向必须跟随（与 urllib 路径的 `SafeRedirectHandler` 同职责）。
+                #   这里**先读完并丢弃重定向响应体**，再对目标地址重建/复用连接。
+                if status in _REDIRECT_STATUSES:
+                    location = response_headers.get("location", "")
+                    response.read()  # 读完才能安全复用/关闭这条连接
+                    self._pool.give_back(key, connection)
+                    next_url = urllib.parse.urljoin(request.url, location) if location else ""
+                    if not next_url:
+                        return FetchResult(
+                            request=request, final_url=request.url, status=status,
+                            headers=response_headers, body=b"",
+                            elapsed_seconds=time.perf_counter() - started,
+                        )
+                    if remaining_redirects <= 0:
+                        raise PermanentFetchError(
+                            f"重定向次数超过上限（{self.http.get('max_redirects', 10)}）: {request.url}"
+                        )
+                    # ★ 安全边界：跳转目标必须重新过一遍出网授权（robots / 范围 / 凭据）
+                    self.egress.authorize(
+                        next_url, purpose=self.purpose, headers=headers,
+                        capability=self.capability,
+                    )
+                    redirected = request if next_url == request.url else CrawlRequest(
+                        next_url,
+                        method="GET" if status in {301, 302, 303} else request.method,
+                        headers=request.headers,
+                        body=None if status in {301, 302, 303} else request.body,
+                        kind=request.kind,
+                        render=request.render,
+                        priority=request.priority,
+                        depth=request.depth,
+                        meta=request.meta,
+                    )
+                    return self._keep_alive_fetch_following(
+                        redirected, timeout=timeout, max_bytes=max_bytes, headers=headers,
+                        remaining_redirects=remaining_redirects - 1,
+                    )
                 declared = response_headers.get("content-length", "")
                 if declared.isdigit() and int(declared) > max_bytes:
                     self._pool.discard()

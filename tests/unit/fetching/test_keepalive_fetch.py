@@ -47,6 +47,22 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/redir":
+            body = b"moved"
+            self.send_response(301)
+            self.send_header("Location", "/final")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == "/loop":
+            body = b"loop"
+            self.send_response(301)
+            self.send_header("Location", "/loop")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith("/close"):
             body = b"bye"
             self.send_response(200)
@@ -56,7 +72,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             self.close_connection = True
             return
-        body = b"hello"
+        body = b"FINAL" if self.path.startswith("/final") else b"hello"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
@@ -457,3 +473,61 @@ def test_empty_approved_addresses_raises() -> None:
     connection = PinnedHTTPConnection("example.org", target_policy=_Policy(), timeout=1)
     with pytest.raises(OSError, match="已批准地址"):
         connection._create_approved_connection(("x", 80), timeout=1)
+
+
+# ── 重定向（keep-alive 路径必须自己跟随）────────────────────────────────
+
+
+def test_redirect_is_followed_on_the_keep_alive_path(server: str, tmp_path: Path) -> None:
+    """★ 实测缺陷（2026-11-27）：keep-alive 路径第一版**不跟随重定向**。
+
+    症状极隐蔽：301 被当成正文返回 ——
+
+        keep_alive=False  status=200 final_url=.../final body=b"FINAL"
+        keep_alive=True   status=301 final_url=.../redir body=b"moved"   ← 错
+
+    用户以为抓到了页面，实际拿到的是一个跳转提示（而且状态码是 301，
+    下游容易当成"成功"）。urllib 那条路径由 `SafeRedirectHandler` 负责，
+    这里必须补同一条。
+    """
+    fetcher = HTTPFetcher(_config(tmp_path, server))
+    try:
+        result = fetcher.fetch(CrawlRequest(f"{server}/redir"))
+        assert result.status == 200, result.status
+        assert result.body == b"FINAL", result.body
+        assert result.final_url.endswith("/final"), result.final_url
+    finally:
+        if fetcher._pool is not None:
+            fetcher._pool.close()
+
+
+def test_both_paths_agree_on_redirect_result(server: str, tmp_path: Path) -> None:
+    """★ 两条路径（urllib / keep-alive）对同一 URL 必须给出**一致**的结果。
+
+    "两处口径不许漂移"——这条是整组的核心判据：只要有一边漏了跟随，
+    同样的任务会因为一个配置开关给出不同的数据。
+    """
+    urllib_fetcher = HTTPFetcher(_config(tmp_path, server, keep_alive=False))
+    ka_fetcher = HTTPFetcher(_config(tmp_path, server, keep_alive=True))
+    try:
+        plain = urllib_fetcher.fetch(CrawlRequest(f"{server}/redir"))
+        kept = ka_fetcher.fetch(CrawlRequest(f"{server}/redir"))
+        assert (plain.status, plain.body) == (kept.status, kept.body), (
+            (plain.status, plain.body), (kept.status, kept.body),
+        )
+    finally:
+        if ka_fetcher._pool is not None:
+            ka_fetcher._pool.close()
+
+
+def test_redirect_loop_is_bounded(server: str, tmp_path: Path) -> None:
+    """★ 重定向循环必须**有上限**（否则会一直跳）。"""
+    from omnicrawler.core.errors import PermanentFetchError
+
+    fetcher = HTTPFetcher(_config(tmp_path, server, max_redirects=2))
+    try:
+        with pytest.raises(PermanentFetchError, match="重定向次数超过上限"):
+            fetcher.fetch(CrawlRequest(f"{server}/loop"))
+    finally:
+        if fetcher._pool is not None:
+            fetcher._pool.close()
