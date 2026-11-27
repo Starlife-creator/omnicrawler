@@ -111,3 +111,28 @@ def test_no_path_session_is_still_a_noop() -> None:
     """不持久化的会话（persist_cookies=false）行为不变。"""
     session = CookieSession(None)
     assert session.save() is False
+
+
+def test_fresh_session_actually_creates_the_file(tmp_path: Path) -> None:
+    """★ 全新会话的第一次 `save()` **必须真的写文件**。
+
+    这条是 CI 集成测试抓出来的回归：把"加载后的内容"当成已落盘基准时，
+    空 jar + 文件不存在 会被判成"内容没变" ⇒ `save()` 返回 True 但文件根本没建。
+    语义上 `save()` 的成功包含"会话已持久化"，文件不存在显然不满足。
+    """
+    path = tmp_path / "fresh.cookies"
+    assert not path.exists()
+    session = CookieSession(path)
+    assert session.save() is True
+    assert path.is_file(), "save() 说成功，但文件没有创建"
+
+
+def test_second_save_still_creates_nothing_extra(tmp_path: Path) -> None:
+    """反方向：文件已存在且内容没变时，仍然不重写（那条优化还在）。"""
+    path = tmp_path / "fresh.cookies"
+    session = CookieSession(path)
+    session.save()
+    first = path.stat().st_mtime_ns
+    time.sleep(0.01)
+    session.save()
+    assert path.stat().st_mtime_ns == first

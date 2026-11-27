@@ -63,9 +63,18 @@ class CookieSession:
         #   同时还让杀毒/索引服务反复处理同一个文件。
         #   判据是**内容有没有变**，不是"调没调用"——cookie 变了照样落盘。
         self._saved_fingerprint: tuple[tuple[str, str, str, str], ...] | None = None
+        # ★ 只有**文件已经存在且成功加载**时才把当前内容记为"已落盘"。
+        #
+        #   否则全新会话（空 jar + 磁盘上还没有文件）会被判成"内容没变"而跳过写盘，
+        #   于是 `save()` 返回 True 却**根本没创建文件** —— 实测由集成测试当场抓出
+        #   （`test_cookie_session_memory_persistence_corrupt_load_and_safe_name`）。
+        #   语义上 `save()` 的成功包含"会话已持久化"，而"文件不存在"显然不满足它。
+        loaded = False
         if path and path.is_file():
             self._load()
-        self._saved_fingerprint = self._jar_fingerprint()
+            loaded = True
+        if loaded:
+            self._saved_fingerprint = self._jar_fingerprint()
 
     def _load(self) -> None:
         if not self.path:
