@@ -46,13 +46,61 @@ _HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 # 曾压过商品网格）。列表抽取默认应落在主内容区。
 _CHROME_TOKENS = frozenset({"aside", "nav", "footer"})
 
+#: 类名里的「装饰词」。★ 2026-11-27 新增：真实站点的装饰容器**很少**用裸 `nav` /
+#: `aside` 当类名，而是 `w3-sidebar` / `main-navigation` / `woocommerce-breadcrumb`
+#: 这类**复合词**。原判据要求类名与词表**完全相等**，于是这些全部漏判 ——
+#: 实测 w3schools 的表格页把左侧教程目录当成列表，给出 42 条「链接文本」。
+#:
+#: 判据改成「复合词**按 `-` / `_` 分词后包含装饰词**」，而不是「子串匹配」：
+#: `belowtopnavcontainer` 含 `nav` 子串但它是**主内容容器**，绝不能误伤。
+#:
+#: ★ 刻意**不收 `menu`**：餐厅/咖啡馆类站点的 `div.menu-item` 是**数据**（一道菜），
+#:   收进来会把整页菜品表全判成导航。漏判少数站点的菜单，好过误删真实数据。
+_CHROME_WORDS = frozenset({
+    "aside", "nav", "navbar", "navigation", "footer", "sidebar", "breadcrumb",
+    "toc", "sitemap", "skiplink", "skip",
+})
+
+#: 这些词出现在类名里**不代表**装饰（主内容容器常含它们）。
+#: 例外优先于上面的词表：命中即判非装饰。
+#:
+#: 只收 ``content`` —— ``main`` / ``primary`` **不能**当例外：它们是布局限定词，
+#: ``main-nav`` 就是「主导航」（装饰），``main-content`` 才是主内容。
+#: 把 ``main`` 加进例外会让 ``main-nav`` / ``main-menu`` 全部漏判。
+_CONTENT_WORDS = frozenset({"content"})
+
+
+def _class_is_chrome(class_name: str) -> bool:
+    """单个类名是否属于装饰性容器。
+
+    按 ``-`` / ``_`` 分词后判词，**不做子串匹配** —— 子串匹配会把
+    ``belowtopnavcontainer``（主内容容器）误判成导航。
+
+    例外优先：类名里出现 ``content`` / ``main`` / ``primary`` 时一律不算装饰，
+    除非它同时以装饰词**开头**（如 ``main-nav`` 确实是导航，
+    而 ``main-content`` 是主内容）。
+    """
+    lowered = class_name.lower()
+    words = [w for w in lowered.replace("_", "-").split("-") if w]
+    if not words:
+        return False
+    has_content = any(w in _CONTENT_WORDS for w in words)
+    if has_content:
+        return False
+    return any(w in _CHROME_WORDS for w in words)
+
 
 def _is_chrome_path(css_path: str) -> bool:
-    """CSS 路径是否位于 aside / nav / footer 等装饰性容器内。"""
+    """CSS 路径是否位于 aside / nav / footer / sidebar 等装饰性容器内。"""
     for segment in css_path.split(">"):
         parts = [part for part in segment.strip().lower().split(".") if part]
-        if parts and (parts[0] in _CHROME_TOKENS or any(p in _CHROME_TOKENS for p in parts[1:])):
+        if not parts:
+            continue
+        if parts[0] in _CHROME_TOKENS:
             return True
+        for class_name in parts[1:]:
+            if class_name in _CHROME_TOKENS or _class_is_chrome(class_name):
+                return True
     return False
 
 

@@ -52,14 +52,23 @@ def test_fetch_catalog_local() -> None:
 
 
 def test_download_and_verify(tmp_path: Path, preverified_legacy_catalog: None) -> None:
+    """现代整包安装：落 plugin.py + 签名 + listing + **安装锁文件**。
+
+    ★ 2026-11-27：`example_news` 已迁到现代整包格式（此前是 legacy 单文件）。
+    本用例原先只证「legacy 路径能装」；现在它同时守住一条更重要的判据 ——
+    **整包安装也必须写安装锁文件**。此前整包路径不写锁文件，
+    `_verify_install_meta` 永远走「无锁文件」分支，哈希级防篡改对现代包静默失效。
+    """
     dest = tmp_path / "installed"
     path = market_client.download_and_verify("example_news", str(REGISTRY_DIR), dest, TRUST)
     assert path.is_file()
     assert (path.parent / "plugin.py.sig").is_file()
     assert (path.parent / "listing.md").is_file()
-    assert (path.parent / market_client._INSTALL_META).is_file()
+    assert (path.parent / market_client._INSTALL_META).is_file(), (
+        "整包安装也必须写安装锁文件 —— 否则哈希级防篡改静默失效"
+    )
     ok, reason = market_client.verify_installed(dest, "example_news", TRUST)
-    assert ok and reason == "verified"
+    assert ok and reason == "verified-package"
 
 
 def test_install_writes_hash_lockfile(tmp_path: Path, preverified_legacy_catalog: None) -> None:
@@ -90,11 +99,17 @@ def test_verify_rejects_hash_tamper_before_signature(
 def test_verify_falls_back_to_signature_without_lockfile(
     tmp_path: Path, preverified_legacy_catalog: None
 ) -> None:
+    """删掉锁文件后仍应通过 —— 靠的是**整包签名**这一层。
+
+    这是「两层保护互相独立」的正面证据：锁文件管"装完之后有没有被改过"，
+    整包签名管"这份内容是不是作者签的"。少一层不该直接放行，
+    而是回落到还能验的那一层并**如实报告走的是哪条轨**（`verified-package`）。
+    """
     dest = tmp_path / "installed"
     market_client.download_and_verify("example_news", str(REGISTRY_DIR), dest, TRUST)
     (dest / "example_news" / market_client._INSTALL_META).unlink()
     ok, reason = market_client.verify_installed(dest, "example_news", TRUST)
-    assert ok and reason == "verified"
+    assert ok and reason == "verified-package"
 
 
 def test_download_rejects_tampered(tmp_path: Path, preverified_legacy_catalog: None) -> None:

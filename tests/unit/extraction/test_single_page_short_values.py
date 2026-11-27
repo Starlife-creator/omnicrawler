@@ -81,11 +81,17 @@ def test_navigation_and_footer_links_are_still_skipped() -> None:
 
 
 def test_same_name_with_different_selector_is_kept() -> None:
-    """旧实现按**名字**去重 ⇒ 同名但选择器不同的字段被挤掉；现在都要保留。"""
+    """旧实现按**名字**去重 ⇒ 同名但选择器不同的字段被挤掉；现在都要保留。
+
+    ★ 2026-11-27：夹具原用 `div.aside-block`，而复合类名判据（见
+    `test_chrome_path_classification.py`）现在会把 `aside-block` 正确识别成装饰容器 ——
+    于是这条用例只剩一个字段，**红的不是它要守的东西**。
+    这里改用中性类名，让用例继续守「同名不同选择器要各出一个字段」这条判据。
+    """
     html = """
     <html><body>
       <div class="main"><h1>主标题</h1></div>
-      <div class="aside-block"><h1>副标题</h1></div>
+      <div class="panel"><h1>副标题</h1></div>
     </body></html>
     """
     fields = _fields(html)

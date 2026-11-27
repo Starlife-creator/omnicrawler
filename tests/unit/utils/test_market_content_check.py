@@ -273,9 +273,35 @@ def test_real_market_has_no_declaration_mismatches() -> None:
 
 @pytest.mark.skipif(not (DEFAULT_MARKET / "catalog.json").is_file(), reason="没有市场 checkout")
 def test_real_market_evidence_is_differentiated() -> None:
-    """证据要有区分度：不能所有插件都通过，也不能全部不通过。"""
-    report = audit_market(DEFAULT_MARKET)
-    passed = [name for name, item in report["plugins"].items() if item["evidence"]["passed"]]
-    assert 0 < len(passed) < len(report["plugins"]), (
-        "所有插件的机器证据结果相同，说明检查很可能已失效（恒真或恒假）"
-    )
+    """证据要有区分度：检查必须**真的能判红**，不能恒真。
+
+    ★ 2026-11-27 改写。原判据是「真实市场里不能所有插件都通过」——
+    那是一条**依赖市场数据分布**的断言：市场内容质量从 10/18 推到 18/18 之后，
+    它必然变红，而红的原因恰恰是「我们把活干完了」，不是检查坏了。
+
+    判据换成**在真实市场数据上制造一个已知缺陷**，确认它被单独识别出来：
+    这样既不依赖数据分布，又直接证伪「恒真」。
+    """
+    import copy
+
+    catalog = json.loads((DEFAULT_MARKET / "catalog.json").read_text(encoding="utf-8"))
+    target = next(e for e in catalog["plugins"] if e.get("package_manifest_file"))
+    assert target["id"], "真实市场里应当至少有一个整包签名插件"
+
+    # 基线：真实条目本身应当通过
+    baseline = gates_evidence(target, DEFAULT_MARKET)
+    assert baseline["passed"] is True, baseline["failed_checks"]
+
+    # 制造缺陷：把清单哈希改掉一位 ⇒ 必须被 `package_manifest_sha256` 抓住
+    broken = copy.deepcopy(target)
+    broken["package_manifest_sha256"] = "0" * 64
+    evidence = gates_evidence(broken, DEFAULT_MARKET)
+    assert evidence["passed"] is False, "改掉清单哈希后仍然通过 —— 这条检查恒真"
+    assert "package_manifest_sha256" in evidence["failed_checks"], evidence["failed_checks"]
+
+    # 再证一次「矩阵不是恒假」：换一个真实的缺陷类别
+    broken_license = copy.deepcopy(target)
+    broken_license["license"] = "WTFPL"
+    license_evidence = gates_evidence(broken_license, DEFAULT_MARKET)
+    assert license_evidence["passed"] is False
+    assert "license_allowlisted" in license_evidence["failed_checks"]

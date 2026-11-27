@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-23T12:51:15+00:00",
-  "sequence": 1791080241,
+  "generated_at": "2026-11-27T08:15:57+00:00",
+  "sequence": 1791080253,
   "publisher": "starlife",
   "trust_model": "dual-rail-ed25519",
   "official_publishers": [
@@ -219,11 +219,15 @@
     },
     {
       "id": "csv-io",
-      "name": "CSV 导出/导入",
-      "version": "1.0.0",
+      "name": "csv-io",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "exporter",
-      "summary": "导出/导入 CSV，UTF-8 BOM 兼容 Excel，防公式注入。",
+      "category": "utility",
+      "plugin_types": [
+        "exporter",
+        "processor"
+      ],
+      "summary": "导出/导入 CSV，UTF-8 BOM 兼容 Excel，并防公式注入",
       "description_file": "plugins/csv-io/listing.md",
       "plugin_file": "plugins/csv-io/plugin.py",
       "signature_file": "plugins/csv-io/plugin.py.sig",
@@ -238,25 +242,37 @@
         "privacy",
         "security"
       ],
-      "updated_at": "2026-11-23",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/csv-io",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/csv-io/creator.sig",
       "creator_identity_file": "plugins/csv-io/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/csv-io/package.manifest.json",
+      "creator_package_signature_file": "plugins/csv-io/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/csv-io/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "88739e8ec0ef97c38503dbe9c1fe5d9e0e0d2eb9466cbde9e17fc3c496cc510f",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "1.0.0": {
-          "sha256": "95fd73e398aec8a20caa3210dfa1910ce17995592439d5613382c064074bd775"
+        "1.1.0": {
+          "sha256": "24290f05d8779b6b8d97772e99ab61978161626ed4e6a873cf9a2c85ec73e208"
         }
       }
     },
     {
       "id": "diff-report",
-      "name": "变更对比报告",
-      "version": "1.0.0",
+      "name": "diff-report",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "processor",
-      "summary": "对比两次采集结果，产出「新增 / 删除 / 修改」三类差异与一行摘要。",
+      "category": "utility",
+      "plugin_types": [
+        "processor",
+        "transformer"
+      ],
+      "summary": "对比两次采集结果，产出新增/删除/修改三类差异摘要",
       "description_file": "plugins/diff-report/listing.md",
       "plugin_file": "plugins/diff-report/plugin.py",
       "signature_file": "plugins/diff-report/plugin.py.sig",
@@ -270,15 +286,23 @@
         "change-tracking",
         "report"
       ],
-      "updated_at": "2026-11-23",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/diff-report",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/diff-report/creator.sig",
       "creator_identity_file": "plugins/diff-report/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/diff-report/package.manifest.json",
+      "creator_package_signature_file": "plugins/diff-report/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/diff-report/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "b95d86e03052f58b08d55b0d84ec72eb3480b736fd99ad13b219ec3d42898f04",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "1.0.0": {
-          "sha256": "5261bfd9f13cca222f1e27b34c912636abcdb194ebca99e49897ca83e6ff84ee"
+        "1.1.0": {
+          "sha256": "f99905506e05e95c1800dfd3d96368fd3240d54594a63f1a25e87cfee1609474"
         }
       }
     },
@@ -340,11 +364,14 @@
     },
     {
       "id": "example_news",
-      "name": "示例新闻站点适配器",
-      "version": "1.0.0",
+      "name": "example_news",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "source",
-      "summary": "为示例新闻站点强制附加 XHR 请求头并打站点标记，复用通用发现逻辑。",
+      "category": "utility",
+      "plugin_types": [
+        "source"
+      ],
+      "summary": "示例新闻站点适配器：入口附加 XHR 请求头 + 站点打标",
       "description_file": "plugins/example_news/listing.md",
       "plugin_file": "plugins/example_news/plugin.py",
       "signature_file": "plugins/example_news/plugin.py.sig",
@@ -359,25 +386,36 @@
         "template",
         "contract2"
       ],
-      "updated_at": "2026-08-21",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/example_news",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/example_news/creator.sig",
       "creator_identity_file": "plugins/example_news/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/example_news/package.manifest.json",
+      "creator_package_signature_file": "plugins/example_news/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/example_news/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "607ea3fa2f34a94c4fff637c4ee72b5656ff817cd365003edce97a1bf970b67c",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "1.0.0": {
-          "sha256": "2630ed2c32a15a9cc355251e1547a05b0b14b07ee0f94b6aed962f8e75f9db2c"
+        "1.1.0": {
+          "sha256": "6de00a447490f0caee515bc06b6bcbee740bef4ff8800750b1d28cca26426f23"
         }
       }
     },
     {
       "id": "export-jsonl",
-      "name": "JSONL 导出",
-      "version": "1.0.0",
+      "name": "export-jsonl",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "exporter",
-      "summary": "把采集结果导出为 JSON Lines（每行一条独立 JSON），流式友好、大结果集不 OOM。",
+      "category": "utility",
+      "plugin_types": [
+        "exporter"
+      ],
+      "summary": "把采集结果导出为 JSON Lines（每行一条独立 JSON）",
       "description_file": "plugins/export-jsonl/listing.md",
       "plugin_file": "plugins/export-jsonl/plugin.py",
       "signature_file": "plugins/export-jsonl/plugin.py.sig",
@@ -392,15 +430,68 @@
         "streaming",
         "integration"
       ],
-      "updated_at": "2026-11-23",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/export-jsonl",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/export-jsonl/creator.sig",
       "creator_identity_file": "plugins/export-jsonl/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/export-jsonl/package.manifest.json",
+      "creator_package_signature_file": "plugins/export-jsonl/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/export-jsonl/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "063e5efcd8210439fd932f3fabb19f87f4b026780c06f83de0400e15b07570a6",
+      "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
+      "versions": {
+        "1.1.0": {
+          "sha256": "0dce1e8b17808e86c27b6e43e8ad52ff3aca33254523c7e135cd0696a0f89122"
+        }
+      }
+    },
+    {
+      "id": "field-alias",
+      "name": "field-alias",
+      "version": "1.0.0",
+      "publisher": "starlife",
+      "category": "utility",
+      "plugin_types": [
+        "processor",
+        "transformer"
+      ],
+      "summary": "按别名表把同义列合并成一列，冲突逐行如实回报",
+      "description_file": "plugins/field-alias/listing.md",
+      "plugin_file": "plugins/field-alias/plugin.py",
+      "signature_file": "plugins/field-alias/plugin.py.sig",
+      "signature_algorithm": "ed25519",
+      "permissions": [],
+      "compatible_core": ">=0.7.0",
+      "license": "MIT",
+      "tags": [
+        "processor",
+        "transformer",
+        "schema",
+        "field-mapping",
+        "data-cleaning"
+      ],
+      "updated_at": "2026-11-27",
+      "creator_signature_file": "plugins/field-alias/creator.sig",
+      "creator_identity_file": "plugins/field-alias/creator.identity",
+      "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/field-alias/package.manifest.json",
+      "creator_package_signature_file": "plugins/field-alias/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/field-alias/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "b06550cfd8efe684feb732820d54bfe361778c90d89e64d16abf7ef707db886d",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
         "1.0.0": {
-          "sha256": "c8bcba36069eba85bc2be1a4737a25d490fb82d788479418a90767fae7f847ff"
+          "sha256": "913c5c9c09fa6cf207e5bb700ec58a0c4769bf81fced9efb09ff277260081ae8"
         }
       }
     },
@@ -518,11 +609,15 @@
     },
     {
       "id": "mask-sensitive",
-      "name": "敏感数据脱敏",
-      "version": "1.0.0",
+      "name": "mask-sensitive",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "processor",
-      "summary": "导出前脱敏邮箱/手机/身份证/银行卡/IP/API Key，输出逐类命中统计。",
+      "category": "utility",
+      "plugin_types": [
+        "processor",
+        "transformer"
+      ],
+      "summary": "导出前脱敏邮箱/手机/身份证/银行卡/IP/API Key，输出命中统计",
       "description_file": "plugins/mask-sensitive/listing.md",
       "plugin_file": "plugins/mask-sensitive/plugin.py",
       "signature_file": "plugins/mask-sensitive/plugin.py.sig",
@@ -537,25 +632,36 @@
         "pii",
         "gdpr"
       ],
-      "updated_at": "2026-11-23",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/mask-sensitive",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/mask-sensitive/creator.sig",
       "creator_identity_file": "plugins/mask-sensitive/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/mask-sensitive/package.manifest.json",
+      "creator_package_signature_file": "plugins/mask-sensitive/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/mask-sensitive/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "75f2dde490a7e3471efaacda41d5b9c150a29e06ef02d8286a8067b3d332f1dd",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "1.0.0": {
-          "sha256": "77bcbaac7c5f0363f44acd9b193e8332be950cf7cad6c6fc8fb811eeb4a442f8"
+        "1.1.0": {
+          "sha256": "817371f180340b4e029069180f5da0333083bf67a4d201e8b1320f3391c78247"
         }
       }
     },
     {
       "id": "notify-webhook",
-      "name": "Webhook 任务通知",
-      "version": "1.0.0",
+      "name": "notify-webhook",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "hook",
-      "summary": "任务结束（终态）时向配置的 Webhook 推送摘要：状态、成功/失败/跳过计数。",
+      "category": "utility",
+      "plugin_types": [
+        "hook"
+      ],
+      "summary": "任务结束时向配置的 Webhook 推送终态摘要（成功/失败/计数）",
       "description_file": "plugins/notify-webhook/listing.md",
       "plugin_file": "plugins/notify-webhook/plugin.py",
       "signature_file": "plugins/notify-webhook/plugin.py.sig",
@@ -569,15 +675,23 @@
         "webhook",
         "integration"
       ],
-      "updated_at": "2026-11-23",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/notify-webhook",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/notify-webhook/creator.sig",
       "creator_identity_file": "plugins/notify-webhook/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/notify-webhook/package.manifest.json",
+      "creator_package_signature_file": "plugins/notify-webhook/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/notify-webhook/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "fd8646cebac5863eaa727231fb7abad5d2d0076478a9a0d4962e69879c93be5d",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "1.0.0": {
-          "sha256": "842382d0e67c760819aad4b16a9861b7f7cfd550b4d3a3080ef442c596b38109"
+        "1.1.0": {
+          "sha256": "051dab3a400310325a77f5efa70a5fd699d63572b3ca23416658d31e7a6cc0bc"
         }
       }
     },
@@ -627,11 +741,15 @@
     },
     {
       "id": "text-similarity",
-      "name": "文本相似度与变更检测",
-      "version": "1.0.0",
+      "name": "text-similarity",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "processor",
-      "summary": "比较两次采集的文本相似度，区分「相同 / 微调 / 实质变更」三档，避免误告警。",
+      "category": "utility",
+      "plugin_types": [
+        "processor",
+        "transformer"
+      ],
+      "summary": "比较两次采集的文本相似度，区分「相同/微调/实质变更」三档",
       "description_file": "plugins/text-similarity/listing.md",
       "plugin_file": "plugins/text-similarity/plugin.py",
       "signature_file": "plugins/text-similarity/plugin.py.sig",
@@ -646,15 +764,23 @@
         "change-detection",
         "incremental"
       ],
-      "updated_at": "2026-11-23",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/text-similarity",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/text-similarity/creator.sig",
       "creator_identity_file": "plugins/text-similarity/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/text-similarity/package.manifest.json",
+      "creator_package_signature_file": "plugins/text-similarity/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/text-similarity/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "35bff2b4a7b3047ed0b662088e1f1c9c88ed46be4b4d87349465598845b9960b",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "1.0.0": {
-          "sha256": "060bda1718715f1bd68ac931cfb8d6e7c498e7a11a14782f0ad8e869b809c9a9"
+        "1.1.0": {
+          "sha256": "e05ab8f8f154845bee3570cfba2fbb6d0d39afac0ec1b3ef9f42b37fa645ef7c"
         }
       }
     },
@@ -762,11 +888,15 @@
     },
     {
       "id": "validate-items",
-      "name": "数据质量校验",
-      "version": "1.0.0",
+      "name": "validate-items",
+      "version": "1.1.0",
       "publisher": "starlife",
-      "category": "processor",
-      "summary": "导出前拦下静默失败：必填缺失、键重复、字段被整段 HTML 污染。",
+      "category": "utility",
+      "plugin_types": [
+        "processor",
+        "hook"
+      ],
+      "summary": "导出前校验条目质量：必填缺失、键重复、明显异常值",
       "description_file": "plugins/validate-items/listing.md",
       "plugin_file": "plugins/validate-items/plugin.py",
       "signature_file": "plugins/validate-items/plugin.py.sig",
@@ -780,15 +910,23 @@
         "quality",
         "hook"
       ],
-      "updated_at": "2026-11-23",
-      "homepage": "https://github.com/Starlife-creator/OmniCrawler-market/tree/main/plugins/validate-items",
+      "updated_at": "2026-11-27",
       "creator_signature_file": "plugins/validate-items/creator.sig",
       "creator_identity_file": "plugins/validate-items/creator.identity",
       "execution_mode": "subprocess",
+      "domains": [],
+      "input_files": [],
+      "required_capabilities": {},
+      "state_schema_version": 1,
+      "dependencies": [],
+      "package_manifest_file": "plugins/validate-items/package.manifest.json",
+      "creator_package_signature_file": "plugins/validate-items/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "plugins/validate-items/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "8883885367c51f1afd1dd0a2132d9046d5a631efd9fc709c2aa479bf84e82011",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429",
       "versions": {
-        "1.0.0": {
-          "sha256": "3abe1ded68df5cac75f223cc99407e9bcce15e74e27200273dfc8f3fd94dc686"
+        "1.1.0": {
+          "sha256": "c8664b5f24ee03ee2da09749db6c9eb8a5bba9e2e257bcc03289bfb7904acc91"
         }
       }
     }
@@ -967,8 +1105,9 @@
       "publisher": "starlife",
       "category": "sites/academic",
       "summary": "使用 Crossref 官方 REST API 按关键词检索论文元数据，并保留 DOI、作者、出版商等结构化信息",
-      "template_file": "templates/crossref-works/template.yaml",
-      "signature_file": "templates/crossref-works/template.yaml.sig",
+      "description_file": "templates/sites--market--crossref-works/listing.md",
+      "template_file": "templates/sites--market--crossref-works/template.yaml",
+      "signature_file": "templates/sites--market--crossref-works/template.yaml.sig",
       "signature_algorithm": "ed25519",
       "compatible_core": ">=0.7.0",
       "license": "Crossref metadata terms; abstracts may retain publisher copyright",
@@ -978,10 +1117,13 @@
         "学术",
         "开放元数据"
       ],
-      "updated_at": "2026-07-18",
-      "creator_signature_file": "templates/crossref-works/creator.sig",
-      "creator_identity_file": "templates/crossref-works/creator.identity",
-      "description_file": "templates/crossref-works/listing.md",
+      "updated_at": "2026-11-27",
+      "creator_signature_file": "templates/sites--market--crossref-works/creator.sig",
+      "creator_identity_file": "templates/sites--market--crossref-works/creator.identity",
+      "package_manifest_file": "templates/sites--market--crossref-works/package.manifest.json",
+      "creator_package_signature_file": "templates/sites--market--crossref-works/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "templates/sites--market--crossref-works/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "e796dca3e7b9320ff5e5914fe05b59552c6052ef12abc69d3846460f481cca28",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
@@ -991,8 +1133,9 @@
       "publisher": "starlife",
       "category": "sites/development",
       "summary": "使用 GitHub 官方 REST API 获取公开仓库 Issue/PR 列表，支持分页和并发控制以遵守速率额度",
-      "template_file": "templates/github-public-issues/template.yaml",
-      "signature_file": "templates/github-public-issues/template.yaml.sig",
+      "description_file": "templates/sites--market--github-public-issues/listing.md",
+      "template_file": "templates/sites--market--github-public-issues/template.yaml",
+      "signature_file": "templates/sites--market--github-public-issues/template.yaml.sig",
       "signature_algorithm": "ed25519",
       "compatible_core": ">=0.7.0",
       "license": "GitHub API terms; repository content retains its original license",
@@ -1002,10 +1145,13 @@
         "REST",
         "开源项目"
       ],
-      "updated_at": "2026-07-18",
-      "creator_signature_file": "templates/github-public-issues/creator.sig",
-      "creator_identity_file": "templates/github-public-issues/creator.identity",
-      "description_file": "templates/github-public-issues/listing.md",
+      "updated_at": "2026-11-27",
+      "creator_signature_file": "templates/sites--market--github-public-issues/creator.sig",
+      "creator_identity_file": "templates/sites--market--github-public-issues/creator.identity",
+      "package_manifest_file": "templates/sites--market--github-public-issues/package.manifest.json",
+      "creator_package_signature_file": "templates/sites--market--github-public-issues/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "templates/sites--market--github-public-issues/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "fba7308b9ec4483369a14b2982e5c79fb90b0326d658a2e418e32e8878642a0c",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {
@@ -1015,8 +1161,9 @@
       "publisher": "starlife",
       "category": "sites/academic",
       "summary": "使用 OpenAlex 官方 API 检索论文目录；API Key 可按需换取，但默认匿名请求也可使用，限制为每分钟 100 次请求",
-      "template_file": "templates/openalex-works/template.yaml",
-      "signature_file": "templates/openalex-works/template.yaml.sig",
+      "description_file": "templates/sites--market--openalex-works/listing.md",
+      "template_file": "templates/sites--market--openalex-works/template.yaml",
+      "signature_file": "templates/sites--market--openalex-works/template.yaml.sig",
       "signature_algorithm": "ed25519",
       "compatible_core": ">=0.7.0",
       "license": "OpenAlex data CC0; API subject to current service terms and usage budget",
@@ -1026,10 +1173,13 @@
         "CC0",
         "API"
       ],
-      "updated_at": "2026-07-18",
-      "creator_signature_file": "templates/openalex-works/creator.sig",
-      "creator_identity_file": "templates/openalex-works/creator.identity",
-      "description_file": "templates/openalex-works/listing.md",
+      "updated_at": "2026-11-27",
+      "creator_signature_file": "templates/sites--market--openalex-works/creator.sig",
+      "creator_identity_file": "templates/sites--market--openalex-works/creator.identity",
+      "package_manifest_file": "templates/sites--market--openalex-works/package.manifest.json",
+      "creator_package_signature_file": "templates/sites--market--openalex-works/package.manifest.creator.sig",
+      "maintainer_package_signature_file": "templates/sites--market--openalex-works/package.manifest.maintainer.sig",
+      "package_manifest_sha256": "3c48e64a5b805472c99d4be789aeb8067fd0bd880cfc4de992fac27d30c10e7c",
       "creator_fingerprint": "4c3014804d85de2568f85e62a3048429"
     },
     {

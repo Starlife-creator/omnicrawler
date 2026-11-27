@@ -45,6 +45,14 @@ _GENERATED_NAMES = {
     # 把它塞进签名载荷只会让每次重新生成都触发全包重签。
     "deps.lock.json",
     "files.lock.json",
+    # 安装锁文件：**宿主在安装时**写入的元数据（`market_client._INSTALL_META`），
+    # 不是作者交付的内容，因此不参与签名载荷。
+    #
+    # ★ 2026-11-27：整包安装开始写这个文件之后，`verify_package` 会把
+    #   「多了一个未声明文件」判成失败 —— 于是「装完再验一次」永远报
+    #   「未声明=[.omnicrawler-install.json]」。它和 `deps.lock.json` 同类：
+    #   由工具生成、由另一条判据守一致性（`_verify_install_meta` 比对哈希）。
+    ".omnicrawler-install.json",
 }
 _IGNORED_PARTS = {".git", ".mypy_cache", ".pytest_cache", ".ruff_cache", "__pycache__"}
 _FORBIDDEN_NAMES = {".env", "id_rsa", "id_ed25519"}

@@ -189,6 +189,12 @@ def _append_transparency_log(
         log_path,
         {
             "operation": "sign",
+            # v1 时代的三个公开字段**继续保留**：它们是本工具自己的审计信息
+            # （谁签的 / 签的哪个文件 / 文件哈希），与 v2 链的 package 维度并不冲突。
+            # 丢掉它们会让「冷密钥动用记录」少掉最直接的那几条线索。
+            "plugin": display_path,
+            "plugin_sha256": digest,
+            "operator": _current_operator(operator),
             "package_type": "file",
             "package_id": display_path,
             "version": "",

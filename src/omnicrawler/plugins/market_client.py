@@ -535,6 +535,29 @@ def _download_manifest_package(
         if revocation_reason:
             LOGGER.warning("插件 %s: %s", entry.get("id"), revocation_reason)
 
+        # ★ 2026-11-27：整包路径此前**不写安装锁文件**，而 legacy 单文件路径写。
+        #   后果是 `_verify_install_meta` 在整包安装上永远走「无锁文件」分支 ⇒
+        #   「安装哈希」这一层防篡改对所有现代包**静默失效**。
+        #   锁文件记录的是「安装时落盘的那份字节」，与包签名是两层独立的保护：
+        #   签名证明"来自作者"，锁文件发现"装完之后被改过"。
+        (staging / _INSTALL_META).write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "plugin_id": str(entry.get("id") or dest_dir.name),
+                    "plugin_file": main_name,
+                    "plugin_sha256": _sha256((staging / main_name).read_bytes()),
+                    "signature_file": f"{main_name}.sig",
+                    "signature_sha256": _sha256((staging / f"{main_name}.sig").read_bytes()),
+                    "installed_at": datetime.now(UTC).isoformat(),
+                    "package_manifest_sha256": verified.manifest_sha256,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         if dest_dir.exists():
             backup = dest_dir.with_name(dest_dir.name + ".previous")
             if backup.exists():
