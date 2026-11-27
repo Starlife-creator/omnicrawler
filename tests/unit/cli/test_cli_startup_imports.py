@@ -122,3 +122,62 @@ def test_the_probe_itself_can_detect_a_loaded_module(module: str) -> None:
     """
     out = _run_probe(f"import sys; import {module}; print('{module}' in sys.modules)")
     assert out.strip() == "True"
+
+@pytest.mark.parametrize(
+    "module",
+    ["omnicrawler.pipeline", "omnicrawler.runtime.recovery"],
+)
+def test_handlers_do_not_eagerly_import_heavy_modules(module: str) -> None:
+    """★ `cli._handlers` 是所有命令的入口 —— 它 eager 导入的重模块会传染给每条命令。
+
+    实测代价：`omnicrawler.pipeline` 418 ms、`runtime.recovery` 137 ms，
+    而它们各自的真实调用点只有 1 处。
+
+    ★ **`omnicrawler.state` 不在这条断言里**，是有意的：
+      `run_status.execute()` 一进门就要 `StateStore`，而 `status` 是最常用的命令之一。
+      把它也涂成惰性只是把 import 挪个地方，收益为零。
+      判据是「**少数调用点 vs 多数调用点**」，不是「一律惰性」——
+      这条纪律写在 `cli/_handlers.py` 的模块 docstring 里。
+    """
+    out = _run_probe(
+        "import sys\n"
+        f"import omnicrawler.cli._handlers\n"
+        f"print({module!r} in sys.modules)"
+    )
+    assert out.strip() == "False", f"cli._handlers 又 eager 导入了 {module}"
+
+
+def test_handlers_still_expose_every_registered_command() -> None:
+    """★ 反方向：惰性化不许把命令弄丢。
+
+    `lookup()` 必须能为**每条**已注册命令返回 handler —— 否则那些 import 移走后
+    命令变空壳，而上面的「不许 eager 导入」全绿。
+    """
+    out = _run_probe(
+        "from omnicrawler.cli import _handlers\n"
+        "names = sorted(_handlers._registry)\n"
+        "missing = [n for n in names if _handlers.lookup(n) is None]\n"
+        "print(len(names), missing)"
+    )
+    count_text, _, missing_text = out.strip().partition(" ")
+    assert int(count_text) >= 40, f"注册的命令太少：{out.strip()}"
+    assert missing_text.strip() == "[]", f"有命令查不到 handler：{missing_text}"
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["recovery", "schedule", "reprocess", "compare-runs"],
+)
+def test_commands_that_need_heavy_modules_still_work(command: str) -> None:
+    """★ 惰性化的那一侧：把重模块移进分支后，分支本身必须仍能跑。
+
+    只查「模块能不能导入」不够 —— 要确认**真正用到它的那条命令**没坏。
+    这里用 `--help`（不执行、不联网）确认解析器仍在。
+    """
+    out = _run_probe(
+        "import subprocess, sys\n"
+        f"r = subprocess.run([sys.executable, '-m', 'omnicrawler', {command!r}, '--help'],\n"
+        "                     capture_output=True, text=True)\n"
+        "print(r.returncode)"
+    )
+    assert out.strip() == "0", f"{command} --help 失败"
