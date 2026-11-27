@@ -39,6 +39,7 @@
 """
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -79,12 +80,18 @@ def _ensure_work_gitkeep() -> None:
 
     ★ 幂等且失败静默：这是**清理**动作，不该因为权限/并发而让测试失败。
     """
+    # ★ 用**标准库 os + 内建 open**，不用 `Path.mkdir` / `Path.write_bytes`：
+    #   有测试会把 `pathlib` 的方法换成"读追踪器"（`test_build_common` 的
+    #   `test_manifest_does_not_read_whole_files_into_memory` 就是），
+    #   那时 `Path.write_bytes` 会抛 `AttributeError: _Tracked has no attribute write`，
+    #   而这是**清理动作**，绝不能反过来让测试失败。
     try:
-        _WORK.mkdir(parents=True, exist_ok=True)
-        keep = _WORK / ".gitkeep"
-        if not keep.is_file():
-            keep.write_bytes(b"")
-    except OSError:
+        os.makedirs(str(_WORK), exist_ok=True)
+        target = os.path.join(str(_WORK), ".gitkeep")
+        if not os.path.isfile(target):
+            with open(target, "wb"):
+                pass
+    except Exception:  # noqa: BLE001 - 清理失败不得影响测试结果
         pass
 
 
