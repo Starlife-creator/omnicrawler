@@ -9,11 +9,14 @@ A-P3-18 信任边界说明：``source.follow_xpath`` 等表达式来自**本地�
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import io
 import json
 import logging
 import random
 import urllib.parse
+import zlib
 from typing import Any
 from xml.etree.ElementTree import ParseError
 
@@ -225,7 +228,7 @@ class GenericSource:
     def _discover_xml(self, result: FetchResult) -> list[CrawlRequest]:
         try:
             # B08-003：sitemap/feed 解析用 defusedxml（禁 DTD/外部实体，防 XXE/billion-laughs）
-            root = SafeET.fromstring(result.body)
+            root = SafeET.fromstring(_xml_payload(result))
         except (ParseError, ValueError):
             return []
         urls: list[str] = []
@@ -297,6 +300,61 @@ class GenericSource:
         child.meta["_api_pagination_seen"] = seen
         diagnostic["stop_reason"] = "next_request_generated"
         return [child]
+
+
+#: sitemap 允许的最大解压体积。sitemaps.org 规定单文件解压后不超过 50 MB；
+#: 这里取同一个数字，既符合规范又挡住 zip-bomb。
+_SITEMAP_MAX_DECOMPRESSED = 50 * 1024 * 1024
+
+#: `.gz` 扩展名 / gzip 魔数 —— 两者任一成立就按 gzip 处理。
+#: ★ 用**魔数**而不只看扩展名：站点常把 `sitemap.xml.gz` 的内容以
+#:   `application/octet-stream` 直接返回，扩展名也可能被 CDN 去掉。
+_GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _xml_payload(result: FetchResult) -> bytes:
+    """取出可解析的 XML 字节 —— **透明处理 gzip 压缩的 sitemap**。
+
+## 为什么必须支持
+
+sitemaps.org 明确允许 `sitemap.xml.gz`（大站的地图动辄几十 MB，gzip 是标准做法）。
+实测 2026-11-27 一个 `sitemap.xml.gz` 返回 `[]` —— 也就是说：
+
+* `templates/protocols/sitemap` 模板对这类站点**一条 URL 都发现不了**；
+* 而它既不报错也不告警，用户只会觉得"这个站没内容"。
+
+## 安全边界
+
+* 解压**限流**（`_SITEMAP_MAX_DECOMPRESSED`，与 sitemaps.org 的 50 MB 上限一致）：
+  压缩炸弹会在这里被拒绝，而不是把内存吃光；
+* 解压后仍走 `defusedxml`（禁 DTD / 外部实体），XXE 防护不因解压而失效；
+* 解压失败**返回原始字节**让后续解析自然失败 —— 不静默猜测。
+"""
+    body = result.body
+    if not body:
+        return body
+    # ★ 2026-11-27 实测缺陷：`<?xml ...?>` 前面**多一个换行或 BOM** 就会让 Expat 报
+    #   「XML or text declaration not at start of entity」⇒ 整个 sitemap 解析失败 ⇒
+    #   返回 [] ⇒ 用户看到"这个站没内容"。
+    #
+    #   真实站点真的这么发：web-scraping.dev 的 sitemap.xml 第一个字节就是 `\n`。
+    #   规范要求声明在文件最开头，但**我们能容忍的就不该让用户承担**——
+    #   这里去掉开头的空白与 UTF-8 BOM，其余字节原样交给 defusedxml。
+    body = body.lstrip(b"\xef\xbb\xbf").lstrip()
+    is_gzip = body[:2] == _GZIP_MAGIC or str(result.final_url).casefold().endswith(".gz")
+    if not is_gzip:
+        return body
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(body)) as handle:
+            # 多读 1 字节用于判断"是否超限"，避免先解压再测量
+            payload = handle.read(_SITEMAP_MAX_DECOMPRESSED + 1)
+    except (OSError, EOFError, zlib.error):
+        LOGGER.warning("sitemap 声称为 gzip 但解压失败，按原始字节继续: %s", result.final_url)
+        return body
+    if len(payload) > _SITEMAP_MAX_DECOMPRESSED:
+        LOGGER.warning("sitemap 解压后超过上限（%d 字节），已拒绝: %s", _SITEMAP_MAX_DECOMPRESSED, result.final_url)
+        return b""
+    return payload
 
 
 def _with_query(url: str, params: dict[str, Any]) -> str:
