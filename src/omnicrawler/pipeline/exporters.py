@@ -247,6 +247,28 @@ def _export_delivery(config: AppConfig, state: StateStore, run_id: str | None = 
                 clean["evidence"] = evidence
                 handle.write(json.dumps(clean, ensure_ascii=False) + "\n")
         files["jsonl"] = str(path)
+    # ★ 2026-11-27：两种粒度混在一张表里时，**必须说出来**。
+    #
+    #   实测（thunderbit.com）：30 条列表项 + 1 条整页信息，并成一张宽表后
+    #   有 29 行在「产品定价」等列上全空。这不报错、也不丢数据，但用户拿到
+    #   一张空列过半的表，只会以为「定价没抓到」。
+    #
+    #   为什么选择**单表 + 告警**而不是拆成两个文件：
+    #     · 下游（Excel / 数据库 / 脚本）习惯一次读一个表，拆成两个文件要改消费方；
+    #     · `record_type` 本来就是独立列，按它过滤是一行 pandas/SQL 的事；
+    #     · 拆文件的代价是「用户不知道还有一个隐藏文件」，而告警是可读的。
+    _grain_counts: dict[str, int] = {}
+    for _row in records:
+        _kind = str(_row.get("record_type") or "")
+        if _kind:
+            _grain_counts[_kind] = _grain_counts.get(_kind, 0) + 1
+    if len(_grain_counts) > 1:
+        _detail = "、".join(f"{k}={v} 条" for k, v in sorted(_grain_counts.items()))
+        optional_warnings.append(
+            f"本次结果含多种记录粒度（{_detail}）。它们在**同一张表**里用 `record_type` 区分："
+            "列表项与整页信息是两种不同层次的数据，整页信息只占一行、其余行的对应列为空，"
+            "这是正常的，不是没抓到；按 `record_type` 过滤即可分开使用。"
+        )
     # S3.4.1 ②：CSV 列按字段定义顺序（extract.fields 键序），附加列按首次出现顺序
     extract_fields = config.section("extract").get("fields", {})
     headers = list(dict.fromkeys([

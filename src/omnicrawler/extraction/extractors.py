@@ -179,6 +179,32 @@ def _structured_metadata(document: Any, result: FetchResult) -> dict[str, Any]:
     }
 
 
+#: 这些 source 的值是**文档级**的：描述整页（或整页对应的那一个实体），
+#: 不是「列表里某一条」。
+#:
+#: ★ 2026-11-27：此前它们被当作普通字段塞进列表行，于是**每一行都拿到同一个值**。
+#:   实测（thunderbit.com）：列表 30 行，加了 jsonld_path 之后，
+#:   30 行的「定价」全是 "Free" —— 那不是「这条工具免费」，是「整页那个产品免费」。
+#:   技术上叫广播，数据上是**假数据**，而且完全看不出来。
+_DOCUMENT_LEVEL_SOURCES = frozenset(
+    {"jsonld", "opengraph", "open_graph", "twitter", "meta",
+     "browser_response", "network_response", "api_response"}
+)
+
+
+def is_document_level_rule(rule: Any) -> bool:
+    """这条字段规则取的是**整页级**信息吗（而非列表某一条）？
+
+    判据与 `_structured_rule` 的入口完全一致，避免"判断说文档级、取值却按 item"
+    这种两处不一致 —— 那种不一致正是广播问题的成因。
+    """
+    if not isinstance(rule, dict):
+        return False
+    if rule.get("jsonld_path") is not None:
+        return True
+    source = str(rule.get("source", "")).casefold().replace("-", "_")
+    return source in _DOCUMENT_LEVEL_SOURCES
+
 def _structured_rule(
     field_name: str,
     rule: Any,
@@ -456,6 +482,21 @@ class HTMLProcessor:
                            type(exc).__name__, exc)
             items = [document]
         fields = extract.get("fields", {})
+        # ★ 2026-11-27：把**文档级**字段从列表字段里摘出来，单独成一条记录。
+        #
+        #   不摘出来的后果（实测 thunderbit.com）：列表 30 行，每行的「定价」
+        #   都拿到同一个 "Free" —— 那描述的是整页那**一个**产品，不是这一行。
+        #   广播出去的每个值都是错的，而且从输出里完全看不出来。
+        #
+        #   ★ 只在**确实有列表容器**时才拆：单页单对象（无 item_selector）时
+        #     「一行」就等于「整页」，拆开只会平白多出一条重复记录。
+        doc_fields: dict[str, Any] = {}
+        if item_selector and isinstance(fields, dict):
+            for _name, _rule in fields.items():
+                if is_document_level_rule(_rule):
+                    doc_fields[str(_name)] = _rule
+        if doc_fields:
+            fields = {k: v for k, v in fields.items() if str(k) not in doc_fields}
         records: list[ExtractedRecord] = []
         for index, item in enumerate(items, 1):
             data: dict[str, Any] = {}
@@ -502,6 +543,31 @@ class HTMLProcessor:
                     data["browser_api_responses"] = structured["browser_responses"]
             if data:
                 records.append(ExtractedRecord(result.final_url, "html_item", data, {"item": index, **evidence}))
+        # 文档级字段**只取一次**，单独一条记录。record_type 用 `document`，
+        # 让下游能按粒度分流（`record_id` 已按 record_type 分键，不会相撞）。
+        if doc_fields:
+            doc_data: dict[str, Any] = {}
+            doc_evidence: dict[str, Any] = {}
+            for name, rule in doc_fields.items():
+                try:
+                    handled, value, trace = _structured_rule(
+                        name, rule, structured, base_url=result.final_url
+                    )
+                except Exception as exc:  # noqa: BLE001 - 字段级隔离
+                    LOGGER.warning("文档级字段 %s 执行失败，已跳过: %s: %s",
+                                   name, type(exc).__name__, exc)
+                    continue
+                if not handled:
+                    # 声明成文档级却给了纯选择器规则 ⇒ 不静默丢，按整页取一次
+                    value, trace = _apply_rule(document, rule, base_url=result.final_url)
+                if value is not None:
+                    doc_data[name] = value
+                doc_evidence[name] = {"source_url": result.final_url, **trace}
+            if doc_data:
+                records.append(
+                    ExtractedRecord(result.final_url, "document", doc_data,
+                                    {"item": 0, "grain": "document", **doc_evidence})
+                )
         return ProcessResult(records=records)
 
 
