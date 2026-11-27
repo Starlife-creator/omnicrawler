@@ -161,6 +161,19 @@ http:
 `EgressBroker`、仍固定到已批准的 IP（防 DNS rebinding）、TLS 的 SNI 与证书校验
 仍用原域名 —— 它换的只是「连接是否重建」，不换任何安全边界。
 
+★ **两条路径必须逐字节等价**，由 `tests/unit/fetching/test_keepalive_fetch.py` 守着。
+  这不是空话：该特性落地当天就因「自己发请求」漏掉三件 urllib 免费提供的事，
+  每一件都是**静默的错误数据**：
+
+| 漏了什么 | 症状 |
+|---|---|
+| 跟随重定向 | 301 被当正文返回（`status=301, body=b"moved"`）|
+| 发送/保存 cookie | 登录态完全不生效（服务端看到每条请求都是未登录的）|
+| 每请求只占一个 egress 并发槽 | `maximum_concurrency: 1` 时每遇跳转就报预算耗尽 |
+
+因此这条开关的判据不是「快不快」，而是「**与 urllib 路径同结果**」；
+组的末尾有两条 `test_both_paths_agree_on_*` 直接比对两条路径的输出。
+
 ### SPA 的内嵌数据（2026-11-27）
 
 现代前端（Next.js / Nuxt / Gatsby）把整页数据放在 `<script type="application/json">`
