@@ -222,7 +222,23 @@ def inspect_result(
     browser_reason = _analysis_browser_reason(result)
     browser = bool(browser_reason)
     script_count = len(re.findall(r"<script\b", lower))
-    dynamic = browser or bool(frameworks) or script_count >= 12
+    # ★ 2026-11-27 修：**脚本多 ≠ 页面是动态渲染的**。
+    #
+    #   事故实测：一个 JS 教程页有 15 个代码示例，每个包里一个 `<script>` ⇒
+    #   `script_count >= 12` 命中 ⇒ `dynamic=True` ⇒ 推荐 `generic/infinite-scroll`
+    #   （「已配置滚动动作」，而页面根本没有滚动加载）。
+    #
+    #   真正的"动态渲染"判据要么有框架标记（React/Vue/Angular…），要么有
+    #   **空挂载点**（`<div id="root"></div>` 这类 `_analysis_browser_reason` 认的形态）。
+    #   脚本数量只能作为**在没有其它信号时**的弱旁证，且阈值要高到不会被
+    #   "文档页有很多代码示例"命中。
+    #
+    #   这里把纯计数从 12 提到 40，并要求**同时**存在空挂载点或框架标记才采信
+    #   —— 也就是说计数本身不再能单独把页面判成 dynamic。
+    has_empty_mount = bool(
+        re.search(r"<(?:div|main|section)\b[^>]*id=['\"](?:root|app|__next|__nuxt)['\"]", lower)
+    )
+    dynamic = browser or bool(frameworks) or (has_empty_mount and script_count >= 12)
     matches = catalog.recommend(
         TemplateProbe(result.final_url, result.headers, text, parsed_json), limit=limit, intent=intent
     )
