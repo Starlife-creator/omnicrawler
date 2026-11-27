@@ -277,7 +277,20 @@ def analyze_page(html: str, url: str = "") -> IntelligentAnalysis:
     if any(field.get("record_grain") == "detail" for field in fields):
         page_type = "detail"
         confidence = 0.9
-    elif patterns and patterns[0].count >= 3:
+    elif patterns and patterns[0].count >= 3 and not _is_chrome_path(patterns[0].css_path):
+        # ★ 2026-11-27 修：**最像列表的那组落在页面框架里 ⇒ 这不是列表页**。
+        #
+        #   事故实测：`web-scraping.dev/reviews`（数据靠 graphql 异步取）的静态 HTML
+        #   只有导航菜单与页脚链接在重复，`patterns[0]` 是 `nav.navbar`（count=5）。
+        #   旧判据只看 `count >= 3` ⇒ `page_type = "list"`（confidence 0.57）。
+        #
+        #   后果有两层：
+        #     ① 调用方（`site_inspector._structural_page_type`）据此推荐
+        #        `generic/list-detail` —— 而那个页面根本没有业务列表；
+        #     ② confidence 0.57 已经在说"我不确定"，但 page_type 仍给了确定答案。
+        #
+        #   判据与 `_check_verified` 里那条「容器落在页面框架 ⇒ 不是业务列表」同源，
+        #   只是这里用于**分类**而不是拒绝。
         page_type = "list"
         confidence = min(0.95, 0.5 + patterns[0].score * 0.5)
     elif fields and len(fields) > 5:
