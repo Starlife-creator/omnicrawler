@@ -11,7 +11,13 @@ import yaml
 
 from ..core.utils import atomic_write, atomic_write_text
 from ..services.config_history import ConfigHistory
-from ..sources.site_inspector import inspect_url
+
+# ★ 2026-11-27：`inspect_url` 只在 `inspect` 分支用到，改为**用到时**才导入。
+#
+#   实测 `omnicrawler.sources.site_inspector` 连带 `sources.sources` /
+#   `extraction.extractors` / `bs4`，累计约 170 ms。本模块被 `cli._handlers`
+#   顶层导入 ⇒ 这一处 eager import 会让**每条 CLI 命令**都付这 170 ms，
+#   而 `templates list` / `templates search` 根本不做站点探测。
 from ..templates.evidence import template_binding
 from ..templates.template_catalog import TemplateProbe, bundled_template_catalog, user_template_dirs
 from ..templates.template_diff import compare_template_files, merge_template_files
@@ -151,7 +157,9 @@ def execute(
         )
         return {"created": [str(p) for p in created]}
     if action == "inspect":
-        return inspect_url(url, catalog, timeout_seconds=timeout).to_dict()
+        from ..sources.site_inspector import inspect_url  # 惰性：见文件头说明
+
+    return inspect_url(url, catalog, timeout_seconds=timeout).to_dict()
     if action == "diff":
         return compare_template_files(Path(before), Path(after))
     if action == "merge":

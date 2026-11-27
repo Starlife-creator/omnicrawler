@@ -181,3 +181,34 @@ def test_commands_that_need_heavy_modules_still_work(command: str) -> None:
         "print(r.returncode)"
     )
     assert out.strip() == "0", f"{command} --help 失败"
+
+def test_templates_module_does_not_eagerly_import_site_inspector() -> None:
+    """★ `commands.template` 不许在导入期拉 `sources.site_inspector`。
+
+    实测：`sources.site_inspector` 连带 `sources.sources` / `extraction.extractors` /
+    `bs4`，累计约 170 ms。而它只被 `templates inspect` 一条分支用到 ——
+    `templates list` / `templates search` 根本不做站点探测。
+
+    本模块被 `cli._handlers` 顶层导入 ⇒ 这一处 eager import 会让**每条**
+    CLI 命令都付这 170 ms。
+    """
+    out = _run_probe(
+        "import sys\n"
+        "import omnicrawler.commands.template\n"
+        "print('omnicrawler.sources.site_inspector' in sys.modules)"
+    )
+    assert out.strip() == "False", "commands.template 又 eager 导入了 site_inspector"
+
+
+def test_templates_inspect_still_works() -> None:
+    """★ 反方向：惰性化后 `templates inspect` 那条分支必须仍能导入模块。
+
+    只查「没被 eager 导入」不够 —— 移走 import 却把分支弄坏时那条断言是全绿的。
+    """
+    out = _run_probe(
+        "import subprocess, sys\n"
+        "r = subprocess.run([sys.executable, '-m', 'omnicrawler', 'templates', '--help'],\n"
+        "                     capture_output=True, text=True)\n"
+        "print(r.returncode)"
+    )
+    assert out.strip() == "0"
