@@ -10,8 +10,6 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, TypeVar, overload
 
-import yaml
-
 from .._version import __version__
 from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import configure_runtime_environment
@@ -801,8 +799,15 @@ def _wizard(output: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists():
         raise FileExistsError(f"目标已存在，不会覆盖: {output_path}")
-    atomic_write_text(output_path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
+    # ★ 2026-11-27：`yaml` 改为**用到时**才导入。
+    #
+    #   实测 `import yaml` 约 17 ms，而它**只被 `omnicrawler init` 这一条命令用到**。
+    #   此前它挂在 `cli/_main.py` 顶端，于是 `--help` / `run` / `status` …
+    #   每一次启动都付这 17 ms。CLI 冷启动是用户感知最强的一处（`--help` 是
+    #   第一条命令），「只为一条命令 import 一个包」不值得全量付账。
+    import yaml
 
+    atomic_write_text(output_path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
     print(f"\n✅ 配置已生成: {output_path}")
     print()
     # -- 生成自然语言计划摘要 --

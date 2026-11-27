@@ -8,7 +8,6 @@ Public API::
 from __future__ import annotations
 
 import importlib
-import importlib.abc
 import logging
 from typing import Any
 
@@ -150,12 +149,24 @@ _DEPRECATED_MODULE_MAP = {
     "workspace": "services.workspace",
 }
 
-class _AliasLoader(importlib.abc.Loader):
+class _AliasLoader:
     """S4.1：为已加载的壳模块提供兼容 spec。
 
     模块 __dict__ 只读用于外壳占位，真实命名空间由 Loader 填充；
     monkeypatch 通过模块级 __getattr__ 与实际导入都会得到真实模块，
     行为保持一致。
+
+    ★ 2026-11-27：**不再继承 `importlib.abc.Loader`**。
+
+      实测 `import importlib.abc` 一个语句就要 **约 46 ms** —— 它会连带拉起
+      `importlib.resources._common` / `importlib.resources`（约 22 ms）与
+      `importlib._abc`。而 `importlib.util.spec_from_loader()` 对 loader 只要求
+      有 `create_module` / `exec_module`，**不做类型检查**（已实测验证）。
+
+      这正是 `tests/unit/core/test_lazy_import.py` 想守的那条契约的漏洞：
+      那个测试只查「`import omnicrawler` 没有 eager 加载**子模块**」，
+      而 `importlib.abc` 是**标准库**，不在检查范围里 —— 于是这条 46 ms 的
+      固定开销一直挂在每次 CLI 启动上（CLI 冷启动 185 ms 里占 25%）。
     """
 
     def __init__(self, module: Any) -> None:
@@ -193,7 +204,12 @@ class _CompatMetaFinder:
 
         new_path = f"omnicrawler.{new_subpath}"
         module = importlib.import_module(new_path)
-        return importlib.util.spec_from_loader(fullname, _AliasLoader(module))
+        # `spec_from_loader` 的类型标注要求 `importlib.abc.Loader`，但我们刻意
+        # **不导入它**（那一个语句 46 ms，见 `_AliasLoader` 的注释）。
+        # 运行时不检查类型（实测），所以把 loader 声明成 `Any` 走过这一处标注 ——
+        # 代价是这里少了一点静态类型信息，收益是每次 CLI 启动省 46 ms。
+        loader: Any = _AliasLoader(module)
+        return importlib.util.spec_from_loader(fullname, loader)
 
 
 def __getattr__(name: str):
