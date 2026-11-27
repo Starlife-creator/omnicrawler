@@ -29,6 +29,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 # -- 自引导：让工具在直接用 `python tools/signing/sign_plugin.py` 时也能找到 omnicrawler --
 # 即便没有可编辑安装（如全新 checkout），只要运行它的 Python 装了 cryptography 即可。
@@ -163,30 +164,87 @@ def _current_operator(override: str | None = None) -> str:
 def _append_transparency_log(
     plugin: Path, log_path: Path, operator: str | None = None,
 ) -> None:
-    """签名透明日志：时间 / 文件哈希 / 操作者 / 摘要（仅记录公开信息）。
+    """签名透明日志：时间 / 文件哈希 / 操作者（仅记录公开信息）。
 
     B02-004：写日志是冷密钥签名的必经步骤；日志写失败时异常向上传播，
     使签名整体失败（fail-closed），确保每次冷密钥动用都留下公开记录。
-    FINAL-U5（方案 B）：本日志为 **informational-only**——无哈希链/无防篡改
-    能力，不作为审计证据，仅为人工回溯提供线索（远期蓝图见
-    MARKET_ECOSYSTEM §5）。路径字段只记录相对/文件名，绝不写绝对路径。
+
+    ★ 2026-11-27 修（CI `check_transparency.py` 长期判红）：此前这里写的是 **v1**
+      扁平条目，而市场仓的日志早已升级为 **v2 哈希链** —— 于是每跑一次 `sign`，
+      就往 v2 链尾追加一条 v1，触发「第 N 行 v1 旧条目混在 v2 哈希链之后（schema 混存）」。
+      实测该违规在 `138403c` 上已有 7 条，属于**旧工具与新日志格式不同步**。
+
+      现在：**跟随日志现有格式**写入 ——
+
+      · 日志最后一条是 v2（或文件不存在但已按 v2 头写过）⇒ 写 v2 并正确链接 `prev_hash`；
+      · 日志为空 ⇒ 同样写 v2（这是当前唯一在用的格式）；
+      · 绝不把 v1 追加到 v2 之后。
+
+    FINAL-U5（方案 B）：路径字段只记录裸文件名，绝不写绝对路径或含用户名的相对路径。
     """
     digest = hashlib.sha256(plugin.read_bytes()).hexdigest()
-    # FINAL-U5：透明日志绝不写绝对路径，也不写 cwd 下的相对路径——相对路径仍可能
-    # 包含本机用户名等机器身份（例如 pytest-of-<user>/...）。只记录裸文件名，
-    # sha256 足以区分同名文件；后续操作者可通过哈希与私钥位置人工对应。
-    display_path = plugin.name
-    entry = {
-        "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
-        "plugin": display_path,
-        "plugin_sha256": digest,
-        "operator": _current_operator(operator),
-        "operation": "sign",
-        "note": "签名者私钥未导出；本日志仅记录公开元数据",
-    }
+    display_path = plugin.name.replace("\\", "/")
+    timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+    entry = _next_v2_entry(
+        log_path,
+        {
+            "operation": "sign",
+            "package_type": "file",
+            "package_id": display_path,
+            "version": "",
+            "creator_fingerprint": "",
+            "evidence_sha256": digest,
+            "reviewer": _current_operator(operator),
+            "timestamp": timestamp,
+            "note": "签名者私钥未导出；本日志仅记录公开元数据",
+        },
+    )
     with log_path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
     print(f"[透明日志] 已追加: {log_path}")
+
+
+#: v2 链条目中不参与 entry_hash 的元字段（与市场仓 `catalog_lib.transparency` 同口径）。
+_CHAIN_META_FIELDS = frozenset({"schema_version", "seq", "prev_hash", "entry_hash"})
+
+
+def _entry_hash(entry: dict[str, Any]) -> str:
+    """v2 条目业务字段的 SHA-256（链元字段不计入）。"""
+    payload = {k: v for k, v in entry.items() if k not in _CHAIN_META_FIELDS}
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _last_v2_entry(log_path: Path) -> dict[str, Any] | None:
+    """日志里最后一条 v2 条目（用于链接 `prev_hash`）；没有则 None。"""
+    if not log_path.is_file():
+        return None
+    last: dict[str, Any] | None = None
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and candidate.get("schema_version") == 2:
+            last = candidate
+    return last
+
+
+def _next_v2_entry(log_path: Path, body: dict[str, Any]) -> dict[str, Any]:
+    """按日志现有格式构造下一条 v2 条目（正确链接 `prev_hash` / `seq`）。"""
+    previous = _last_v2_entry(log_path)
+    entry: dict[str, Any] = {
+        "schema_version": 2,
+        "seq": 0 if previous is None else int(previous["seq"]) + 1,
+        "prev_hash": None if previous is None else previous["entry_hash"],
+        **body,
+    }
+    entry["entry_hash"] = _entry_hash(entry)
+    return entry
 
 
 def _resolve_password(password: str | None) -> str:
