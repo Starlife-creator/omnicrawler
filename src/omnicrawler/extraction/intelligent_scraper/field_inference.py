@@ -1267,7 +1267,11 @@ def _interaction_signals(html: str) -> tuple[str, ...]:
 
 
 def _interaction_advice(
-    signals: tuple[str, ...], *, scroll_rounds: int, iframe_locators: tuple[str, ...] = ()
+    signals: tuple[str, ...],
+    *,
+    scroll_rounds: int,
+    iframe_locators: tuple[str, ...] = (),
+    embedded_ok: bool = False,
 ) -> list[str]:
     """把交互信号翻译成「我们做了什么 / 你还需要做什么」。
 
@@ -1297,7 +1301,10 @@ def _interaction_advice(
         manual.append("登录表单（登录后才有内容；录一次即会保存登录态）")
     elif "form" in signals and "infinite_scroll" not in signals:
         manual.append("需要提交表单（搜索 / 筛选）")
-    if "spa_shell" in signals and not scroll_rounds:
+    # ★ 2026-11-27：SSR 站点的外壳同样是 SPA，但**数据已经拿到了**（在内嵌载荷里）。
+    #   这时还叫用户去 record-actions 录一遍，等于让人给一件已经完成的事再付一次成本。
+    #   判据是"确实取到了内嵌记录"，不是"看起来像框架"。
+    if "spa_shell" in signals and not scroll_rounds and not embedded_ok:
         manual.append("SPA 外壳，内容靠 JS 渲染")
     if "js_pagination" in signals:
         # ★ 2026-11-26：这一条**不是**"需要人工确认"，我们已经自动换成浏览器抓取了。

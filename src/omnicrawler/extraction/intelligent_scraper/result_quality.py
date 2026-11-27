@@ -66,6 +66,10 @@ def quality_rank(config: dict[str, Any], report: dict[str, Any] | None) -> tuple
 
 #: 站点抓取形态的结论标签（给用户看的一句话，不是内部枚举）。
 VERDICT_STATIC = "静态可抓"
+#: ★ 2026-11-27：SSR 站点（Next.js / Nuxt）的真实结论既不是"静态可抓"也不是
+#:   "需浏览器渲染" —— 它**不需要浏览器**，但数据也不在 DOM 里，而在页面内嵌的
+#:   JSON 载荷里。归到前两者任一个都会误导用户对"要不要开浏览器"的判断。
+VERDICT_EMBEDDED = "静态可抓（页面内嵌数据）"
 VERDICT_BROWSER = "需浏览器渲染"
 VERDICT_LOGIN = "需要登录后才有内容"
 VERDICT_NO_LIST = "未找到业务列表"
@@ -94,6 +98,14 @@ def verdict(
             "常见原因是数据靠 JS 异步加载、需要登录、或站点拒绝访问。"
         )
     source_kind = str(((config.get("source") or {}).get("kind")) or "")
+    # ★ 2026-11-27：内嵌数据链路先判 —— 它的 `source.kind` 也是 `static_html`，
+    #   但数据不在 DOM 里。混在"静态可抓"里会让用户以为去改选择器就能换字段。
+    embedded = (config.get("extract") or {}).get("embedded_json")
+    if isinstance(embedded, dict) and embedded.get("item_path"):
+        return VERDICT_EMBEDDED, (
+            "页面 DOM 里没有业务列表，但内嵌的 SSR 数据（如 __NEXT_DATA__）里有完整记录；"
+            "运行时静态抓取即可，不必启动浏览器。字段规则用 source: embedded_json。"
+        )
     if "login_form" in kinds and source_kind in {"static_html", "crawl"}:
         # 2026-11-26：判据从「有 form」收窄到「**登录表单**」。
         #   实测 books.toscrape 首页有个搜索框，于是所有带搜索的商品页都被判成

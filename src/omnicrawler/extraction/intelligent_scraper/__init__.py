@@ -1464,7 +1464,10 @@ def main(task_settings: dict[str, Any] | None = None) -> None:
             print(f"提示: 以下字段名页面上没有完全对应的，已按最接近的取：{pairs}", file=sys.stderr)
         # 走查 R3.2：交互信号必须**说出来** —— 要么已自动配好（滚动），要么告知要手工补录。
         for line in _interaction_advice(
-            signals, scroll_rounds=scroll_rounds, iframe_locators=_iframe_locators(html)
+            signals,
+            scroll_rounds=scroll_rounds,
+            iframe_locators=_iframe_locators(html),
+            embedded_ok=_has_embedded_records(config),
         ):
             print(f"提示: {line}", file=sys.stderr)
         # 走查 R4.2：记录路径拿不太准（单对象 / 候选接近）、或有嵌套没展开时，如实说出来。
