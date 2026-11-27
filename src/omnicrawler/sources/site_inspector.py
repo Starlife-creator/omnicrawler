@@ -220,8 +220,22 @@ def inspect_result(
     #
     #   判据：搜索框只在**页面主体不是列表**时才决定类型。列表信号（重复文章块或
     #   足够多的链接）优先 —— 那才是"这页是干什么的"。
+    # ★ 2026-11-27 修（第二个）：`links >= 20` 这种计数判据会漏掉**卡片列表**。
+    #
+    #   事故实测：`scrapethissite.com/pages/simple/` 有 250 张国家卡片，
+    #   却只有 **7 个 `<a>`**（卡片本身不是链接）⇒ 判成 `page_type="unknown"`
+    #   ⇒ 推荐 `generic/single-page`。而**同一个产品里的抽取器**
+    #   （`analyze_page`）对同一份 HTML 判的是 `list`（250 个重复 h3 卡片）。
+    #   两处判据打架，用户拿到的是差的那个。
+    #
+    #   判据：**优先复用抽取器的结构化判断**（它看的是重复结构的真实形态），
+    #   只在它给不出结论时才回落到计数启发式。
     list_like = articles > 1 or links >= 20
-    if search_form and not list_like:
+    structural_type = _structural_page_type(result)
+    if structural_type in ("list", "detail"):
+        # 结构化判据能给出明确答案 ⇒ 用它（搜索框不再参与决定）
+        page_type = structural_type
+    elif search_form and not list_like:
         page_type = "search"
     elif articles == 1 or any(marker in lower for marker in ("articlebody", "datepublished")):
         page_type = "detail"
@@ -405,6 +419,27 @@ def _marker_in_executable_context(lower: str, markers: tuple[str, ...]) -> bool:
     """
     executable = _executable_text(lower)
     return any(marker in executable for marker in markers)
+
+
+def _structural_page_type(result: FetchResult) -> str:
+    """用**抽取器的结构化分析**判页面类型；给不出结论时返回空串。
+
+    为什么要有这一层（2026-11-27 实测）：`scrapethissite.com/pages/simple/` 有
+    250 张国家卡片但只有 7 个 `<a>`（卡片不是链接）⇒ 本模块原来的计数启发式
+    （`links >= 20`）判成 `unknown`，而**同一个产品里的** `analyze_page` 判成 `list`。
+    两处判据打架，用户拿到推荐是按差的那个给的。
+
+    失败一律返回空串（让调用方回落到计数启发式）—— 这里不为一个辅助判据引入新的失败面。
+    """
+    try:
+        from ..extraction.extractors import decode_body
+        from ..extraction.intelligent_scraper import analyze_page
+
+        analysis = analyze_page(decode_body(result), result.final_url)
+    except Exception:  # noqa: BLE001 —— 辅助判据，任何失败都回落
+        return ""
+    page_type = str(getattr(analysis, "page_type", "") or "")
+    return page_type if page_type in ("list", "detail") else ""
 
 
 def _signals(text: str, definitions: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
