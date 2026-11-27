@@ -159,7 +159,7 @@ def execute(
     if action == "inspect":
         from ..sources.site_inspector import inspect_url  # 惰性：见文件头说明
 
-    return inspect_url(url, catalog, timeout_seconds=timeout).to_dict()
+        return inspect_url(url, catalog, timeout_seconds=timeout).to_dict()
     if action == "diff":
         return compare_template_files(Path(before), Path(after))
     if action == "merge":

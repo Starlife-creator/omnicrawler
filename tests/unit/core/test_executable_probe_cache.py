@@ -48,16 +48,20 @@ def _clear_probe_cache():
 
 
 def test_same_name_is_resolved_once() -> None:
-    """同一名称只查一次索引（第二次直接命中 `_EXECUTABLE_CACHE`）。"""
-    capability_slots._find_executable("python.exe")
-    cached = capability_slots._EXECUTABLE_CACHE["python.exe"]
-    # 把索引换成「查了就会炸」的实现：若第二次仍查索引，这条会红。
-    original = capability_slots._PATH_INDEX
-    capability_slots._PATH_INDEX = {}
+    """同一名称只查一次索引（第二次直接命中 `_EXECUTABLE_CACHE`）。
+
+    **与平台无关**：用一份伪造的索引，不假设任何真实可执行文件存在。
+    """
+    capability_slots.clear_executable_cache()
+    capability_slots._PATH_INDEX = {"alpha-driver.exe": "/fake/alpha-driver.exe"}
     try:
-        assert capability_slots._find_executable("python.exe") == cached
+        first = capability_slots._find_executable("alpha-driver.exe")
+        assert capability_slots._EXECUTABLE_CACHE["alpha-driver.exe"] == first
+        # 把索引清空：若第二次仍去查索引（而非命中缓存），结果会变 None。
+        capability_slots._PATH_INDEX = {}
+        assert capability_slots._find_executable("alpha-driver.exe") == first
     finally:
-        capability_slots._PATH_INDEX = original
+        capability_slots.clear_executable_cache()
 
 
 def test_missing_executable_is_cached_as_none() -> None:
@@ -74,21 +78,36 @@ def test_missing_executable_is_cached_as_none() -> None:
 
 
 def test_clear_cache_forces_reprobe() -> None:
-    """`clear_executable_cache()` 后必须重新探测（安装驱动后同进程复检）。"""
-    name = "python.exe"
-    first = capability_slots._find_executable(name)
+    """`clear_executable_cache()` 后必须重新探测（安装驱动后同进程复检）。
+
+    **与平台无关**：伪造索引，不依赖真实可执行文件。
+    """
     capability_slots.clear_executable_cache()
+    capability_slots._PATH_INDEX = {"alpha-driver.exe": "/fake/alpha-driver.exe"}
+    try:
+        assert capability_slots._find_executable("alpha-driver.exe") is not None
+    finally:
+        capability_slots.clear_executable_cache()
     assert capability_slots._PATH_INDEX is None, "清缓存后索引没有失效"
-    assert name not in capability_slots._EXECUTABLE_CACHE
-    assert capability_slots._find_executable(name) == first
+    assert "alpha-driver.exe" not in capability_slots._EXECUTABLE_CACHE
 
 
 def test_distinct_names_are_probed_independently() -> None:
-    """缓存按名称分键，不能把 A 的结果套给 B。"""
-    real = capability_slots._find_executable("python.exe")
-    missing = capability_slots._find_executable("definitely-not-a-real-driver-xyz")
-    assert real is not None
-    assert missing is None
+    """缓存按名称分键，不能把 A 的结果套给 B。
+
+    ★ 不用「`python.exe` 必然存在」这类假设：那在 macOS/Linux 上不成立
+    （那边根本没有 `.exe`）。直接把索引换成一份已知内容，验证分键即可 ——
+    这样这条判据与平台无关。
+    """
+    capability_slots.clear_executable_cache()
+    capability_slots._PATH_INDEX = {"alpha-driver.exe": "/fake/alpha-driver.exe"}
+    try:
+        assert capability_slots._find_executable("alpha-driver.exe") is not None
+        assert capability_slots._find_executable("beta-driver.exe") is None
+        # 缓存按名称分键：beta 的 None 不能覆盖 alpha 的命中。
+        assert capability_slots._find_executable("alpha-driver.exe") is not None
+    finally:
+        capability_slots.clear_executable_cache()
 
 
 # ── 第二层：PATH 索引（本次新增，省的是「不同名字」那笔） ────────────
@@ -136,11 +155,20 @@ def test_path_index_matches_shutil_which() -> None:
 
 
 def test_path_index_handles_pathext_forms() -> None:
-    """Windows 上不带扩展名的名字（`cmd`）要能匹配 `cmd.EXE`。"""
+    """Windows 上不带扩展名的名字（`cmd`）要能匹配目录里真实的 `cmd.EXE`。
+
+    **双向守卫**：
+
+    * 非 Windows ⇒ skip（`PATHEXT` 是 Windows 概念）；
+    * Windows 上若连 `cmd` 都找不到（PATH 被裁剪过的受限环境）⇒ 也 skip。
+      否则「环境里没有 cmd」会被误报成「索引坏了」。
+    """
     import os
 
     if os.name != "nt":
         pytest.skip("PATHEXT 是 Windows 概念")
+    if shutil.which("cmd") is None:
+        pytest.skip("当前环境 PATH 里没有 cmd（受限测试环境）")
     assert capability_slots._find_executable("cmd") is not None
     assert capability_slots._find_executable("cmd.exe") is not None
 
@@ -180,11 +208,16 @@ def test_nonempty_index_does_not_call_which() -> None:
         calls[0] += 1
         return real_which(name, *a, **kw)
 
+    # ★ 显式给一份**非空**索引：不能指望真实 PATH 一定可读 ——
+    #   受限环境里 PATH 为空时索引也是空的，那条路径本来就该回退。
+    capability_slots.clear_executable_cache()
+    capability_slots._PATH_INDEX = {"alpha-driver.exe": "/fake/alpha-driver.exe"}
     shutil.which = counting
     try:
         result = capability_slots._find_executable("definitely-not-a-real-driver-xyz")
     finally:
         shutil.which = real_which
+        capability_slots.clear_executable_cache()
     assert result is None
     assert calls[0] == 0, f"索引非空却退回了 shutil.which（{calls[0]} 次）"
 
