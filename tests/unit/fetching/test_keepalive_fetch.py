@@ -147,6 +147,11 @@ def _raw(tmp_path: Path, base: str = "http://127.0.0.1/", **http_overrides: obje
     }
 
 
+def _raw_config(tmp_path: Path, base: str, **overrides: object) -> AppConfig:
+    raw = _raw(tmp_path, base, **overrides)
+    return AppConfig(tmp_path / "c.yaml", tmp_path, raw, tmp_path / "work")
+
+
 def _config(tmp_path: Path, base: str = "http://127.0.0.1/", **overrides: object) -> AppConfig:
     raw = _raw(tmp_path, base, **overrides)
     return AppConfig(tmp_path / "c.yaml", tmp_path, raw, tmp_path / "work")
@@ -650,3 +655,98 @@ def test_concurrency_slot_is_released_after_a_redirect(server: str, tmp_path: Pa
     finally:
         if fetcher._pool is not None:
             fetcher._pool.close()
+
+
+# ── 与 retry 的交互（"能不能开默认"的最后一个未知）────────────────────
+
+
+def test_broken_connection_is_retried_and_succeeds(tmp_path: Path) -> None:
+    """★ 半包/断链必须按既有 retry 语义重试，且**不许把坏连接留在池里**。
+
+    这是 `keep_alive` 能不能开默认的最后一个未知项：连接复用让"连接已断"成为
+    常态（服务端随时可能关空闲连接），所以必须证明这条路径会被重试兜住。
+    """
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    state = {"seen": 0}
+
+    class _Flaky(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self) -> None:  # noqa: N802
+            state["seen"] += 1
+            if state["seen"] == 1:
+                # 第一次：不做任何响应，直接断链
+                self.close_connection = True
+                try:
+                    self.connection.close()
+                except OSError:
+                    pass
+                return
+            body = b"OK"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_a: object) -> None:
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Flaky)
+    httpd.daemon_threads = True
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{httpd.server_port}"
+        fetcher = HTTPFetcher(_raw_config(tmp_path, base, retries=3))
+        try:
+            result = fetcher.fetch(CrawlRequest(f"{base}/flaky"))
+            assert result.status == 200 and result.body == b"OK"
+            assert state["seen"] >= 2, "没有重试（只发了一次请求）"
+        finally:
+            if fetcher._pool is not None:
+                fetcher._pool.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+
+def test_bad_connection_is_not_kept_in_the_pool(tmp_path: Path) -> None:
+    """失败之后池里**不许**留着那条坏连接（否则下一次直接撞上它）。"""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class _Drop(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self) -> None:  # noqa: N802
+            self.close_connection = True
+            try:
+                self.connection.close()
+            except OSError:
+                pass
+
+        def log_message(self, *_a: object) -> None:
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Drop)
+    httpd.daemon_threads = True
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{httpd.server_port}"
+        fetcher = HTTPFetcher(_raw_config(tmp_path, base, retries=1))
+        try:
+            with pytest.raises((OSError, ConnectionError, TimeoutError)):
+                fetcher.fetch(CrawlRequest(f"{base}/drop"))
+            assert fetcher._pool is not None
+            assert fetcher._pool._slot is None, "坏连接被留在池里了"
+        finally:
+            if fetcher._pool is not None:
+                fetcher._pool.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
