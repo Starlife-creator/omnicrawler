@@ -2,6 +2,24 @@
 
 ``cli._main`` 只负责参数定义、日志与错误边界；全部子命令的执行逻辑
 集中注册在本模块（命令名、参数、输出与退出码与 _main 中定义的解析器一一对应）。
+
+## 重模块一律**用到时**才导入（2026-11-27）
+
+实测（全新解释器，best of 5）：
+
+| import | 累计耗时 | 本模块里的真实需求 |
+|---|---|---|
+| baseline（空）| 38 ms | — |
+| `core.config` | 157 ms | **必需**：`load_config` 在十几个 handler 里都要用 |
+| `pipeline` | 418 ms | 只有 `reprocess` 一条命令用 `Pipeline`（1 处）|
+| `state` | 165 ms | 4 处用 `StateStore` |
+
+`pipeline` / `state` 挂在模块顶端 ⇒ **每条 CLI 命令**都付这约 260 ms，
+而真正需要的只有 5 个调用点。`omnicrawler status`（525 ms）里有**一半**
+是这两个没人用的 import。
+
+★ `core.config` 保留在顶端：把它也惰性化只会让每个 handler 各写一遍 import，
+  收益远小于代价。**惰性化要按「少数调用点 vs 多数调用点」判断，不是一律惰性。**
 """
 
 from __future__ import annotations
@@ -31,12 +49,10 @@ from ..commands import worker as cmd_worker
 from ..commands import workspace as cmd_workspace
 from ..core.config import load_config, validate_config
 from ..core.migrations import migrate_file
-from ..pipeline import Pipeline, build_registry
 from ..plugins.plugins import TrustPromptResult, set_default_trust_prompter
 from ..services.doctor import run_doctor
 from ..services.retention import apply_retention, plan_retention, serialize_plan
 from ..services.server import serve
-from ..state import StateStore
 
 Handler = Callable[[argparse.Namespace], None]
 _registry: dict[str, Handler] = {}
@@ -296,6 +312,8 @@ def _run_plugins(args: argparse.Namespace) -> None:
         payload = {"ok": all(r.ok for r in results), "audited": [r.to_dict() for r in results]}
         _json(payload)
         raise SystemExit(0 if payload["ok"] else 1)
+    from ..pipeline import build_registry  # 惰性：见文件头说明
+
     config = load_config(args.config) if args.config else None
     _json(build_registry(config).describe())
 
@@ -1016,6 +1034,7 @@ def _run_recovery(args: argparse.Namespace) -> None:
 @_register("compare-runs")
 def _run_compare_runs(args: argparse.Namespace) -> None:
     from ..services.document_facade import compare_runs
+    from ..state import StateStore  # 惰性：见模块 docstring
 
     config = load_config(args.config)
     with StateStore(config.workspace / "state.sqlite3") as state:
@@ -1118,6 +1137,8 @@ def _run_export(args: argparse.Namespace) -> None:
 
 @_register("reprocess")
 def _run_reprocess(args: argparse.Namespace) -> None:
+    from ..pipeline import Pipeline  # 惰性：见模块 docstring
+
     config = load_config(args.config)
     with Pipeline(config) as pipeline:
         _json(pipeline.reprocess_records(args.run_id, record_id=args.record_id))

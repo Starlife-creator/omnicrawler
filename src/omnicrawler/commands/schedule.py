@@ -6,8 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from ..core.config import load_config, require_config_path
-from ..pipeline import Pipeline
 from ..runtime.scheduler import ScheduleStore
+
+# ★ 2026-11-27：`Pipeline` 只在 `run-due` 用到，改为**用到时**才导入。
+#
+#   实测 `import omnicrawler.pipeline` 约 418 ms（连带 bs4 / html_tools /
+#   extraction.extractors）。本模块被 `cli._handlers` 顶层导入 ⇒ 这一处 eager
+#   import 会传染给**每一条 CLI 命令**，包括 `schedule list` 这种纯查询。
 
 
 def _json(value: Any) -> str:
@@ -42,6 +47,8 @@ def execute(
             def runner(path: Path) -> dict[str, Any]:
                 # B09-003：run-due 的 config_path 来自本地调度库，消费前强制校验
                 # 存在且位于 CWD 内（与 queue 本地降级模式对齐，防越界加载）。
+                from ..pipeline import Pipeline  # 惰性：见文件头说明
+
                 config_path = require_config_path(path, require_inside_cwd=True)
                 task_config = load_config(config_path)
                 with Pipeline(task_config) as pipeline:
