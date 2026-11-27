@@ -37,7 +37,10 @@ from .plugin_preflight import (
     _static_plugin_metadata,
 )
 from .plugin_registry import Registry
-from .plugin_signature import SIGNATURE_POLICY_STRICT, _verify_plugin_signature
+from .plugin_signature import (
+    SIGNATURE_POLICY_STRICT,
+    _verify_plugin_signature,
+)
 from .plugin_trust_prompt import TrustPrompter
 
 LOGGER = logging.getLogger(__name__)
@@ -299,6 +302,9 @@ def _load_local_plugin(
     # ---- Phase 2a B4：运行模式路由分流（验签后、执行前）----
     # 契约 2（handle）+ subprocess 模式 → 注册子进程适配器工厂，不在主进程 exec。
     # 契约 1（register）无法 subprocess（无宿主注册面）→ 走既有 in_process 路径。
+    #
+    # ★ 2026-11-27：契约 1 的 `execution_mode` 必须是 `in_process`（见下方 derivation），
+    #   否则 `decide_route` 会直接返回 subprocess 分支，批准矩阵从未对契约 1 求值。
     from . import plugin_router
     from .plugin_subprocess_adapter import (
         CONTRACT2_HOOK_EVENTS,
@@ -316,9 +322,16 @@ def _load_local_plugin(
 
     contract_shape = plugin_router.detect_contract_shape(source)
     static_meta = _static_plugin_metadata(path, source) if contract_shape == 2 else None
-    execution_mode = (
-        static_meta.execution_mode if static_meta is not None else "subprocess"
-    )
+    # ★ 2026-11-27：契约 1 **没有宿主注册面**，物理上只能在主进程执行，
+    #   所以它的 `execution_mode` 必须是 `in_process`（而不是默认的 `subprocess`）。
+    #   旧实现一律填 `"subprocess"`，导致 `decide_route` 直接返回 subprocess 分支，
+    #   批准矩阵从未对契约 1 求值过 —— 这正是审批门「有代码没接线」的起点。
+    if static_meta is not None:
+        execution_mode = static_meta.execution_mode
+    elif contract_shape == 1:
+        execution_mode = "in_process"
+    else:
+        execution_mode = "subprocess"
     plugins_section = config.section("plugins") if config is not None else {}
     backend_cfg, _escape = plugin_router.resolve_runtime_backend(plugins_section)
     allowlist_entry: dict[str, Any] | None = None
@@ -366,6 +379,45 @@ def _load_local_plugin(
             "(plugin=%s, file=%s)；仅限受信开发环境，生产环境请改用 subprocess + 验签。",
             plugin_id, path,
         )
+
+    # ★ 设计判据（2026-11-27 定稿）：
+    #   `decide_route` 的 in_process 档位矩阵（T1/T2/T3）**判定的是"能否隔离"，
+    #   而契约 1 物理上不能隔离** —— 所以对契约 1 来说，"路由到 subprocess" 不等于
+    #   "拒绝加载"，而是"没有隔离可用"。硬拒会把**所有**已验签信任的契约 1 插件
+    #   一起拒掉（实测 5 条既有用例全红），那不是修补而是破坏。
+    #
+    #   真正缺的是：**这条路径此前完全静默**。合入的判据是「不再静默」：
+    #     · MaintainerSigned / CreatorTrusted（显式信任） ⇒ 正常放行，不额外告警
+    #       （严格模式下的验签已经就是那道批准）；
+    #     · 其余（developer 模式放行、或经信任询问器 LOAD_ONCE 的未信任创作者）
+    #       ⇒ **落审计台账 + 显著告警**，让"在主进程执行"这件事可被追查。
+    if contract_shape == 1 and route.backend != "in_process":
+        _explicitly_trusted = decision is not None and decision.level.name in (
+            "MaintainerSigned",
+            "CreatorTrusted",
+        )
+        if not _explicitly_trusted:
+            registry.escape_hatch_events.append({
+                "plugin_id": plugin_id,
+                "path": str(path),
+                "backend": "in_process",
+                "reason": (
+                    "契约 1 在主进程执行，但路由裁决不是 in_process"
+                    f"（{route.reason}）"
+                ),
+                "tier": route.tier or "",
+                "trust_level": decision.level.name if decision is not None else "unverified",
+                "at": utcnow(),
+            })
+            LOGGER.warning(
+                "⚠ 契约 1 在主进程执行，且未经显式信任（trust=%s, tier=%s, file=%s）。"
+                "契约 1 没有宿主注册面、无法隔离到子进程；请确认该插件来源可信，"
+                "或改用契约 2（handle(operation, payload)）走子进程沙箱。",
+                decision.level.name if decision is not None else "unverified",
+                route.tier or "（未分类）",
+                path,
+            )
+
 
     if route.backend == "subprocess" and contract_shape == 2:
         LOGGER.info("契约 2 插件走子进程沙箱: %s（%s）", path, route.reason)

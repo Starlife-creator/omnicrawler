@@ -10,7 +10,7 @@
 | 形态 | 入口 | 运行模式 | 说明 |
 |---|---|---|---|
 | **契约 2**（推荐） | 顶层 `handle(operation, payload) -> dict` | 缺省 `subprocess`（隔离沙箱） | 自包含、无 `import omnicrawler`、能力经 `omnicrawler_sdk` 代理 |
-| **契约 1**（本地特权） | `register(registry)` | 仅 `in_process`（最高风险审批档） | 仅供明确受信任的本地扩展；不接受公共市场投稿 |
+| **契约 1**（本地特权） | `register(registry)` | 仅 `in_process`（无隔离可用，见下） | 仅供明确受信任的本地扩展；市场可收，但需 MaintainerSigned + 高风险标注 + 用户逐台审批 |
 
 契约形态由加载器静态检测（顶层 `handle` → 契约 2；仅 `register` → 契约 1）；两者共存按契约 2。
 
@@ -163,7 +163,19 @@ PLUGIN_METADATA = {
 - **subprocess（缺省）**：独立进程 + 能力代理（默认路径，无特权申请；不等于 OS 沙箱）。
 - **in_process（特权申请）**：进程内运行，必须经过风险分级、用户确认和限时豁免；
   `in_process_allowlist` 条目必须包含 `expires`。无交互确认时失败关闭并降级为 subprocess。
-  契约 1 一律采用最高风险审批档。
+  契约 1 一律采用最高风险审批档（T3）。
+
+  ★ **契约 1 的真实语义（2026-11-27 更正）**：它没有宿主注册面，**物理上无法
+  隔离到子进程**，所以 `route.backend` 对契约 1 只会是 `in_process`。
+  这意味着「路由到 subprocess」不等于「拒绝加载」，而是「没有隔离可用」。
+  实际生效的约束是：
+
+  | 情形 | 行为 |
+  |---|---|
+  | MaintainerSigned / CreatorTrusted（显式信任）| 正常放行 |
+  | 未显式信任（developer 放行、LOAD_ONCE、Unsigned）| **落 `escape_hatch_events` 台账 + 显著 WARNING**，不是静默执行 |
+
+  加载器不会替你判断插件代码可信 —— 契约 1 拿到 `QMainWindow` 就等于拿到整个界面。
 
 ## 契约 2 能力代理（omnicrawler_sdk）
 
