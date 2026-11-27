@@ -245,6 +245,22 @@ from .result_quality import (
     verdict as _result_verdict,
 )
 
+#: 判「这其实是个详情页」时，列表项数上限。真正的列表页通常远多于这个数。
+_DETAIL_PAGE_MAX_ITEMS = 6
+
+#: 判「这其实是个详情页」时，允许的**业务字段**个数上限。
+#: 详情页被误当列表时，填上的往往只有「链接文本 / 链接地址」这类导航字段。
+_DETAIL_PAGE_MAX_FILLED_FIELDS = 1
+
+#: 这些字段名说明「抓到的是导航/链接」，不是业务数据。
+#: 与 `result_quality.FALLBACK_PREFIX`（`内容_<tag>`）互补：
+#: 一个说「没认出语义」，一个说「认出来了但那是导航」。
+_NAVIGATION_FIELD_NAMES = frozenset({"链接文本", "链接地址", "图片地址", "标题_1"})
+
+#: 判「这其实是个详情页」时，框架**之外**至少要有的正文字符数。
+#: 低于它说明整页几乎只有导航/侧边栏 —— 那是「页面没内容」，不是「详情页被误当列表」。
+_DETAIL_PAGE_MIN_BODY_TEXT = 500
+
 # ── 主入口 ─────────────────────────────────────────────────────────────
 
 @dataclass
@@ -711,6 +727,59 @@ def verify_config(config: dict[str, Any], html: str) -> dict[str, Any]:
     return {"mode": "html", "items": len(items), "records": records, "fields": filled}
 
 
+def _is_business_field_name(name: str) -> bool:
+    """字段名是否**像业务数据**（不是兜底名、也不是导航/链接类）。
+
+    两类「看着有值但不是业务」的字段名：
+      · `内容_<tag>` —— 没认出语义（判据在 `result_quality`，那里是唯一真源）；
+      · `链接文本` / `链接地址` / `图片地址` —— 认出来了，但那是**导航或装饰**。
+    """
+    from .result_quality import is_fallback_field_name
+
+    text = str(name or "").strip()
+    if not text or is_fallback_field_name(text):
+        return False
+    return text not in _NAVIGATION_FIELD_NAMES
+
+
+def _body_text_beyond_chrome(html: str) -> int:
+    """页面**在页面框架（aside / nav / footer）之外**的可见文本字符数。
+
+    用于区分两种「列表选到了框架上」：
+      · 详情页 —— 框架外有大量正文（商品名/价格/描述），只是重复组落在面包屑上；
+      · 空壳页 —— 整页几乎只有导航，没有正文可抓。
+    """
+    nodes = _parse_dom(html)
+    return sum(len(node.text) for node in nodes if not _is_chrome_path(node.css_path))
+
+
+def _looks_like_detail_page(report: dict[str, Any], items: int, html: str) -> bool:
+    """这份「列表」配置是否其实来自一个**详情页**。
+
+    实测（2026-11-27，scrapingcourse 商品详情页）：分析器把重复元素选到了面包屑上，
+    字段几乎全空。页框判据正确拦住了它，但错误信息把人引向「去找列表」——
+    而用户给的**就是**一个商品页。
+
+    三条同时成立：
+      1. 列表项很少（`<= _DETAIL_PAGE_MAX_ITEMS`）；
+      2. 填上的**业务字段**不超过 `_DETAIL_PAGE_MAX_FILLED_FIELDS` 个；
+      3. 页面在框架之外有足够正文。
+
+    ★ 第 2 条不能写成「全部为 0」：实测该页 `链接文本` 填了 1 条（面包屑链接）。
+    ★ 第 3 条不能省：只靠 1+2 会把「只有侧边栏的页面」也叫成详情页。
+    """
+    if items > _DETAIL_PAGE_MAX_ITEMS:
+        return False
+    filled = report.get("fields") or {}
+    business = [
+        name for name, count in filled.items()
+        if int(count or 0) > 0 and _is_business_field_name(str(name))
+    ]
+    if len(business) > _DETAIL_PAGE_MAX_FILLED_FIELDS:
+        return False
+    return _body_text_beyond_chrome(html) >= _DETAIL_PAGE_MIN_BODY_TEXT
+
+
 def _check_verified(config: dict[str, Any], html: str) -> dict[str, Any]:
     """试跑生成的配置；采不到足够记录即抛错（不再静默产出不可用配置）。
 
@@ -755,7 +824,20 @@ def _check_verified(config: dict[str, Any], html: str) -> dict[str, Any]:
             "未识别出列表：只在页面框架（导航 / 侧边栏 / 页脚）里找到重复元素。"
             f"\n  item_selector = {item_selector}"
             f"\n  字段填充情况 = {empty}"
-            "\n  建议：先确认目标 URL 就是列表页（商品列表常在 /shop、/products 等路径下，"
+            # ★ 2026-11-27：把「这更像详情页」这条判断说出来。
+            #   实测（scrapingcourse 商品详情页）：分析器把重复元素选到了**面包屑**上，
+            #   字段几乎全空。错误信息只说"在页面框架里找到重复元素"，用户会去找列表 ——
+            #   而这个页面**本来就不该按列表抓**。
+            + (
+                (
+                    "\n  注意：这个页面看起来是**详情页**（单个商品/文章），不是列表页。"
+                    "它不该按列表抓 —— 可用 `omnicrawler auto-analyze --always-browser` "
+                    "或手工改成单页（`source.kind: static_html` + 直接指定字段选择器）。"
+                )
+                if _looks_like_detail_page(report, items, html)
+                else ""
+            )
+            + "\n  建议：先确认目标 URL 就是列表页（商品列表常在 /shop、/products 等路径下，"
             "首页往往只有导航与侧边栏）；若该页面确实有列表但结构不常规，"
             "请用 `omnicrawler visual-select` 手动圈选字段。"
         )
