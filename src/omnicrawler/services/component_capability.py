@@ -53,7 +53,33 @@ from typing import Any
 #: 其余（`records.page` / `view.richtext` / `state.get` / `surface.background.*` …）
 #: 由宿主 SDK 提供，与组件无关 —— 拿它们去比会得出「市场里一半插件都废了」的
 #: 错误结论。
-COMPONENT_CAPABILITY_DOMAINS: tuple[str, ...] = ("ocr.", "pdf.", "browser.", "model.")
+#: ★ 2026-11-27：原来的 4 个域里有 3 个是**空的**（`pdf.` / `browser.` / `model.`
+#: 没有任何组件提供），而 16 个组件里只有 5 个真在做 OCR —— 其余 11 个
+#: （转 Markdown、表格、导出 docx/xlsx、抽取正文、解析 feed、去重、定时）
+#: 都被塞进 `ocr.` 这个**杂物抽屉**。
+#:
+#: 后果不只是名字难看：`capability_slots` 按域建槽位，`ocr.` 一统天下意味着
+#: 这些组件和真正的 OCR 引擎**抢同一个槽位**，内置引擎没装时 `slot("ocr").active()`
+#: 会选中 `convert-markdown` —— 一个根本不做 OCR 的东西（CI 上真实红过）。
+#:
+#: ⚠ 市场 `provides` 是**创作者签名覆盖的字节**，我手里没有那把私钥（实测三个维护者
+#:   密钥都不匹配），所以**改不了市场数据**。真实修复落在消费侧：
+#:   `capability_slots._slot_for_capability()` 把非引擎的 `ocr.*` 分流到 `ocr_aux`。
+#:   这里列出的域用于**判定"这条能力是否由组件满足"**（`resolve()` 用），
+#:   与槽位名是两件事 —— 保留 `ocr.` 一词不变，因为数据里就是这个前缀。
+COMPONENT_CAPABILITY_DOMAINS: tuple[str, ...] = (
+    "ocr.",        # 光学字符识别引擎（只有 5 个组件在这里）
+    "convert.",    # 格式转换（Markdown / 表格）
+    "text.",       # 文本修复
+    "doc.",        # 文档导出（docx / xlsx）
+    "extract.",    # 内容抽取（正文 / 表格）
+    "parse.",      # 结构化解析（时间 / feed）
+    "dedupe.",     # 去重
+    "schedule.",   # 调度
+    "pdf.",        # 预留（当前无组件）
+    "browser.",    # 预留（当前无组件）
+    "model.",      # 预留（当前无组件）
+)
 
 
 def is_component_capability(name: str) -> bool:

@@ -42,7 +42,8 @@ def test_full_capability_name_is_kept_in_metadata() -> None:
         [{"id": "convert-markdown", "provides": ["ocr.convert-markdown"]}],
         source="component",
     )
-    provider = registry.slot("ocr").get("convert-markdown")
+    # 后处理组件落 `ocr_aux`；真引擎才落 `ocr`。
+    provider = registry.slot("ocr_aux").get("convert-markdown")
     assert provider is not None
     assert provider.metadata.get("capability") == "ocr.convert-markdown"
 
@@ -95,22 +96,55 @@ def test_all_market_components_land_in_one_slot() -> None:
 
     registry = CapabilitySlotRegistry()
     registry.register_manifest_entries(entries, source="component")
+    # ★ 消费侧分流：真 OCR 引擎进 `ocr`，其余 ocr.* 后处理进 `ocr_aux`。
     ocr_slot = registry.slot("ocr")
-    assert ocr_slot is not None, "组件没能落到 ocr 槽位"
-    assert len(ocr_slot.providers()) == len(entries), (
-        f"只有 {len(ocr_slot.providers())}/{len(entries)} 个组件进了 ocr 槽位"
+    assert ocr_slot is not None, "OCR 组件没能落到 ocr 槽位"
+    ocr_ids = {item.provider_id for item in ocr_slot.providers()}
+    assert ocr_ids == {
+        "ocr-paddle", "ocr-rapidocr", "ocr-easyocr", "ocr-doctr", "tesseract-chi-sim",
+    }, f"ocr 槽位的成员不对：{sorted(ocr_ids)}"
+
+    aux_slot = registry.slot("ocr_aux")
+    assert aux_slot is not None, "没有 ocr_aux 槽位（后处理组件无处可去）"
+    assert len(aux_slot.providers()) == len(entries) - 5
+
+    # 每个组件都必须能被**某个**槽位查到，不许有幽灵槽位。
+    total = sum(len(slot.providers()) for slot in registry._slots.values())
+    assert total == len(entries), f"只有 {total}/{len(entries)} 个组件可被查到"
+    assert not any("." in name for name in registry._slots), (
+        f"又建出了幽灵槽位：{sorted(n for n in registry._slots if chr(46) in n)}"
     )
 
 
-def test_builtin_ocr_engines_still_win_on_priority() -> None:
-    """★ 回归：组件不能抢走内置 OCR 引擎的首选位（priority 120 vs 110）。"""
+def test_non_ocr_component_does_not_enter_the_ocr_slot() -> None:
+    """★ 回归（CI 上真实红过）：后处理组件不许进 `ocr` 槽位。
+
+    市场里 11 个后处理组件历史上都声明 `ocr.*`（`provides` 是被创作者签名
+    固定的字节，主仓改不动）。旧实现按域前缀建槽位 ⇒ 它们和 OCR 引擎抢同一个
+    槽位；CI 上内置引擎不可用时，`slot("ocr").active()` 真的选中了
+    `convert-markdown` —— 一个根本不做 OCR 的东西。
+
+    现在消费侧把非引擎的 `ocr.*` 分流到 `ocr_aux`。
+    """
     registry = build_builtin_slot_registry()
     registry.register_manifest_entries(
         [{"id": "convert-markdown", "provides": ["ocr.convert-markdown"]}],
         source="component",
     )
-    active = registry.slot("ocr").active()
-    assert active is not None
-    assert active.provider_id in {"paddleocr", "tesseract"}, (
-        f"组件抢走了 OCR 首选位：{active.provider_id}"
+    ids = {item.provider_id for item in registry.slot("ocr").providers()}
+    assert "convert-markdown" not in ids, "后处理组件混进了 ocr 槽位"
+    aux = registry.slot("ocr_aux")
+    assert aux is not None and aux.get("convert-markdown") is not None
+
+
+def test_a_real_ocr_component_can_serve_the_ocr_slot() -> None:
+    """正方向：真 OCR 组件（`ocr.paddle`）**可以**进 `ocr` 槽位。
+
+    修域不是「把组件赶出 ocr」，而是「只让真 OCR 引擎留下」。
+    """
+    registry = CapabilitySlotRegistry()
+    registry.register_manifest_entries(
+        [{"id": "ocr-paddle", "provides": ["ocr.paddle"]}], source="component"
     )
+    active = registry.slot("ocr").active()
+    assert active is not None and active.provider_id == "ocr-paddle"

@@ -157,6 +157,43 @@ def _playwright_engine_available(engine: str) -> bool:
     return False
 
 
+#: **真 OCR 引擎**的能力名。只有这些能进 `ocr` 槽位。
+#:
+#: 为什么需要这张表：市场里 `provides` 是**创作者签名固定**的字节，其中 11 个
+#: 后处理组件（转 Markdown、表格、导出 docx/xlsx、抽取正文、解析 feed、去重、
+#: 定时）历史上都声明成 `ocr.*`。而 `ocr` 槽位的语义是「选一个 OCR 引擎」，
+#: 于是内置引擎恰好不可用时（CI 上真实发生过）`slot("ocr").active()` 会选中
+#: `convert-markdown` —— 一个根本不做 OCR 的东西。
+#:
+#: 改不了市场数据（那是签名覆盖的字节，创作者私钥不在维护者手里），
+#: 所以在**消费侧**按能力名分流：真引擎进 `ocr`，其余 `ocr.*` 进 `ocr_aux`
+#: （辅助后处理），两者不再抢同一个槽位。
+_OCR_ENGINE_CAPABILITIES = frozenset({
+    "ocr.paddle",
+    "ocr.rapidocr",
+    "ocr.easyocr",
+    "ocr.doctr",
+    "ocr.tesseract",
+})
+
+
+def _slot_for_capability(capability: str) -> str:
+    """`provides` 里的能力名 ⇒ 它应落到的槽位名。
+
+    * 裸名（`"ocr"`）⇒ 它自己就是槽位名（兼容旧清单）；
+    * `ocr.<engine>`（引擎白名单内）⇒ `ocr`；
+    * 其余 `ocr.*` ⇒ `ocr_aux`（后处理，不与引擎竞争）；
+    * 其他点分名（`convert.markdown`）⇒ 域前缀。
+    """
+    name = capability.strip().lower()
+    if "." not in name:
+        return name
+    domain = name.split(".", 1)[0]
+    if domain == "ocr" and name not in _OCR_ENGINE_CAPABILITIES:
+        return "ocr_aux"
+    return domain
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityProvider:
     """A single provider (builtin, plugin, or component) for a capability slot."""
@@ -354,7 +391,7 @@ class CapabilitySlotRegistry:
                 if isinstance(item, str) and item.strip():
                     declared = item.strip()
                     # 点分名 ⇒ 槽位取**域前缀**；裸名 ⇒ 它本身就是槽位名。
-                    slot_name = declared.split(".", 1)[0] if "." in declared else declared
+                    slot_name = _slot_for_capability(declared)
                     provider_id = base_id
                     display_name = base_title
                     priority = int(raw.get("priority", 110))
