@@ -38,6 +38,20 @@ def test_markup_fragments_use_substring_matching(needle: str) -> None:
     assert _html_needle_hit(needle, f"<html><body>{needle} class=\"x\"></body></html>".casefold())
 
 
+@pytest.mark.parametrize("needle", ["Product", "offers", "NewsArticle"])
+def test_word_matching_accepts_css_class_separators(needle: str) -> None:
+    """★ `-` 与 `_` 算**词边界**：它们是 CSS 类名 / slug 的分隔符。
+
+    这条是被真实站点逼出来的：`books.toscrape.com` 的商品卡片类名是
+    `product_pod`，**没有** JSON-LD。若把 `_` 当词内字符，整个电商模板会漏掉它 ——
+    那是"修好了假阳性，制造了假阴性"。
+    """
+    lowered = needle.casefold()
+    for sep in ("_", "-"):
+        body = f'<div class="{lowered}{sep}pod">x</div>'
+        assert _html_needle_hit(needle, body) is True, body
+
+
 def test_markup_fragment_absent_is_a_miss() -> None:
     assert not _html_needle_hit("<table", "<html><body><div>no table here</div></body></html>")
 

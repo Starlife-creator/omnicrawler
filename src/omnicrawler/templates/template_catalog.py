@@ -46,9 +46,13 @@ def _html_needle_hit(needle: str, body: str) -> bool:
     lowered = needle.casefold()
     if lowered.startswith("<"):
         return lowered in body
-    # 词：用「前后不是字母数字下划线」判整词。JSON-LD 里的 `"@type":"Product"`
-    # 会被命中（引号不是文字字符），而 `products` / `production` 不会。
-    return re.search(r"(?<![0-9a-z_])" + re.escape(lowered) + r"(?![0-9a-z_])", body) is not None
+    # 词：前后**不是字母或数字**就算整词边界。
+    #
+    # ★ `-` 与 `_` 刻意**算边界**（不在排除集里）：它们是 CSS 类名与 slug 的分隔符，
+    #   `class="product_pod"` / `class="product-card"` 是**真实的商品信号**。
+    #   而 `products`（复数）/ `production`（更长的词）里 `product` 后面跟的是字母，
+    #   不构成边界 ⇒ 不命中。这正是本判据要的分辨力。
+    return re.search(r"(?<![0-9a-z])" + re.escape(lowered) + r"(?![0-9a-z])", body) is not None
 
 
 @dataclass(frozen=True, slots=True)
