@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -39,21 +40,40 @@ pytestmark = pytest.mark.skipif(
     reason="OmniCrawler-market 仓库未 clone（需与主仓库同级），跳过目录生成测试",
 )
 
-_UTF8_ENV = {
-    **os.environ,
-    "PYTHONIOENCODING": "utf-8",
-    "OMNICRAWLER_CACHE_DIR": str((REPO_ROOT / ".tmp" / "catalog-cache").resolve()),
-}
+def _make_env(cache_dir: Path) -> dict[str, str]:
+    """构造子进程环境；`cache_dir` 必须**每个用例各自一份**（见下）。
+
+    ★ 2026-11-27 修：这里原来是**全模块共用一个固定缓存目录**
+      （`.tmp/catalog-cache`）—— 于是任意一个用例生成过 catalog，就会把它的
+      `sequence` 写进共享缓存；后续 `test_real_registry_list_*` 去拉真实 registry 时，
+      一旦缓存里的 sequence 更大，`fetch_catalog_verified` 就判定
+      「目录序列号回退 —— 疑似重放攻击」并拒载。
+
+      现象是**单跑绿、全量红**（本会话真实发生），根因是测试之间通过**磁盘**
+      共享了状态 —— 这正是 `check_test_cleanliness` 那一类问题的表亲：
+      测试不该在仓库里留下任何可被下一个测试读到的东西。
+
+      现在每次调用都用一个**全新的临时目录**：用例彼此隔离，也不再往仓库写。
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        **os.environ,
+        "PYTHONIOENCODING": "utf-8",
+        "OMNICRAWLER_CACHE_DIR": str(cache_dir.resolve()),
+    }
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
+def _run(*args: str, cache_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
+    """跑生成工具。未指定 `cache_dir` 时用一次性临时目录（用例间零共享）。"""
+    if cache_dir is None:
+        cache_dir = Path(tempfile.mkdtemp(prefix="oc-catalog-cache-"))
     return subprocess.run(
         [sys.executable, str(GENERATOR), *args],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env=_UTF8_ENV,
+        env=_make_env(cache_dir),
     )
 
 
@@ -163,7 +183,7 @@ def test_real_registry_list_through_market_tool_requires_current_signature() -> 
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env=_UTF8_ENV,
+        env=_make_env(Path(tempfile.mkdtemp(prefix="oc-catalog-cache-"))),
     )
     signature_current = signing.verify_bytes(
         (REAL_REGISTRY / "catalog.json").read_bytes(),
