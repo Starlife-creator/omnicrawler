@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+import logging
 import socket
 import ssl
 import threading
@@ -12,7 +13,7 @@ import urllib.parse
 import urllib.request
 import zlib
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from ..core.config import AppConfig
 from ..core.errors import LoginFailedError, PermanentFetchError, ResponseTooLargeError
@@ -24,6 +25,8 @@ from .keepalive import KeepAlivePool, make_connection, response_is_reusable
 from .retry import backoff_seconds, parse_retry_config, retry_after_seconds
 from .session import get_cookie_session
 
+LOGGER = logging.getLogger(__name__)
+
 
 def _flatten_headers(headers: Any) -> dict[str, str]:
     """S4.5 P3#132：重复响应头逗号合并；兼容 dict（测试/mock）与 email.message（urllib）。"""
@@ -31,6 +34,31 @@ def _flatten_headers(headers: Any) -> dict[str, str]:
     if get_all is not None:
         return {k.lower(): ",".join(get_all(k, ())) for k in headers.keys()}
     return {str(k).lower(): str(v) for k, v in headers.items()}
+
+
+class _CookieExtractionResponse:
+    """把"已经读下来的响应头"伪装成 `http.client.HTTPResponse` 的形状，供
+    `CookieJar.extract_cookies` 使用。
+
+    ★ 为什么需要：`extract_cookies(response, request)` 只用到 `response.info()`
+      和 `response.headers`（`email.message.Message` 接口）。标准库没有提供一个
+      "只给头就能构造"的响应对象，所以这里做一个最小的。
+
+    ★ 只做最小面：多实现一点都会变成"第二个 HTTP 响应类型"，反而难维护。
+    """
+
+    __slots__ = ("headers", "_message")
+
+    def __init__(self, headers: Any) -> None:
+        self.headers = headers
+        self._message = headers
+
+    def info(self) -> Any:
+        return self._message
+
+    def getheaders(self, name: str) -> list[str]:
+        getter = getattr(self.headers, "get_all", None)
+        return list(getter(name)) if getter is not None else []
 
 
 #: 需要跟随的重定向状态码（与 urllib 的 `HTTPRedirectHandler` 口径一致）。
@@ -499,6 +527,17 @@ class HTTPFetcher:
             target = f"{target}?{parts.query}"
         send_headers = dict(headers)
         send_headers["Host"] = parts.netloc.rsplit("@", 1)[-1]
+        # ★ 2026-11-27 修：**必须带上已保存的 cookie**。
+        #
+        #   第一版漏了这一步，实测同一份任务：
+        #
+        #       keep_alive=False  → b"cookie=sid=ABC123"   ← 正确
+        #       keep_alive=True   → b"cookie=<none>"       ← 登录态完全失效
+        #
+        #   而 urllib 那条路径由 `HTTPCookieProcessor`（挂在 opener 上）负责。
+        #   这在"需要登录"的任务上是致命的：服务端看到的每一条请求都是未登录的，
+        #   于是要么抓不到数据、要么被踢回登录页。
+        self._attach_cookies(request.url, send_headers)
         started = time.perf_counter()
         with self.egress.request(
             request.url, purpose=self.purpose, headers=headers, capability=self.capability,
@@ -521,6 +560,9 @@ class HTTPFetcher:
                 response = connection.getresponse()
                 status = int(response.status)
                 response_headers = _flatten_headers(response.headers)
+                # ★ 先把 `Set-Cookie` 收进 jar，再决定后续（含重定向）。
+                #   不做这一步时登录永远建立不起来（服务端发的会话 cookie 每次都被丢）。
+                self._store_response_cookies(request.url, response.headers)
                 # ★ 重定向必须跟随（与 urllib 路径的 `SafeRedirectHandler` 同职责）。
                 #   这里**先读完并丢弃重定向响应体**，再对目标地址重建/复用连接。
                 if status in _REDIRECT_STATUSES:
@@ -594,6 +636,48 @@ class HTTPFetcher:
                 # 连接可能已损坏（半包 / 超时）⇒ 立刻丢弃，下次重新建
                 self._pool.discard()
                 raise
+
+    def _attach_cookies(self, url: str, headers: dict[str, str]) -> None:
+        """把 cookie jar 里**属于这个 URL** 的 cookie 拼进 `Cookie` 头。
+
+        ★ 用标准库的 `CookieJar.add_cookie_header`，而不是自己拼：
+          它负责 domain / path / secure / expires 的全部匹配规则。
+          自己实现一版必然在边界（子域、路径前缀、HttpOnly）上出错。
+
+        ★ 它要一个"像 urllib Request"的对象（需要 `host`/`type`/`unverifiable`/
+          `get_full_url`/`has_header`/`add_unredirected_header`/`header_items`）——
+          直接传一个真实 `urllib.request.Request` 最省事，也最不容易漂移。
+        """
+        try:
+            probe = urllib.request.Request(url)
+            for key, value in headers.items():
+                if key.casefold() != "cookie":
+                    probe.add_header(key, value)
+            self.cookie_jar.add_cookie_header(probe)
+            cookie = probe.get_header("Cookie")
+        except Exception:  # noqa: BLE001 - cookie 拼装失败不得让抓取整条失败
+            LOGGER.debug("keep-alive 拼装 Cookie 头失败，按无 cookie 发送", exc_info=True)
+            return
+        if cookie:
+            headers["Cookie"] = cookie
+
+    def _store_response_cookies(self, url: str, headers: Any) -> None:
+        """把响应的 `Set-Cookie` 存进 jar（与 urllib 的 `HTTPCookieProcessor` 同职责）。
+
+        ★ 不做这一步时，**登录永远建立不起来**：服务端发的会话 cookie 每次都被丢掉。
+        """
+        set_cookies = headers.get_all("Set-Cookie") if hasattr(headers, "get_all") else None
+        if not set_cookies:
+            return
+        try:
+            probe = urllib.request.Request(url)
+            # CookieJar.extract_cookies 的类型标注要求 HTTPResponse，但它只用
+            # info() / headers（email.message.Message 接口）。这里给一个最小实现，
+            # 类型上用 cast 说明"我们知晓这个形状差异"，而不是伪造继承。
+            fake = cast(Any, _CookieExtractionResponse(headers))
+            self.cookie_jar.extract_cookies(fake, probe)
+        except Exception:  # noqa: BLE001 - 存 cookie 失败不得影响本次响应
+            LOGGER.debug("keep-alive 保存响应 cookie 失败", exc_info=True)
 
     def _ensure_login(self) -> None:
         # A-P3-15：双检锁——已完成直接返回；持锁后复查，避免并发重复登录。

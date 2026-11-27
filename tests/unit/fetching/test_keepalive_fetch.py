@@ -47,6 +47,30 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/set-cookie":
+            body = b"set"
+            self.send_response(200)
+            self.send_header("Set-Cookie", "sid=ABC123; Path=/")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path in {"/echo-cookie", "/redir-to-echo"}:
+            if self.path == "/redir-to-echo":
+                body = b"go"
+                self.send_response(302)
+                self.send_header("Location", "/echo-cookie")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            cookie = self.headers.get("Cookie", "<none>")
+            body = f"cookie={cookie}".encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path == "/redir":
             body = b"moved"
             self.send_response(301)
@@ -528,6 +552,58 @@ def test_redirect_loop_is_bounded(server: str, tmp_path: Path) -> None:
     try:
         with pytest.raises(PermanentFetchError, match="重定向次数超过上限"):
             fetcher.fetch(CrawlRequest(f"{server}/loop"))
+    finally:
+        if fetcher._pool is not None:
+            fetcher._pool.close()
+
+
+# ── cookie（keep-alive 路径必须与 urllib 路径一致）──────────────────────
+
+
+def test_cookies_are_sent_on_the_keep_alive_path(server: str, tmp_path: Path) -> None:
+    """★ 实测缺陷（2026-11-27）：keep-alive 路径**既不发 cookie 也不存 Set-Cookie**。
+
+    同一份任务：
+
+        keep_alive=False  -> b"cookie=sid=ABC123"   ← 正确
+        keep_alive=True   -> b"cookie=<none>"       ← 登录态完全失效
+
+    这在"需要登录"的任务上是致命的：服务端看到的每条请求都是未登录的。
+    """
+    fetcher = HTTPFetcher(_config(tmp_path, server))
+    try:
+        fetcher.fetch(CrawlRequest(f"{server}/set-cookie"))
+        result = fetcher.fetch(CrawlRequest(f"{server}/echo-cookie"))
+        assert b"sid=ABC123" in result.body, result.body
+    finally:
+        if fetcher._pool is not None:
+            fetcher._pool.close()
+
+
+def test_both_paths_send_the_same_cookie_header(server: str, tmp_path: Path) -> None:
+    """★ 「两处口径不许漂移」：两条路径对同一站点必须发同一个 Cookie 头。"""
+    plain = HTTPFetcher(_config(tmp_path, server, keep_alive=False))
+    kept = HTTPFetcher(_config(tmp_path, server, keep_alive=True))
+    try:
+        plain.fetch(CrawlRequest(f"{server}/set-cookie"))
+        kept.fetch(CrawlRequest(f"{server}/set-cookie"))
+        plain_body = plain.fetch(CrawlRequest(f"{server}/echo-cookie")).body
+        kept_body = kept.fetch(CrawlRequest(f"{server}/echo-cookie")).body
+        assert plain_body == kept_body, (plain_body, kept_body)
+    finally:
+        if kept._pool is not None:
+            kept._pool.close()
+
+
+def test_cookie_jar_survives_a_redirect_on_the_keep_alive_path(
+    server: str, tmp_path: Path
+) -> None:
+    """跳转后的请求同样要带 cookie（否则登录态在跳转那一步就丢了）。"""
+    fetcher = HTTPFetcher(_config(tmp_path, server))
+    try:
+        fetcher.fetch(CrawlRequest(f"{server}/set-cookie"))
+        result = fetcher.fetch(CrawlRequest(f"{server}/redir-to-echo"))
+        assert b"sid=ABC123" in result.body, result.body
     finally:
         if fetcher._pool is not None:
             fetcher._pool.close()
