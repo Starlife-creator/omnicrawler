@@ -110,6 +110,7 @@ class PageAnalyzeWorker(BackgroundWorker):
     def work(self) -> Any:
         from ...extraction.extractors import decode_body
         from ...extraction.intelligent_scraper import _is_chrome_path, analyze_page
+        from ...extraction.intelligent_scraper.result_quality import count_meaningful_fields
         from ...sources.site_inspector import fetch_analysis_page
 
         result, rendered, analysis_error = fetch_analysis_page(
@@ -147,6 +148,16 @@ class PageAnalyzeWorker(BackgroundWorker):
             # 只在导航/侧边栏里找到重复元素时，那不是业务列表 ——
             # GUI 据此**不填容器并警告**，而不是把侧边栏当成列表交给用户。
             "container_is_chrome": bool(item_selector) and _is_chrome_path(item_selector),
+            # ★ 2026-11-27：`内容_<tag>` 是「认不出语义」的兜底名（见
+            #   `result_quality.FALLBACK_PREFIX`）。**全是兜底名**意味着这份分析
+            #   没认出任何业务字段 —— 用户拿到的会是一列列 `内容_span`。
+            #   CLI 侧已有 `结论: 未找到业务列表`；GUI 侧此前**完全没提示**，
+            #   于是同一个坑在图形界面上更隐蔽（没有任何 stderr 可看）。
+            #   这里把计数带出去，由视图决定怎么提示（不在 worker 里弹窗）。
+            "meaningful_field_count": count_meaningful_fields(
+                [str(item.get("name") or "") for item in fields]
+            ),
+            "total_field_count": len(fields),
         }, self.url
 
 

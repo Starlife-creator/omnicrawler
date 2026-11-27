@@ -281,6 +281,21 @@ class FieldsAreaMixin(_Base):
                   "请确认入口网址就是列表页 —— 商品列表常在 /shop、/products 等路径下。")
             )
             selector = ""
+        # ★ 2026-11-27：另一个同源的「静默坏配置」——字段**全**是 `内容_<tag>` 兜底名。
+        #   那说明没认出任何业务字段，用户会拿到一列列 `内容_span`。
+        #   CLI 侧早有「结论: 未找到业务列表」，GUI 侧此前一句提示都没有 ——
+        #   同一个坑在图形界面更隐蔽（用户看不到任何 stderr）。
+        #   只在「有字段但一个都没认出」时提示：没有字段是另一种情况，走别的分支。
+        total_fields = int(report.get("total_field_count") or 0)
+        meaningful_fields = int(report.get("meaningful_field_count") or 0)
+        if total_fields > 0 and meaningful_fields == 0:
+            ToastManager.instance().warning(
+                _("识别到的 {total} 个字段都是兜底列名（{prefix}<标签>），一个业务字段都没认出。"
+                  "常见原因是数据靠 JS 异步加载、需要登录，或该页只是文档/导航页。"
+                  "建议先确认入口网址就是列表页；仍不行可用 `omnicrawler auto-analyze` 看更详细的结论。").format(
+                    total=total_fields, prefix="内容_"
+                )
+            )
 
         filled_container = False
         if selector and not self._item_selector_edit.text().strip():

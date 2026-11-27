@@ -612,6 +612,52 @@ def test_analyze_page_refuses_navigation_only_container(tmp_path: Path, monkeypa
             app.processEvents()
 
 
+# 全是兜底列名的页面：结构上确实有重复块，但**一个业务字段都认不出**。
+# 用户拿到会是一列列 `内容_span` —— CLI 侧早有「结论: 未找到业务列表」，
+# GUI 侧此前一句提示都没有。
+_FALLBACK_ONLY_HTML = (
+    '<html><body><div class="highlight"><pre>'
+    + "".join(f'<span class="n{i}">.</span>' for i in range(4))
+    + "</pre></div></body></html>"
+)
+
+
+@requires_writable_data_dir
+def test_analyze_page_warns_when_every_field_is_a_fallback_name(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """★ 字段全是 `内容_<tag>` 兜底名时**必须提示** —— 否则用户带走一份废配置。
+
+    CLI 侧的同一判据在 `result_quality.meaningful_field_names`；
+    这里守的是 GUI 有没有把它变成一句人话。
+    """
+    seen = _record_toasts(monkeypatch)
+    with _serve_html(_FALLBACK_ONLY_HTML) as seed:
+        app, window = _window(tmp_path, monkeypatch)
+        _silence_side_effects(window)
+        try:
+            window._config_delegate.new_config()
+            canvas = window._task_canvas
+            canvas._url_edit.setText(seed)
+            _allow_private(window)
+            canvas._analyze_btn.click()
+            _pump(
+                app,
+                lambda: canvas._analyze_btn.text() == "🔍 分析页面并填字段",
+                timeout=120,
+                what="分析结束",
+            )
+            app.processEvents()
+
+            warnings = " ".join(seen["warning"])
+            assert "兜底列名" in warnings, (
+                f"字段全是兜底名时必须提示，实际 warning={seen['warning']!r}"
+            )
+        finally:
+            window.close()
+            app.processEvents()
+
+
 @requires_writable_data_dir
 def test_analyze_page_without_url_only_informs(tmp_path: Path, monkeypatch) -> None:
     """没有网址时不发起抓取，只提示 —— 不假装分析过。"""

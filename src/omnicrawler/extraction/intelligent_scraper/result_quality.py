@@ -32,12 +32,37 @@ from typing import Any
 FALLBACK_PREFIX = "内容_"
 
 
+def is_fallback_field_name(name: Any) -> bool:
+    """字段名是否是 `内容_<tag>` 这类「认不出语义」的兜底名。"""
+    return str(name or "").startswith(FALLBACK_PREFIX)
+
+
+def is_meaningful_field_name(name: Any) -> bool:
+    """字段名是否算**业务字段**：既不是兜底名，也不是空名。
+
+    空名（``None`` / 空串）不算业务字段 —— 它取自"取不到名字"的路径，
+    与 `内容_<tag>` 是同一类问题的两种形态（一个没有语义、一个连名字都没有）。
+    """
+    text = "" if name is None else str(name)
+    return bool(text.strip()) and not is_fallback_field_name(text)
+
+
+def count_meaningful_fields(names: list[Any]) -> int:
+    """一份字段名里**算得上业务字段**的个数。
+
+    抽成独立函数（而不是让每个调用方自己 `startswith`）是为了让 GUI / CLI /
+    外部软件包共用同一条判据 —— 2026-11-27 GUI 侧就是因为没有这条共享判据，
+    「字段全是兜底名」这个坑在图形界面上完全没有提示。
+    """
+    return sum(1 for name in names if is_meaningful_field_name(name))
+
+
 def meaningful_field_names(config: dict[str, Any]) -> list[str]:
     """返回**非兜底**的字段名（去掉 `内容_<tag>` 这类）。"""
     fields = ((config.get("extract") or {}).get("fields") or {})
     if not isinstance(fields, dict):
         return []
-    return [name for name in fields if not str(name).startswith(FALLBACK_PREFIX)]
+    return [name for name in fields if is_meaningful_field_name(name)]
 
 
 def quality_rank(config: dict[str, Any], report: dict[str, Any] | None) -> tuple[int, int, int]:
