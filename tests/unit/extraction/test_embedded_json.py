@@ -156,6 +156,48 @@ def test_shared_prefix_only_applies_when_asked() -> None:
 # ── 残片门禁 ────────────────────────────────────────────────────────────
 
 
+
+
+def test_payload_far_down_the_script_list_is_still_found() -> None:
+    """★ 2026-11-27 实测回归：配额曾按"第几个 script 标签"卡，导致能力静默失效。
+
+    真实形态（walmart.com）：`__NEXT_DATA__` 是第 **126** 个 `<script>`，
+    前面压着 125 个埋点/预加载脚本。旧实现只看前 24 个 ⇒ 600 KB 内嵌数据被判"没有"。
+
+    判据是「配额只限制**解析**次数」：属性判断便宜可以全扫，`json.loads` 才贵。
+    """
+    filler = "".join(
+        f'<script src="/static/chunk-{index}.js"></script>' for index in range(200)
+    )
+    html = (
+        "<html><head>" + filler
+        + '<script id="__NEXT_DATA__" type="application/json">'
+        + '{"props":{"pageProps":{"products":['
+        + '{"id":1,"name":"A","price":1},{"id":2,"name":"B","price":2},'
+        + '{"id":3,"name":"C","price":3}]}}}'
+        + "</script></head><body></body></html>"
+    )
+    payloads = extract_embedded_payloads(html)
+    labels = [item.source for item in payloads]
+    assert labels == ["script#__NEXT_DATA__"], labels
+    records = find_embedded_records(html, "https://example.org/shop")
+    assert records is not None, "第 200 个 script 里的内嵌数据没有被找到"
+    assert records.count == 3
+
+
+def test_parse_budget_still_caps_json_scripts() -> None:
+    """反方向：一页几百个 JSON 脚本时，仍然要有上限（否则会拖成几十秒）。"""
+    from omnicrawler.extraction.embedded_json import MAX_SCRIPTS
+
+    bodies = "".join(
+        f'<script type="application/json">{{\"index\":{index}}}</script>'
+        for index in range(MAX_SCRIPTS + 50)
+    )
+    html = f"<html><head>{bodies}</head><body></body></html>"
+    payloads = extract_embedded_payloads(html)
+    assert len(payloads) == MAX_SCRIPTS, len(payloads)
+
+
 def test_id_only_array_is_not_a_record_set() -> None:
     """只有 ID 的数组是 Nuxt 的公共前缀残片，不是可交付的记录集合。"""
     html = (

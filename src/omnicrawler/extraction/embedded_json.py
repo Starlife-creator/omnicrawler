@@ -127,36 +127,52 @@ def _assignment_payload(text: str) -> Any | None:
 
 
 def extract_embedded_payloads(html: str) -> list[EmbeddedPayload]:
-    """按出现顺序返回页面里所有**可解析的**内嵌 JSON 载荷。"""
+    """按出现顺序返回页面里所有**可解析的**内嵌 JSON 载荷。
+
+    ★ 2026-11-27：配额从"只看前 N 个 `<script>` 标签"改成"最多**解析** N 次"。
+
+      实测 walmart.com：`__NEXT_DATA__` 是第 **126** 个 `<script>` 标签
+      （前面压着 125 个埋点/预加载脚本），旧实现只看前 24 个 ⇒ 明明有 600 KB 内嵌
+      数据却报"没找到"，于是这个能力在最需要它的站点上**静默失效**。
+
+      属性判断（type/id）是廉价的字符串操作，扫多少个标签都不贵；贵的是 `json.loads`。
+      所以配额卡在解析次数上 —— 既覆盖了"数据块被压到很后面"，又仍然挡住
+      "一页几百个 JSON 脚本"的极端情形。
+    """
     if not html:
         return []
     found: list[EmbeddedPayload] = []
+    parsed = 0
 
-    for index, match in enumerate(_SCRIPT_RE.finditer(html)):
-        if index >= MAX_SCRIPTS:
-            break
+    for match in _SCRIPT_RE.finditer(html):
         attrs = _attrs(match.group(1))
-        body = match.group(2)
-        if not body or len(body) > MAX_PAYLOAD_BYTES:
-            continue
         script_type = (attrs.get("type") or "").strip().casefold()
         script_id = (attrs.get("id") or "").strip()
         # ★ ld+json 归 jsonld 来源，不重复计入内嵌数据（见模块 docstring）
         if script_type == "application/ld+json":
             continue
+        is_json_type = script_type in {"application/json", "text/json"}
+        if not is_json_type:
+            # 内联脚本：只有"像 SSR 状态"的才继续看，避免逐个解析埋点脚本
+            body_head = (match.group(2) or "").lstrip()
+            if not body_head.startswith(("window.", "self.", "var ", "const ", "let ")):
+                continue
+            if not _ASSIGN_RE.match(body_head) and "__NEXT_DATA__" not in body_head:
+                continue
+        if parsed >= MAX_SCRIPTS:
+            break
+        parsed += 1
+        body = match.group(2)
+        if not body or len(body) > MAX_PAYLOAD_BYTES:
+            continue
         label = f"script#{script_id}" if script_id else "script"
-        if script_type in {"application/json", "text/json"}:
+        if is_json_type:
             value = _loads(body)
             if value is None:
                 continue
             found.append(EmbeddedPayload(label, value))
             continue
-        # 内联脚本：只有"像 SSR 状态"的才继续看，避免逐个解析埋点脚本
         stripped = body.lstrip()
-        if not stripped.startswith(("window.", "self.", "var ", "const ", "let ")):
-            continue
-        if not _ASSIGN_RE.match(stripped) and "__NEXT_DATA__" not in stripped:
-            continue
         value = _assignment_payload(stripped)
         if value is None:
             continue
@@ -164,7 +180,6 @@ def extract_embedded_payloads(html: str) -> list[EmbeddedPayload]:
         label = f"script:{name_match.group(1)}" if name_match else label
         found.append(EmbeddedPayload(label, value))
     return found
-
 
 #: schema.org 里"一串条目"的类型名（大小写不敏感）。
 #: ★ 只认这两个：它们是**列表**语义；其它 @type（Product / Article / BreadcrumbList）
