@@ -17,6 +17,7 @@ import yaml
 
 from ..core.safe_data import safe_regex_search
 from .parameters import template_placeholders, validate_parameters
+from .template_health import validate_template
 
 LOGGER = logging.getLogger(__name__)
 
@@ -138,6 +139,16 @@ class TemplateCatalog:
         # 不得让整个 catalog 失效（GUI 的 TemplateLoader / controllers 构造期均无兜底）；
         # fail-closed 语义由 validate_catalog 把本清单合成失败条目来保持。
         self._parse_errors: list[tuple[str, str]] = []
+        #: `validate_template` 结果缓存：`{template_id: TemplateHealth}`。
+        #:
+        #: 为什么要缓存（2026-11-27 实测）：`recommend()` 对**每个**模板都跑一次
+        #: `validate_template`，45 个模板共 **41 ms**；而 `recommend()` 在一次
+        #: `templates inspect` 里只调一次、在 GUI 里会随筛选反复调。
+        #:
+        #: 安全性：`validate_template` 是 `record.metadata` + `record.config` 的**纯函数**
+        #: （不读盘、不看时间），而 `discover()` 已经缓存了同一批 record 对象 ——
+        #: 缓存键用 `template_id` 就够，失效点只有 `discover()` 一处（已在那里清空）。
+        self._health_cache: dict[str, Any] = {}
 
     @property
     def parse_errors(self) -> tuple[tuple[str, str], ...]:
@@ -185,7 +196,23 @@ class TemplateCatalog:
         self._records = records
         self._builtin_by_path = builtin_by_path
         self._parse_errors = parse_errors
+        # 模板集合变了 ⇒ 校验缓存必须整体失效（不能只清某几条：覆盖/删除都可能发生）
+        self._health_cache.clear()
         return self._sorted(records.values())
+
+    def _health(self, record: TemplateRecord) -> Any:
+        """`validate_template` 的进程内缓存（键为 template_id）。
+
+
+        `validate_template` 是 record 的纯函数，`discover()` 已缓存同一批 record 对象；
+        缓存失效的唯一入口是 `discover()`（那里 `clear()`）。
+        """
+        cached = self._health_cache.get(record.metadata.template_id)
+        if cached is not None:
+            return cached
+        health = validate_template(record)
+        self._health_cache[record.metadata.template_id] = health
+        return health
 
     def get(self, template_id: str) -> TemplateRecord | None:
         records = self._records_by_id()
@@ -257,7 +284,6 @@ class TemplateCatalog:
         return [record for _score, record in sorted(ranked, key=lambda item: (-item[0], item[1].metadata.template_id))]
 
     def recommend(self, probe: TemplateProbe, limit: int = 5, *, intent: str = "") -> list[TemplateMatch]:
-        from .template_health import validate_template
         from .verification import VerificationStore
         verification_store = VerificationStore()
         parsed = urlparse(probe.url)
@@ -272,7 +298,7 @@ class TemplateCatalog:
             meta = record.metadata
             if meta.deprecated:
                 continue
-            if not validate_template(record).ok:
+            if not self._health(record).ok:
                 continue
             try:
                 verification = verification_store.latest(record, probe.url)
