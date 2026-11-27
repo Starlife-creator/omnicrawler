@@ -2,7 +2,9 @@
 
 锁定的性质：
 - 运行期操作（`source.seed` / `fetcher.fetch` / `hook.*` …）拿到本次 run 的标识；
-- `view.*` / `resource.*` / `capability.*` 这类**可能在任何 run 之外发生**的宿主操作不带；
+- `view.*` / `resource.*` 这类**可能在任何 run 之外发生**的宿主操作不带；
+  前缀表的每一项都必须对应**真实存在**的操作（`capability.` 已于 2026-11-27 删除：
+  全仓没有任何 `capability.*` 操作，它是一段永远不会命中的空预留）；
 - 调用方自己已给的 `run_id` 不被覆盖；
 - 注入不改写调用方传入的 dict（无隐藏副作用）；
 - `bind_run()` 之后拿到的是新 run 的标识。
@@ -23,7 +25,9 @@ from omnicrawler.plugins.plugin_subprocess_adapter import (  # noqa: E402
 )
 
 _RUN_OPS = ("source.seed", "fetcher.fetch", "processor.process", "hook.after_run", "exporter.export")
-_HOST_OPS = ("view.describe", "resource.inventory", "capability.describe")
+#: 只列**真实存在**的宿主生命周期操作。曾经混进来的 `capability.describe` 是虚构的
+#: （既不在 `CAPABILITY_VERSIONS`，也没有任何调用方），已随前缀表一起删除。
+_HOST_OPS = ("view.describe", "resource.inventory")
 
 
 def _host(tmp_path: Path, run_id: str = "run-1") -> _SubprocessSessionHost:

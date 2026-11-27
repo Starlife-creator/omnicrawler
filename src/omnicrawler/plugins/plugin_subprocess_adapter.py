@@ -47,7 +47,17 @@ CONTRACT2_HOOK_EVENTS = (
 
 #: 宿主生命周期操作前缀：这些操作可能发生在任何一次 run 之外（或跨 run），
 #: 载荷因此**不带** ``run_id``；其余操作都是运行期的，一律带（见 ``_with_run_id``）。
-_HOST_LIFECYCLE_OPERATION_PREFIXES = ("view.", "resource.", "capability.")
+#:
+#: ★ **每一项都必须对应真实存在的能力操作**，否则它就是一段永远不会命中的空预留。
+#:   门禁 `tools/gates/check_lifecycle_prefixes.py` 逐项验证这一点（空集合判红）。
+#:
+#: 2026-11-27 删除 ``"capability."``：全仓没有任何 ``capability.*`` 操作 ——
+#: 能力版本协商**已在启动插件代码之前** fail-closed 完成
+#: （``plugin_broker_contracts.validate_required_capabilities``），
+#: ``system.info`` 也已返回完整 ``capability_versions``。运行期再协商没有语义空间：
+#: 插件拿到版本表时自身代码还没跑。
+#: 若日后要做「运行期申请能力版本提升」，那是新功能，需补真实操作并同步本表。
+_HOST_LIFECYCLE_OPERATION_PREFIXES = ("view.", "resource.")
 
 
 def _is_host_lifecycle_operation(operation: str) -> bool:

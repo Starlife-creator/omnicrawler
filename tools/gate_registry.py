@@ -500,6 +500,17 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_lifecycle_prefixes",
+        args=("tools/gates/check_lifecycle_prefixes.py",),
+        sets=_STATIC,
+        description="宿主生命周期前缀的每一项都必须对应真实操作（空预留会骗读者）",
+        script="tools/gates/check_lifecycle_prefixes.py",
+        ci_note=(
+            "零网络、纯导入+正则。前缀表决定「哪些操作不带 run_id」，"
+            "列一个永远不命中的前缀等于谎称机制已存在。"
+        ),
+    ),
+    Gate(
         name="check_view_component_docs",
         args=("tools/gates/check_view_component_docs.py",),
         sets=_STATIC,
