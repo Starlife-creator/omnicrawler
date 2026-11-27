@@ -107,7 +107,14 @@ def inspect_result(
         except (TypeError, ValueError):
             parsed_json = None
 
-    cms = _signals(lower, {
+    # ★ 2026-11-27：CMS / 框架判据也走「可执行上下文」。
+    #
+    #   实测：讲解 React 的文档页正文写「data-reactroot was used in v15」⇒
+    #   `frameworks=(react/next,)` ⇒ `dynamic=True` ⇒ 推荐 `generic/infinite-scroll`；
+    #   讲解 Discuz 的文档页正文写「Legacy apps used forum.php」⇒ `cms=(discuz,)`。
+    #   这些都是"散文里提到一个名字"，不是"页面在用它"。
+    executable = _executable_text(lower)
+    cms = _signals(executable, {
         "wordpress": ("/wp-content/", "wp-json"),
         "drupal": ("drupal.settings", "/core/misc/drupal.js"),
         "mediawiki": ("mw.config", "/w/load.php"),
@@ -115,7 +122,7 @@ def inspect_result(
         "discuz": ("discuz_uid", "forum.php"),
         "shopify": ("shopify.theme", "/cdn/shop/"),
     })
-    frameworks = _signals(lower, {
+    frameworks = _signals(executable, {
         "react/next": ("__next_data__", "data-reactroot", "id=\"__next\""),
         "vue/nuxt": ("__nuxt__", "data-v-", "id=\"__nuxt\""),
         "angular": ("ng-version", "app-root"),
@@ -343,31 +350,43 @@ def _recommendations(
     return tuple(values[:limit])
 
 
-_SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.DOTALL)
-#: 属性取值形态：`class="infinite-scroll"` / `id=load-more` 等。
-#: 属性取值形态。
-#:
-#: 覆盖三类载体（缺任何一类都会漏判真实的登录/滚动信号）：
-#:   · `class` / `id` / `data-*` —— 样式与行为钩子（`class="load-more"`）；
-#:   · `href` / `action` / `src` —— **跳转与提交目标**（`href="/oauth/authorize"`）；
-#:   · `content` —— meta 声明（`<meta name="openid.server" content="…">`）。
-_ATTR_VALUE_RE = re.compile(
-    r"(?:class|id|data-[\w-]+|href|action|src|content|name|rel)\s*=\s*[\"\']([^\"\']*)[\"\']"
-)
+_SCRIPT_STYLE_BLOCK_RE = re.compile(r"<(script|style)\b[^>]*>(.*?)</\1\s*>", re.DOTALL)
+#: 标签本身（含全部属性名与取值）。
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _executable_text(html: str) -> str:
+    """页面的**可执行上下文**：标签（含属性名/取值）+ `<script>`/`<style>` 内容。
+
+    刻意**去掉文本节点**（`>` 与 `<` 之间的散文）。理由见
+    :func:`_marker_in_executable_context`。
+
+    返回**小写**：调用方查的是小写标记。自己再 `lower()` 一次是幂等的，
+    这样调用方传原文或传小写都不会错（本项目已多次出现"约定好了但有人忘了"）。
+    """
+    normalized = html.lower()
+    scripts = " ".join(block[1] for block in _SCRIPT_STYLE_BLOCK_RE.findall(normalized))
+    tags = " ".join(_TAG_RE.findall(normalized))
+    return tags + " " + scripts
 
 
 def _marker_in_executable_context(lower: str, markers: tuple[str, ...]) -> bool:
-    """这些标记是否出现在**可执行上下文**里。
+    """这些标记是否出现在**可执行上下文**里（标签或脚本），而不是散文里。
 
-    事故背景（2026-11-27）：一个讲解 `IntersectionObserver` 的文档页，
-    正文里写着「Use IntersectionObserver to detect visibility」，
-    旧判据（纯子串）把它判成无限滚动页，推荐 `generic/infinite-scroll`。
+    事故背景（2026-11-27，一天内发现多例同一模式）：
 
-    判据：标记要么在 `<script>` 内容里，要么是 `class` / `id` / `data-*` 的**取值**。
-    散文里提到一个 API 名字不构成"页面在用它"。
+      · 讲解 IntersectionObserver 的文档：正文「Use IntersectionObserver to ...」
+        => `pagination=(infinite-scroll,)`；
+      · 讲解 OAuth 的文档：正文「OAuth 2.0 is a delegation protocol」
+        => `auth=(federated-login,)`；
+      · 讲解 React 的文档：正文「data-reactroot was used in v15」
+        => `frameworks=(react/next,)` 进而 `dynamic=True`；
+      · 讲解 Discuz 的文档：正文「Legacy apps used forum.php」=> `cms=(discuz,)`。
+
+    判据：**去掉文本节点**后还在，才算"页面在用它"。
+    标签属性（含属性**名**，如 `data-reactroot`）与脚本内容都保留 —— 那才是真信号。
     """
-    executable = " ".join(_SCRIPT_BLOCK_RE.findall(lower))
-    executable += " " + " ".join(_ATTR_VALUE_RE.findall(lower))
+    executable = _executable_text(lower)
     return any(marker in executable for marker in markers)
 
 
