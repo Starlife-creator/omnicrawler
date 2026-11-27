@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, cast
 
@@ -34,6 +35,20 @@ def _flatten_headers(headers: Any) -> dict[str, str]:
     if get_all is not None:
         return {k.lower(): ",".join(get_all(k, ())) for k in headers.keys()}
     return {str(k).lower(): str(v) for k, v in headers.items()}
+
+
+@dataclass(frozen=True, slots=True)
+class _KeepAliveOutcome:
+    """一次 keep-alive 请求的结果：要么是最终响应，要么是"下一跳去哪"。
+
+    ★ 为什么需要这个中间类型：重定向**不能**在 `with egress.request(...)` 内部递归，
+      否则一个请求会被算成两个并发（见 `_keep_alive_fetch` 的注释）。
+      用返回值把"下一跳"带出去，循环写在并发槽外面 —— 结构上就不可能嵌套。
+    """
+
+    result: FetchResult
+    redirect_to: str | None
+    drop_body: bool
 
 
 class _CookieExtractionResponse:
@@ -500,14 +515,53 @@ class HTTPFetcher:
           用户以为抓到了页面，实际拿到的是一个跳转提示。urllib 那条路径由
           `SafeRedirectHandler` 负责，这里必须补同一条。
         """
-        return self._keep_alive_fetch_following(request, timeout=timeout, max_bytes=max_bytes,
-                                                 headers=headers, remaining_redirects=int(
-            self.http.get("max_redirects", 10)))
+        # ★ 重定向用**循环**而不是递归，而且每一跳都要**先退出上一跳的 egress 并发槽**。
+        #
+        #   第一版把递归写在 `with self.egress.request(...)` 里面，于是：
+        #
+        #       egress.maximum_concurrency = 1  →  EgressBudgetExceededError: 网络并发预算已用尽
+        #
+        #   也就是"一个请求"被算成"两个并发请求"，把并发预算凭空翻了一倍。
+        #   凡是把 `maximum_concurrency` 设成 1 做严格串行化的用户都会**每遇跳转就失败**。
+        remaining = int(self.http.get("max_redirects", 10))
+        current = request
+        while True:
+            outcome = self._keep_alive_once(
+                current, timeout=timeout, max_bytes=max_bytes, headers=headers
+            )
+            if outcome.redirect_to is None:
+                return outcome.result
+            if remaining <= 0:
+                raise PermanentFetchError(
+                    f"重定向次数超过上限（{self.http.get('max_redirects', 10)}）: {request.url}"
+                )
+            remaining -= 1
+            next_url = outcome.redirect_to
+            # ★ 安全边界：跳转目标必须重新过一遍出网授权（robots / 范围 / 凭据）。
+            #   `authorize`（不是 `request`）—— 下一跳自己会再取一次并发槽。
+            self.egress.authorize(
+                next_url, purpose=self.purpose, headers=headers, capability=self.capability,
+            )
+            if next_url == current.url:
+                current = current
+            else:
+                current = CrawlRequest(
+                    next_url,
+                    method="GET" if outcome.drop_body else current.method,
+                    headers=current.headers,
+                    body=None if outcome.drop_body else current.body,
+                    kind=current.kind,
+                    render=current.render,
+                    priority=current.priority,
+                    depth=current.depth,
+                    meta=current.meta,
+                )
 
-    def _keep_alive_fetch_following(
+    def _keep_alive_once(
         self, request: CrawlRequest, *, timeout: float, max_bytes: int,
-        headers: dict[str, str], remaining_redirects: int,
-    ) -> FetchResult:
+        headers: dict[str, str],
+    ) -> _KeepAliveOutcome:
+        """发**一次**请求（含一次 egress 并发槽）。跳转目标交回给调用方循环。"""
         parts = urllib.parse.urlsplit(request.url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
             raise ValueError(f"仅支持 http/https 的 keep-alive 请求: {request.url}")
@@ -563,42 +617,24 @@ class HTTPFetcher:
                 # ★ 先把 `Set-Cookie` 收进 jar，再决定后续（含重定向）。
                 #   不做这一步时登录永远建立不起来（服务端发的会话 cookie 每次都被丢）。
                 self._store_response_cookies(request.url, response.headers)
-                # ★ 重定向必须跟随（与 urllib 路径的 `SafeRedirectHandler` 同职责）。
-                #   这里**先读完并丢弃重定向响应体**，再对目标地址重建/复用连接。
+                # ★ 重定向：**读完并丢弃响应体**（这样连接可复用），然后只把目标地址
+                #   交回给调用方循环 —— 不在这里发下一跳，否则会嵌套持有 egress 并发槽。
                 if status in _REDIRECT_STATUSES:
                     location = response_headers.get("location", "")
                     response.read()  # 读完才能安全复用/关闭这条连接
-                    self._pool.give_back(key, connection)
+                    if response_is_reusable(response.headers, status=status):
+                        self._pool.give_back(key, connection)
+                    else:
+                        self._pool.discard()
                     next_url = urllib.parse.urljoin(request.url, location) if location else ""
-                    if not next_url:
-                        return FetchResult(
+                    return _KeepAliveOutcome(
+                        result=FetchResult(
                             request=request, final_url=request.url, status=status,
                             headers=response_headers, body=b"",
                             elapsed_seconds=time.perf_counter() - started,
-                        )
-                    if remaining_redirects <= 0:
-                        raise PermanentFetchError(
-                            f"重定向次数超过上限（{self.http.get('max_redirects', 10)}）: {request.url}"
-                        )
-                    # ★ 安全边界：跳转目标必须重新过一遍出网授权（robots / 范围 / 凭据）
-                    self.egress.authorize(
-                        next_url, purpose=self.purpose, headers=headers,
-                        capability=self.capability,
-                    )
-                    redirected = request if next_url == request.url else CrawlRequest(
-                        next_url,
-                        method="GET" if status in {301, 302, 303} else request.method,
-                        headers=request.headers,
-                        body=None if status in {301, 302, 303} else request.body,
-                        kind=request.kind,
-                        render=request.render,
-                        priority=request.priority,
-                        depth=request.depth,
-                        meta=request.meta,
-                    )
-                    return self._keep_alive_fetch_following(
-                        redirected, timeout=timeout, max_bytes=max_bytes, headers=headers,
-                        remaining_redirects=remaining_redirects - 1,
+                        ),
+                        redirect_to=next_url or None,
+                        drop_body=status in {301, 302, 303},
                     )
                 declared = response_headers.get("content-length", "")
                 if declared.isdigit() and int(declared) > max_bytes:
@@ -624,13 +660,17 @@ class HTTPFetcher:
                 if not reused:
                     self._pool.created += 1
                 self.cookie_session.save()
-                return FetchResult(
-                    request=request,
-                    final_url=request.url,
-                    status=status,
-                    headers=response_headers,
-                    body=body,
-                    elapsed_seconds=time.perf_counter() - started,
+                return _KeepAliveOutcome(
+                    result=FetchResult(
+                        request=request,
+                        final_url=request.url,
+                        status=status,
+                        headers=response_headers,
+                        body=body,
+                        elapsed_seconds=time.perf_counter() - started,
+                    ),
+                    redirect_to=None,
+                    drop_body=False,
                 )
             except BaseException:
                 # 连接可能已损坏（半包 / 超时）⇒ 立刻丢弃，下次重新建

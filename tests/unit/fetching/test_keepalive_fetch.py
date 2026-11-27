@@ -607,3 +607,46 @@ def test_cookie_jar_survives_a_redirect_on_the_keep_alive_path(
     finally:
         if fetcher._pool is not None:
             fetcher._pool.close()
+
+
+def _config_with_egress(tmp_path: Path, base: str, **egress: object) -> AppConfig:
+    raw = _raw(tmp_path, base)
+    raw["egress"] = dict(egress)
+    return AppConfig(tmp_path / "c.yaml", tmp_path, raw, tmp_path / "work")
+
+
+# ── egress 并发预算：重定向不得把"一个请求"算成两个 ──────────────────
+
+
+def test_redirect_does_not_double_count_the_concurrency_budget(server: str, tmp_path: Path) -> None:
+    """★ 实测缺陷（2026-11-27）：重定向时**嵌套持有 egress 并发槽**。
+
+    第一版把"跟随下一跳"递归写在 `with egress.request(...)` 里面，于是：
+
+        egress.maximum_concurrency = 1  ->  EgressBudgetExceededError: 网络并发预算已用尽
+
+    也就是"一个请求"被算成"两个并发请求"。凡是把并发设成 1 做严格串行化的用户，
+    都会**每遇跳转就失败**。
+
+    判据：并发上限 = 1 时，一次带跳转的抓取必须成功。
+    """
+    fetcher = HTTPFetcher(_config_with_egress(tmp_path, server, maximum_concurrency=1))
+    try:
+        result = fetcher.fetch(CrawlRequest(f"{server}/redir"))
+        assert result.status == 200
+        assert result.body == b"FINAL"
+    finally:
+        if fetcher._pool is not None:
+            fetcher._pool.close()
+
+
+def test_concurrency_slot_is_released_after_a_redirect(server: str, tmp_path: Path) -> None:
+    """跳转结束后并发槽必须**完全释放**（否则后续请求会被永久卡住）。"""
+    fetcher = HTTPFetcher(_config(tmp_path, server, maximum_concurrency=1))
+    try:
+        for _ in range(3):
+            assert fetcher.fetch(CrawlRequest(f"{server}/redir")).status == 200
+            assert fetcher.fetch(CrawlRequest(f"{server}/hello")).status == 200
+    finally:
+        if fetcher._pool is not None:
+            fetcher._pool.close()
