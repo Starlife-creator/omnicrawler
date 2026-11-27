@@ -13,6 +13,23 @@
 
 只检查**会参与本次运行**的插件（``source.kind`` 提供者 + ``plugins.enabled_market_plugins``）：
 把"装了但没启用"的插件的缺依赖也报出来是噪音。
+
+## 第二条线：组件能力（2026-11-27）
+
+与「第三方依赖」平行、但**不是同一件事**：
+
+| | 依赖 | 组件能力 |
+|---|---|---|
+| 声明字段 | ``dependencies`` | ``requires_components`` |
+| 缺失后果 | 运行到一半 ``ImportError`` | 运行到一半 ``ModuleNotFoundError`` / 组件调用失败 |
+| 满足方式 | ``pip install X`` | 在市场里装一个组件 |
+
+``plugin_component_requirements()`` 把「插件要 ``ocr.paddle``、但本机没装提供它的
+组件」变成运行前的一条 warning + 「装哪个」的具体提示。
+
+★ 为什么必须在预检里做，而不是只在市场侧：``component_capability.check_market()``
+  管的是「**发布时**有没有组件兜底」，而「**用户机器上装没装**」只有预检知道。
+  这条正是「函数写好了但零调用方」的那个洞 —— ``install_hint()`` 此前没有任何调用者。
 """
 
 from __future__ import annotations
@@ -28,6 +45,7 @@ from .plugin_preflight import _decode_plugin_source, _static_plugin_metadata
 __all__ = [
     "DependencyStatus",
     "import_name_candidates",
+    "plugin_component_requirements",
     "plugin_dependency_requirements",
     "plugin_dependency_status",
     "plugin_dependency_warnings",
@@ -175,6 +193,143 @@ def plugin_dependency_requirements(config: Any) -> list[tuple[str, tuple[str, ..
                 )
             )
     return findings
+
+
+#: 已安装组件的清单（`installed.json`）相对工作区的路径。
+#: 与 `services/workspace.py` 的 `component_manifest` 同源。
+COMPONENT_MANIFEST_RELPATH = Path("components") / "installed.json"
+
+
+def plugin_component_requirements(
+    config: Any,
+) -> list[tuple[str, tuple[str, ...], str]]:
+    """本次 run 涉及插件中**缺失**的组件能力。
+
+    与 `plugin_dependency_requirements` 是两条平行的线：
+
+    | | 依赖（#75 §D）| 组件能力（本条）|
+    |---|---|---|
+    | 声明字段 | `dependencies` | `requires_components` |
+    | 缺失后果 | 运行到一半 `ImportError` | 运行到一半 `ModuleNotFoundError` / 组件调用失败 |
+    | 满足方式 | `pip install X` | 在市场里装一个组件 |
+
+    ★ 为什么必须在这里而不是只在市场侧：`component_capability.check_market()`
+      管的是「发布时有没有组件兜底」，而**用户机器上装没装**只有预检知道。
+      两者缺一不可 —— 这条正是「写好了函数但零调用方」的那个洞。
+
+    Returns:
+        ``(插件 id, 缺失能力, 安装提示)`` 列表；无缺失时为空。
+    """
+    from ..services.component_capability import (
+        install_hint,
+        resolve,
+    )
+
+    wanted = _wanted_plugin_ids(config)
+    if not wanted:
+        return []
+
+    plugins: list[dict[str, Any]] = []
+    for plugin_dir in _iter_plugin_paths(config):
+        declared = _declared_component_needs(plugin_dir)
+        if declared is None:
+            continue
+        plugin_id, capabilities = declared
+        if plugin_id not in wanted or not capabilities:
+            continue
+        plugins.append({"id": plugin_id, "requires_components": list(capabilities)})
+    if not plugins:
+        return []
+
+    components = _installed_components(config)
+    report = resolve(plugins, components)
+    findings: list[tuple[str, tuple[str, ...], str]] = []
+    for check in report.checks:
+        if check.ok:
+            continue
+        findings.append((check.plugin_id, tuple(check.missing), install_hint(check, components)))
+    return findings
+
+
+def _installed_components(config: Any) -> list[dict[str, Any]]:
+    """读工作区的 `components/installed.json`，折成 capability 模块要的形状。
+
+    **读不到就返回空列表**（不是抛异常）：预检不该因为清单缺失而失败 ——
+    清单不存在等价于「一个组件都没装」，那正好是要报的那个 warning。
+    """
+    import json
+
+    try:
+        workspace = Path(config.workspace)
+    except (AttributeError, TypeError):
+        return []
+    manifest = workspace / COMPONENT_MANIFEST_RELPATH
+    if not manifest.is_file():
+        return []
+    try:
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(document, dict):
+        return []
+    entries: list[dict[str, Any]] = []
+    for name, entry in document.items():
+        if not isinstance(entry, dict):
+            continue
+        provides = entry.get("provides")
+        entries.append(
+            {"id": str(entry.get("name") or name), "provides": list(provides) if isinstance(provides, (list, tuple)) else []}
+        )
+    return entries
+
+
+def _declared_component_needs(plugin_dir: Path) -> tuple[str, tuple[str, ...]] | None:
+    """从插件目录读出 `(plugin_id, requires_components)`；读不到返回 None。
+
+    与 `_declared_dependencies` 同套路：`plugin.py` 的 `PLUGIN_METADATA` 优先，
+    其次 `plugin.yaml`。**只在两处都没有时返回 None** —— 那是「这个插件没有组件需求」
+    的正常形态，不是错误。
+    """
+    metadata = _plugin_metadata(plugin_dir)
+    if not isinstance(metadata, dict):
+        return None
+    plugin_id = str(metadata.get("name") or plugin_dir.name).strip()
+    if not plugin_id:
+        return None
+    raw = metadata.get("requires_components")
+    if isinstance(raw, str) or not isinstance(raw, (list, tuple)):
+        return (plugin_id, ())
+    capabilities = tuple(
+        str(item).strip().lower() for item in raw if str(item).strip()
+    )
+    return (plugin_id, capabilities)
+
+
+def _plugin_metadata(plugin_dir: Path) -> dict[str, Any] | None:
+    """读插件元数据：`plugin.py` 的 `PLUGIN_METADATA` 优先，其次 `plugin.yaml`。"""
+    entry = plugin_dir / ENTRY_FILE
+    if entry.is_file():
+        try:
+            source = _decode_plugin_source(entry, entry.read_bytes())
+            static = _static_plugin_metadata(entry, source)
+        except (OSError, ValueError, SyntaxError):
+            static = None
+        if static is not None:
+            return {
+                "name": static.name,
+                "requires_components": list(static.requires_components),
+            }
+    manifest = plugin_dir / MANIFEST_FILE
+    if manifest.is_file():
+        try:
+            import yaml
+
+            loaded = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if isinstance(loaded, dict):
+            return loaded
+    return None
 
 
 def _iter_plugin_paths(config: Any) -> Iterable[Path]:

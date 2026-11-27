@@ -9,7 +9,10 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from ..core.config import AppConfig, validate_config
-from ..plugins.plugin_dependency_check import plugin_dependency_requirements
+from ..plugins.plugin_dependency_check import (
+    plugin_component_requirements,
+    plugin_dependency_requirements,
+)
 from ..runtime.resource_profiles import profile_for
 from ..security.security_audit import scan_config_file
 
@@ -129,6 +132,27 @@ def run_preflight(config: AppConfig) -> dict[str, Any]:
                     "requirement": candidates[0],
                     "dependency_class": "plugin",
                     "plugin_id": plugin_id,
+                },
+            )
+        )
+    # ★ 2026-11-27：插件声明的**组件能力**需求（`requires_components`）也要预检。
+    #
+    #   此前 `component_capability.install_hint()` 写好了却**零调用方** ——
+    #   用户装了插件、没装组件，只会在运行期撞 `ModuleNotFoundError`。
+    #   与「插件依赖」同理：报 warning + 明确装哪个组件，**不阻断**运行
+    #   （组件可能让用户在市场里现装，不该把能跑的 run 挡在门外）。
+    for plugin_id, missing, hint in plugin_component_requirements(config):
+        checks.append(
+            PreflightCheck(
+                f"plugin_component_{plugin_id}",
+                "warning",
+                f"插件所需组件：{plugin_id}",
+                f"缺少 {len(missing)} 项组件能力（{'、'.join(missing)}）；{hint}",
+                {
+                    "action": "install_component",
+                    "plugin_id": plugin_id,
+                    "missing_capabilities": list(missing),
+                    "dependency_class": "plugin_component",
                 },
             )
         )

@@ -62,11 +62,12 @@ from typing import Any
 #: 这些组件和真正的 OCR 引擎**抢同一个槽位**，内置引擎没装时 `slot("ocr").active()`
 #: 会选中 `convert-markdown` —— 一个根本不做 OCR 的东西（CI 上真实红过）。
 #:
-#: ⚠ 市场 `provides` 是**创作者签名覆盖的字节**，我手里没有那把私钥（实测三个维护者
-#:   密钥都不匹配），所以**改不了市场数据**。真实修复落在消费侧：
-#:   `capability_slots._slot_for_capability()` 把非引擎的 `ocr.*` 分流到 `ocr_aux`。
-#:   这里列出的域用于**判定"这条能力是否由组件满足"**（`resolve()` 用），
-#:   与槽位名是两件事 —— 保留 `ocr.` 一词不变，因为数据里就是这个前缀。
+#: 市场数据已于 2026-11-27 改到各自的域（用**真正的创作者钥匙**重签，见
+#: `OmniCrawler-market` 的 `2bc7199`）。本表随之从 4 项扩到 11 项。
+#:
+#: 消费侧仍保留 `capability_slots._slot_for_capability()` 的分流
+#: （非引擎 `ocr.*` → `ocr_aux`）作为**防御**：市场数据被回滚时不至于让
+#: 一个不做 OCR 的组件抢走 OCR 槽位。
 COMPONENT_CAPABILITY_DOMAINS: tuple[str, ...] = (
     "ocr.",        # 光学字符识别引擎（只有 5 个组件在这里）
     "convert.",    # 格式转换（Markdown / 表格）
