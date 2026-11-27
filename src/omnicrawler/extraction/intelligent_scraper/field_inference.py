@@ -534,10 +534,14 @@ def _infer_item_fields(
     nodes: list[DOMNode],
     *,
     max_fields: int = 6,
+    subtree_lookup: _SubtreeLookup | None = None,
 ) -> list[dict[str, Any]]:
-    """容器模式：item 内部找业务字段，输出 item 内相对选择器。"""
+    """容器模式：item 内部找业务字段，输出 item 内相对选择器。
+
+    ``subtree_lookup``：可由调用方传入共用索引（见 ``_fields_for_pattern``）。
+    """
     sample = items[:12]
-    subtree = _SubtreeLookup(nodes)
+    subtree = subtree_lookup if subtree_lookup is not None else _SubtreeLookup(nodes)
     by_key: dict[str, dict[str, Any]] = {}
     # ★ 2026-11-27：同一个列表里的 item **共用完全相同的 css_path**，因此它们的
     #   「子树」是同一批节点 —— 12 个样本会把同一批后代重复分析 12 遍。
@@ -1030,8 +1034,12 @@ def infer_fields(
 
     best_fields: list[dict[str, Any]] = []
     best_key: tuple[int, int] | None = None
+    # ★ 2026-11-27：前 N 个候选**共用同一批 nodes**，`_SubtreeLookup(nodes)` 建的是
+    #   同一份父子索引 —— 原先每个候选各建一次（3 次 O(n) 遍历 + 3 份字典）。
+    #   建成一次传下去，口径完全不变。
+    subtree_lookup = _SubtreeLookup(nodes)
     for pattern in patterns[:_FIELD_CANDIDATES]:
-        fields = _fields_for_pattern(pattern, nodes)
+        fields = _fields_for_pattern(pattern, nodes, subtree_lookup=subtree_lookup)
         if not fields:
             continue
         key = (_usable_field_count(fields), pattern.count)
@@ -1048,10 +1056,19 @@ def _usable_field_count(fields: list[dict[str, Any]]) -> int:
     return sum(1 for field in fields if not field.get("is_container"))
 
 
-def _fields_for_pattern(pattern: RepeatingPattern, nodes: list[DOMNode]) -> list[dict[str, Any]]:
+def _fields_for_pattern(
+    pattern: RepeatingPattern,
+    nodes: list[DOMNode],
+    *,
+    subtree_lookup: _SubtreeLookup | None = None,
+) -> list[dict[str, Any]]:
     """按**单个**重复模式推断字段（原 ``infer_fields`` 的主体）。
 
     抽成独立函数是为了让多候选之间可以分别求值再择优。
+
+    ``subtree_lookup``：调用方在考察多个候选时**共用**同一份 ``_SubtreeLookup``。
+    它是 ``nodes`` 的纯派生索引（父子关系），多个候选传同一份口径完全不变，
+    省掉每个候选各建一次 O(n) 遍历。
     """
     parent_css = pattern.css_path
 
@@ -1063,7 +1080,9 @@ def _fields_for_pattern(pattern: RepeatingPattern, nodes: list[DOMNode]) -> list
         return []
 
     if any(n.children_tags for n in items[:20]):
-        fields = _infer_item_fields(parent_css, items, nodes)
+        fields = _infer_item_fields(
+            parent_css, items, nodes, subtree_lookup=subtree_lookup
+        )
         if fields:
             return fields
 
