@@ -309,6 +309,10 @@ jobs:
       - run: python tools/gates/check_schema_derived_whitelists.py
       # 目录遍历必须在进入前剪枝（rglob 后过滤会白跑十几万条目）
       - run: python tools/gates/check_walk_pruning.py
+      # view 组件清单：文档必须逐个覆盖代码里的 COMPONENT_TYPES（文档与代码不同步不报错）
+      - run: python tools/gates/check_view_component_docs.py
+      # 宿主生命周期前缀的每一项都必须对应真实操作（空预留会骗读者）
+      - run: python tools/gates/check_lifecycle_prefixes.py
       # CLI 选项 help 覆盖率（agent 只能靠 --help 认识命令）
       - run: python tools/gates/check_agent_surface_help.py
       # 本地开发工具版本必须与 constraints 一致（防「本地绿、CI 红」）
