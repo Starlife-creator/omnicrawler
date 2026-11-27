@@ -240,6 +240,9 @@ def excel_safe(value: Any, max_length: int = 32700) -> Any:
         return value
     value = value[:max_length]
     # S4.5 P3#127：数字含科学计数法（1e10）不被误伤
+    # ★ 2026-11-27：试过"先在整串里找 = + - @ 再决定要不要检查"，实测**更慢**
+    #   （0.155 → 0.171 µs/格）—— `in` 要扫全串，而 `lstrip` + `startswith` 只看开头。
+    #   记录在这里是为了防止下一次再试一遍同样的事。
     if value.lstrip("\t\r\n ").startswith(("=", "+", "-", "@")):
         if not re.fullmatch(r"[-+]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?", value):
             return "'" + value
