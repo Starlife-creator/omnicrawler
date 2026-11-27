@@ -29,6 +29,28 @@ TOKEN_RE = re.compile(r"[\w.-]+", re.UNICODE)
 _REGEX_LIKE_PATTERN = re.compile(r"[\^$\\()]")
 
 
+def _html_needle_hit(needle: str, body: str) -> bool:
+    """`html_contains` 的单个条目是否命中。
+
+    分两类判定（**这是判据，不是优化**）：
+
+    * 以 ``<`` 开头 ⇒ **标记片段**（``<table`` / ``<picture``）用子串匹配 ——
+      标记本身没有词边界，``<table`` 后面紧跟 ``>`` 或空白都算命中；
+    * 其余 ⇒ **词**（``Product`` / ``offers`` / ``NewsArticle``）必须**整词**匹配。
+
+    为什么词不能按子串匹配：实测 w3schools 的 HTML 表格教程页，``Product`` 作为子串
+    命中 53 次、作为整词命中 **0** 次 —— 全部落在 ``products`` / ``production`` /
+    ``ecommerce-products`` 里。于是「电商商品公开信息」以 30 分压过真正的
+    ``generic/html-table``（15 分），推荐榜把用户引向错误模板。
+    """
+    lowered = needle.casefold()
+    if lowered.startswith("<"):
+        return lowered in body
+    # 词：用「前后不是字母数字下划线」判整词。JSON-LD 里的 `"@type":"Product"`
+    # 会被命中（引号不是文字字符），而 `products` / `production` 不会。
+    return re.search(r"(?<![0-9a-z_])" + re.escape(lowered) + r"(?![0-9a-z_])", body) is not None
+
+
 @dataclass(frozen=True, slots=True)
 class TemplateMetadata:
     """Searchable, self-contained metadata stored in a template's ``template`` block."""
@@ -288,7 +310,20 @@ class TemplateCatalog:
                 if header_key in headers and value.casefold() in headers[header_key]:
                     score += 25
                     reasons.append(f"header:{key}")
-            hits = [needle for needle in meta.html_contains if needle.casefold() in body]
+            # ★ 2026-11-27：`html_contains` 的匹配方式必须**分两类**。
+            #
+            #   事故实测（w3schools 的 HTML 表格教程页）：`Product` 作为**子串**命中 53 次，
+            #   作为**整词**命中 **0** 次 —— 全部落在 `products` / `production` /
+            #   `ecommerce-products` 这类更长的词里。于是「电商商品公开信息」拿 30 分，
+            #   真正的 `generic/html-table` 只有 15 分，推荐榜把用户引向错误模板。
+            #
+            #   判据：
+            #     · 以 `<` 开头的是**标记片段**（`<table` / `<picture`）⇒ 仍用子串匹配
+            #       （标记本身没有词边界）；
+            #     · 其余是**词**（`Product` / `offers` / `NewsArticle`）⇒ 必须整词匹配。
+            #       它们绝大多数来自 JSON-LD 的 `@type` / 键名，当成散文里的子串匹配
+            #       必然误报。
+            hits = [needle for needle in meta.html_contains if _html_needle_hit(needle, body)]
             if hits:
                 score += min(50, 15 * len(hits))
                 reasons.append("html:" + ",".join(hits[:3]))
