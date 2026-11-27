@@ -1,0 +1,48 @@
+template_version: 1
+
+template:
+
+  id: generic/ssr-embedded-data
+
+  name: SSR 页面内嵌数据
+
+  category: generic
+
+  description: 不启动浏览器，直接从页面内嵌的 SSR 载荷（__NEXT_DATA__ / __NUXT__ / __INITIAL_STATE__）取记录
+
+  version: 1.0.0
+
+  tags: [Next.js, Nuxt, SSR, 内嵌数据, 免渲染]
+
+  capabilities: [http, auto-extraction, embedded-json, evidence]
+
+  recommended_when: 页面源码里能看到 __NEXT_DATA__ 或 window.__INITIAL_STATE__，且 DOM 只是一个空挂载点
+
+  placeholders:
+
+    seed_url: {label: 页面地址, required: true}
+
+    item_path: {label: 记录路径, default: '$', required: false}
+
+  html_contains: [__NEXT_DATA__, __NUXT__, __INITIAL_STATE__, __APOLLO_STATE__]
+
+  verified_at: '2026-11-27'
+
+project: {name: ssr_embedded_data, workspace: work/ssr_embedded_data}
+
+source: {kind: static_html, seeds: ['{{seed_url}}']}
+
+crawl: {max_pages: 1, max_depth: 0, concurrency: 1, same_host: true}
+
+http: {respect_robots: true, delay_seconds: 1.0}
+
+# ★ 关键：mode 仍是 html（数据在 HTML 的 script 里，不是另一个 API 地址），
+#   由 extract.embedded_json 指定记录集合。item_path 留 $ 表示"整份载荷就是一条记录"，
+#   通常在 auto-analyze 之后由生成的配置替换成真实的 $.props.pageProps.xxx[*]。
+extract:
+  mode: html
+  embedded_json: {item_path: '{{item_path}}', source: ""}
+  fields: {}
+  review_low_confidence: true
+
+outputs: {jsonl: true, csv: true, xlsx: true}
