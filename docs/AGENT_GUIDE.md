@@ -147,6 +147,20 @@ omnicrawler components run --component-dir <已装配目录> --payload '{"...":1
 
 自动列表中，标题属性仅在对应可见标题时采用；标签用 `all: true` 保留数组。稳定详情链接对应 `extract.deduplicate_by` 时，同实体、同数据在同轮只交付一次，内容变化或标识缺失保留原记录，不按同名标题合并。
 
+### 抓取性能开关（2026-11-27）
+
+两个**默认关闭**的可选开关，装上都有实测收益，默认关闭是为了「不配置时行为与今天
+逐字节相同」：
+
+```yaml
+http:
+  keep_alive: true     # 连接复用：同一站点连取 10 页 14.0s -> 3.7s
+```
+
+`keep_alive` 只对**幂等 GET/HEAD** 生效（POST 复用有重放风险）。开启后仍逐请求走
+`EgressBroker`、仍固定到已批准的 IP（防 DNS rebinding）、TLS 的 SNI 与证书校验
+仍用原域名 —— 它换的只是「连接是否重建」，不换任何安全边界。
+
 ### SPA 的内嵌数据（2026-11-27）
 
 现代前端（Next.js / Nuxt / Gatsby）把整页数据放在 `<script type="application/json">`
