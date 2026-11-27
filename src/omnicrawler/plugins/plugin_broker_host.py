@@ -5,6 +5,7 @@
 - ``BrokerStateMixin``：state.get/set/delete/migrate（插件状态命名空间隔离）
 - ``BrokerSurfacesMixin``：surface.background.* / render.html.* + 三个 ``_require_*`` 共享守卫
 - ``BrokerSecretsMixin``：secrets.get（白名单约束）
+- ``BrokerThemeMixin``：theme.apply（运行期切换**已注册**主题，2026-11-27）
 
 以普通 Mixin 形式保留 ``self`` 语义（broker 经 ``dispatch`` 的 getattr 路由调用
 ``_cap_*``），宿主属性与调用点不变。
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from .plugin_broker_contracts import (
@@ -246,6 +248,67 @@ class BrokerSurfacesMixin:
         if self._render_broker is None:
             raise CapabilityError(E_INTERNAL, "宿主未绑定隔离渲染服务")
         return self._render_broker
+
+
+#: 宿主注册的「应用主题」回调（`theme_id -> bool`）。
+#:
+#: ★ 为什么不把 `theme_service` 一路塞进 `CapabilityBroker.__init__`：
+#:   那需要改 4 层构造链（adapter → session host → broker → mixin），而 GUI 侧
+#:   只有一个注册点。用模块级注册表把「谁实现了」与「谁调用」解耦，
+#:   **成本低、且没有一条新的构造参数需要所有调用方跟进**。
+#:   None ⇒ `theme.apply` 明确报 E_INTERNAL，不是静默成功。
+_THEME_APPLY_HANDLER: Callable[[str], bool] | None = None
+
+
+def register_theme_apply_handler(handler: Callable[[str], bool] | None) -> None:
+    """注册/注销宿主侧主题应用回调（GUI 启动时注册，退出时置 None）。"""
+    global _THEME_APPLY_HANDLER
+    _THEME_APPLY_HANDLER = handler
+
+
+def theme_apply_handler() -> Callable[[str], bool] | None:
+    """当前注册的主题应用回调（未注册时为 None）。"""
+    return _THEME_APPLY_HANDLER
+
+
+class BrokerThemeMixin:
+    """theme.apply 能力域（2026-11-27）：运行期切换**已注册**的插件主题。
+
+    为什么必须新增一条能力，而不是复用 `ui:theme`
+    ------------------------------------------------
+    `ui:theme` 是**加载期**声明：插件在 `register(registry)` 里注册一个
+    `ThemeRegistration`，宿主启动时套用。它对**本地**插件是**自动批准**的
+    （`plugin_loader` 里 `approved |= UI_PERMISSIONS`）。
+
+    如果运行期也走 `ui:theme`，等于「任何本地插件无需审批即可随时改整个界面的
+    配色」—— 那是权限提升，不是功能。所以运行期走独立的 `theme:apply`：
+    它**不在** `UI_PERMISSIONS` 里，必须由用户显式授予。
+
+    边界：只接受宿主侧**已注册**的 `theme_id`，不接受任意色值。
+    插件不能借这条能力渲染任意界面。
+    """
+
+    _permissions: set[str]
+
+    def _cap_theme_apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        theme_id = str(payload.get("theme_id", "")).strip().lower()
+        if not theme_id:
+            raise CapabilityError(E_CONTRACT, "theme.apply 需要 theme_id 参数")
+        handler = theme_apply_handler()
+        if handler is None:
+            raise CapabilityError(E_INTERNAL, "当前入口未绑定主题服务（theme.apply 不可用）")
+        try:
+            applied = bool(handler(theme_id))
+        except ValueError as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+        if not applied:
+            # ★ 不静默忽略：插件作者需要知道「你以为注册了但宿主没认」。
+            raise CapabilityError(
+                E_RESOURCE,
+                f"主题 {theme_id} 未在宿主注册；插件必须先注册 ThemeRegistration，"
+                "否则不能在运行期切换",
+            )
+        return {"applied": True, "theme_id": theme_id}
 
 
 class BrokerSecretsMixin:

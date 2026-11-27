@@ -62,6 +62,20 @@ CAPABILITY_VERSIONS: dict[str, int] = {
     # 进度，宿主合并限速后刷新对应插件面板；面板缺席时静默丢弃。载荷收窄为
     # 已知字段集，新增可选字段不 bump、剔除字段才 bump。
     "view.progress": 1,
+    # ★ 2026-11-27：**运行期切换主题**。
+    #
+    # 为什么必须新增一条能力，而不是复用 `ui:theme`：
+    # `ui:theme` 是**加载期**声明（插件在 `register(registry)` 里注册一个
+    # ThemeRegistration，由宿主在启动时套用），并且对本地插件**自动批准**
+    # （`plugin_loader` 里 `approved |= UI_PERMISSIONS`）。
+    # 若让运行期也走它，等于「任何本地插件无需审批即可随时改整个界面的配色」，
+    # 那是权限提升，不是功能。
+    #
+    # 语义：插件请求宿主把**已注册**的某个主题设为当前主题。只接受**已注册的
+    # theme_id**（宿主侧白名单），不接受任意色值 —— 插件不能借此渲染任意界面。
+    # 载荷：{"theme_id": str}；返回 {"applied": bool, "theme_id": str}。
+    # 未注册的 theme_id ⇒ E_RESOURCE（不是静默忽略，否则插件作者无从调试）。
+    "theme.apply": 1,
 }
 
 _CAPABILITY_REQUIREMENT = re.compile(r"^(?:>=)?([1-9][0-9]*)$")
@@ -133,6 +147,10 @@ _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     # 与 system.info 同为内置（None）——无需 manifest 权限；滥用面由宿主侧
     # 限速合并 + 静默丢弃兜住。
     "view.progress": None,
+    # ★ 2026-11-27：运行期换主题需要**显式**权限 `theme:apply`。
+    # 刻意**不复用** `ui:theme` —— 那条对本地插件是自动批准的（加载期声明），
+    # 若运行期也自动批准，等于「无审批即可随时改整个界面配色」。
+    "theme.apply": "theme:apply",
 }
 
 E_CONTRACT = "E_CONTRACT"

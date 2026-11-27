@@ -86,6 +86,7 @@ from .runner.env_checker import (
 from .runner.worker_task_runner import WorkerTaskRunner as TaskRunner
 from .settings import AppSettings
 from .shortcuts import GlobalShortcutManager
+from .theme_bridge import install_theme_apply_handler
 from .views.task_history import TaskHistory
 from .widgets.resource_monitor import ResourceMonitor
 from .widgets.toast import ToastManager
@@ -284,6 +285,7 @@ class MainWindow(QMainWindow):
         self._menu_builder = MenuBuilder(self)
         self._toolbar_manager = ToolbarManager(self)
         self._theme_manager = ThemeManager(self)
+        install_theme_apply_handler(self)  # theme.apply 的宿主端（见 gui/theme_bridge.py）
         self._error_helper = ErrorDialogHelper(self)
         self._env_checker = EnvironmentChecker(self)
         self._help_dialogs = HelpDialogManager(self)

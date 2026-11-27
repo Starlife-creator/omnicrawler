@@ -83,6 +83,7 @@ from .plugin_broker_host import (
     BrokerStateMixin,
     BrokerSurfacesMixin,
     BrokerSystemMixin,
+    BrokerThemeMixin,
 )
 from .plugin_broker_io import BrokerFilesMixin, BrokerNetworkMixin
 from .plugin_broker_records import BrokerRecordsMixin
@@ -99,6 +100,7 @@ class CapabilityBroker(
     BrokerStateMixin,
     BrokerSurfacesMixin,
     BrokerSystemMixin,
+    BrokerThemeMixin,
 ):
     """会话级能力代理：静态审批 ⊇ 运行期请求。"""
 

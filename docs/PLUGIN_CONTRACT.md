@@ -201,6 +201,7 @@ PLUGIN_METADATA = {
 | `surface.background.set/configure/clear` | `surfaces:background` | 控制宿主语义底层背景；仅接受已授权媒体或宿主渲染结果，v2 配置范围/预设/透明前景/遮罩/静态模糊 |
 | `surface.background.capabilities` | `surfaces:background` | 查询宿主允许的范围、预设、数值边界和输入穿透保证 |
 | `secrets.get` | `secrets:read` | 明文密钥访问的显式例外：需要 manifest 白名单并记录审计；优先用 auth 注入 |
+| `theme.apply` | `theme:apply` | 运行期切到**宿主已注册**的插件主题。只接受 `theme_id`，不接受色值；未注册的 id ⇒ `E_RESOURCE`。★ 刻意**不**复用 `ui:theme`：那条对本地插件是自动批准的（加载期声明），运行期也自动批准等于「无审批即可随时改整个界面配色」 |
 
 - **网络密钥默认零暴露**：`network.fetch` 可用 `auth: {secret_ref, header}`，宿主代理侧
   从密钥库解析注入请求头，插件进程永远看不到明文；注入头值不进审计/日志（仅记**头名**与
