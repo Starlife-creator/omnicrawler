@@ -336,6 +336,71 @@ def _run_plugins(args: argparse.Namespace) -> None:
     _json(build_registry(config).describe())
 
 
+@_register("tutorial")
+def _run_tutorial(args: argparse.Namespace) -> None:
+    """10 步上手教程（`TUTORIAL_STEPS` 自此有了**真实出口**）。
+
+    ★ 2026-11-28：`services/offline_demo.py` 里那 10 步教程、`get_tutorial_map()`、
+      `get_tutorial_step()`、`create_tutorial_workspace()` 全部**零调用方** ——
+      写得很完整（每步有标题/描述/你要做什么/会发生什么/一条要点），
+      但用户在 GUI 与 CLI 里都看不到，也没法生成对应练习工作区。
+
+      这条命令把三件事接到用户面前：
+
+      - 不传 `--step`：列出 10 步（分类、是否需要网络）；
+      - `--step N`：打印该步的完整说明；
+      - `--workspace <dir>`：真的生成一份离线练习工作区（无网络也能跑通）。
+
+    `--workspace` 单独给（不强制配 `--step`）是因为「我要先看到东西」比
+    「先读十步」更像新手的第一个动作。
+    """
+    from ..services.offline_demo import (
+        create_tutorial_workspace,
+        get_tutorial_map,
+        get_tutorial_step,
+    )
+
+    step_number = int(getattr(args, "step", 0) or 0)
+    workspace = str(getattr(args, "workspace", "") or "").strip()
+
+    if workspace:
+        target = Path(workspace).expanduser().resolve()
+        created = create_tutorial_workspace(
+            target, step_number if step_number else 1,
+        )
+        if created is None:
+            _json({"ok": False, "error": f"没有第 {step_number} 步（范围 1-10）"})
+            raise SystemExit(2)
+        _json({
+            "ok": True,
+            "workspace": str(target),
+            "config": str(target / "offline-demo.yaml"),
+            "step": step_number or 1,
+            "next": f"omnicrawler validate -c {target / "offline-demo.yaml"}",
+        })
+        raise SystemExit(0)
+
+    if not step_number:
+        _json(get_tutorial_map())
+        raise SystemExit(0)
+
+    step = get_tutorial_step(step_number)
+    if step is None:
+        _json({"ok": False, "error": f"没有第 {step_number} 步（范围 1-10）"})
+        raise SystemExit(2)
+    _json({
+        "number": step.number,
+        "title": step.title,
+        "description": step.description,
+        "what_you_do": step.what_you_do,
+        "what_happens": step.what_happens,
+        "key_takeaway": step.key_takeaway,
+        "category": step.category,
+        "requires_network": step.requires_network,
+    })
+    raise SystemExit(0)
+
+
 @_register("templates")
 def _run_templates(args: argparse.Namespace) -> None:
     result = cmd_template.execute(

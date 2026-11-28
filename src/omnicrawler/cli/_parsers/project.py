@@ -22,3 +22,16 @@ def configure(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     cleanup = sub.add_parser("cleanup", help="预览或执行配置的数据保留策略")
     cleanup.add_argument("--config", "-c", required=True, help="任务配置文件路径（YAML）")
     cleanup.add_argument("--apply", action="store_true", help="实际删除；省略时只输出计划")
+    tutorial = sub.add_parser(
+        "tutorial",
+        help="查看 10 步上手教程；可按步骤生成离线练习工作区"
+    )
+    tutorial.add_argument(
+        "--step", type=int, default=0,
+        help="查看某一节（1-10）；省略则列出全部 10 步",
+    )
+    tutorial.add_argument(
+        "--workspace", default="",
+        help=
+        "为该步骤生成离线练习工作区（不需要网络）；省略则只打印教程内容",
+    )

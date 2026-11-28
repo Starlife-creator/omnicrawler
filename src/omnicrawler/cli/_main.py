@@ -64,7 +64,7 @@ SECTION_ORDER: tuple[str, ...] = (
 #: 这里按「用户想做什么」重排，**只影响 help 展示**，不改变注册顺序与
 #: 任何行为。未列出的命令归入「其它」，由守卫保证不会有命令被漏掉。
 USER_COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("开始一个新任务", ("task", "init", "wizard", "validate")),
+    ("开始一个新任务", ("task", "init", "wizard", "validate", "tutorial")),
     ("运行与试跑", ("sample", "run", "resume", "control", "preflight")),
     ("模板", ("templates", "gen-templates")),
     ("查看结果与导出", ("status", "export", "reprocess", "compare-runs", "timeline")),
