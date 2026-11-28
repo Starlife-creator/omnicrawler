@@ -238,6 +238,18 @@ def load_config(path: str | Path) -> AppConfig:
     return config
 
 
+def _source_has_local_files(config: AppConfig) -> bool:
+    """`source.local_files` 是否给出了可用的入场文件列表（2026-11-28）。
+
+    只做**形状**判断，不碰文件系统：路径合法性由 `sources/local_files.py` 的
+    `declared_files()` 在真正读取时判（它要 `resolve()`、查符号链接、查越界）。
+    配置校验越界去 stat 文件会让「在别的机器上生成的配置」无法校验。
+    """
+    values = config.section("source").get("local_files")
+    if not isinstance(values, list) or not values:
+        return False
+    return any(isinstance(item, str) and item.strip() for item in values)
+
 def _validate_json_field_paths(fields: dict[str, Any]) -> list[str]:
     """校验 JSON 模式下每个字段的路径语法（2026-11-28）。
 
@@ -490,12 +502,30 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         errors.append("plugins.enabled_market_plugins必须是插件ID字符串数组或null")
     # 无种子源：redis/scrapy 自带入口；插件提供的 source.kind（不在 SOURCE_KINDS）
     # 的入口由插件定义（如文件型插件读 source.file），不强制 seeds（见 issue #75）。
-    seedless = config.source_kind in {"redis", "scrapy"} or config.source_kind not in SOURCE_KINDS
+    #
+    # ★ 2026-11-28：`file` 也属于「入口不由 seeds 表达」的一类 —— 它的入口是
+    #   `source.local_files`。而 `sources/local_files.py` 的 `seed()` 明确支持
+    #   「seeds 为空 ⇒ 回退到全部 local_files」：
+    #
+    #       selected = config.section("source").get("seeds") or list(files)
+    #
+    #   此前校验把它拒了，于是**运行时支持、校验不让过** —— 用户只能把每个文件
+    #   手抄进 seeds 才能用。这不是严格，是自相矛盾。
+    seedless = (
+        config.source_kind in {"redis", "scrapy"}
+        or config.source_kind not in SOURCE_KINDS
+        or _source_has_local_files(config)
+    )
     seeds = config.section("source").get("seeds", [])
     if not seedless and not isinstance(seeds, list):
         errors.append("source.seeds必须是URL数组")
     if not seedless and not seeds:
         errors.append("source.seeds至少需要一个入口")
+    # `file` 但既没 seeds 也没 local_files ⇒ **空运行**，必须拦（它不属于 seedless）。
+    if config.source_kind == "file" and not seeds and not _source_has_local_files(config):
+        errors.append(
+            "source.kind=file 需要 source.local_files（或显式 seeds）—— 否则没有任何输入"
+        )
     crawl = config.section("crawl")
     if str(crawl.get("strategy", "bfs")) not in {"bfs", "dfs", "priority", "random"}:
         errors.append("crawl.strategy只能是bfs、dfs、priority或random")
