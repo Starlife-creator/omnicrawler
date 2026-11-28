@@ -376,6 +376,18 @@ class CentralAreaBuilder(_BaseDelegate):
             if entry.stack_key is not None and entry.stack_key in stack_index_by_key:
                 mw._nav_pages[row] = stack_index_by_key[entry.stack_key]
 
+        # ★ W6-A（2026-11-28）：登记「内置 key → 页面对象」。
+        #
+        #   插件导航页会往侧栏**末尾**插行；插入后 `row → 栈索引` 的映射必须
+        #   整体重算，否则内置条目会指向错页 —— 那正是历史上的「结果与复核错页」。
+        #   重算需要「key → 页面对象」，而那时手上只有「row → 栈索引」，
+        #   所以在这里一次性固化下来。
+        #
+        #   放在 `_nav_pages` 建好之后：之前这些页面还没全部 addWidget。
+        from .plugin_nav_page import adopt_builtin_nav_pages
+
+        adopt_builtin_nav_pages(mw)
+
         main_layout.addWidget(mw._stack)
         mw._page_transition = PageTransitionController(
             mw._stack, reduced_motion=mw._settings.reduced_motion,

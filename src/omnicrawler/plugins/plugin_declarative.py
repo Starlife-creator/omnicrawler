@@ -13,7 +13,15 @@ MAX_TEXT_LENGTH = 512
 MAX_RICH_TEXT_SEGMENTS = 64
 MAX_RICH_TEXT_TOTAL_CHARS = 4096
 RICH_TEXT_SEGMENT_TYPES = frozenset({"heading", "paragraph", "bullet", "link"})
-VIEW_ZONES = frozenset({"left", "right", "bottom"})
+#: 视图的放置区域。
+#:
+#: `main`（2026-11-28，W6-A）表示**中央整页**而不是侧栏面板：
+#: `left`/`right`/`bottom` 走 `QDockWidget`（190px 侧栏放得下的组件），
+#: `main` 走导航页（`delegates/plugin_nav_page.py`）。
+#:
+#: 为什么需要 `main`：市场里有插件本质上就是一个完整页面（社区指南、需求清单），
+#: 塞进 190px 侧栏装不下 —— 而 GUI 侧此前没有任何通道能让插件贡献中央页。
+VIEW_ZONES = frozenset({"left", "right", "bottom", "main"})
 
 #: **浮层的 z 档位**（W6-B / W5-B 共用同一套模型）。
 #:

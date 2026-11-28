@@ -7,6 +7,12 @@ from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from .delegates.plugin_nav_page import (
+    register_plugin_nav_page as register_nav_page,
+)
+from .delegates.plugin_nav_page import (
+    unregister_plugin_nav_page as unregister_nav_page,
+)
 from .foreground_surface import (
     ForegroundController,
     ForegroundRegistration,
@@ -72,17 +78,41 @@ class DeclarativeViewController(QtCore.QObject):
         bind_relay = getattr(adapter, "bind_progress_relay", None)
         if callable(bind_relay):
             bind_relay(self._progress_relay.triggered.emit)
-        self.dock = QtWidgets.QDockWidget(self._descriptor["title"], main_window)
-        self.dock.setObjectName(
-            f"declarativePluginView_{plugin_id}_{self._descriptor['view_id']}"
-        )
-        self._apply_dock_policy()
-        self._rebuild(self._descriptor)
-        area = {
-            "left": QtCore.Qt.DockWidgetArea.LeftDockWidgetArea,
-            "bottom": QtCore.Qt.DockWidgetArea.BottomDockWidgetArea,
-        }.get(self._descriptor["preferred_zone"], QtCore.Qt.DockWidgetArea.RightDockWidgetArea)
-        main_window.addDockWidget(area, self.dock)
+        # ★ 2026-11-28（W6-A）：`preferred_zone: main` 走**导航页**而不是侧栏面板。
+        #
+        #   两条路径共用 `_rebuild` / 组件渲染 / 前景层 / 进度桥，
+        #   差别只在「容器放在哪」与「怎么卸载」。
+        #
+        #   `self.dock` 在 main 模式下是 **None** —— 调用方必须用 `self.is_nav_page`
+        #   判断，不能无条件访问 dock（重载路径正是这么踩过一次）。
+        self.is_nav_page = self._descriptor["preferred_zone"] == "main"
+        self.dock: QtWidgets.QDockWidget | None = None
+        self.page: QtWidgets.QWidget | None = None
+        self._nav_key = f"plugin:{plugin_id}:{self._descriptor['view_id']}"
+        if self.is_nav_page:
+            self.page = QtWidgets.QWidget()
+            self.page.setObjectName(
+                f"declarativePluginPage_{plugin_id}_{self._descriptor['view_id']}"
+            )
+            self._rebuild(self._descriptor)
+            register_nav_page(
+                main_window, self._nav_key, self._descriptor["title"], self.page,
+            )
+        else:
+            self.dock = QtWidgets.QDockWidget(self._descriptor["title"], main_window)
+            self.dock.setObjectName(
+                f"declarativePluginView_{plugin_id}_{self._descriptor['view_id']}"
+            )
+            self._apply_dock_policy()
+            self._rebuild(self._descriptor)
+            area = {
+                "left": QtCore.Qt.DockWidgetArea.LeftDockWidgetArea,
+                "bottom": QtCore.Qt.DockWidgetArea.BottomDockWidgetArea,
+            }.get(
+                self._descriptor["preferred_zone"],
+                QtCore.Qt.DockWidgetArea.RightDockWidgetArea,
+            )
+            main_window.addDockWidget(area, self.dock)
 
     @property
     def surface(self) -> MediaSurfaceService:
@@ -119,6 +149,8 @@ class DeclarativeViewController(QtCore.QObject):
             )
 
     def _apply_dock_policy(self) -> None:
+        if self.dock is None:  # 导航页模式没有 dock
+            return
         self.dock.setAllowedAreas(
             QtCore.Qt.DockWidgetArea.LeftDockWidgetArea
             | QtCore.Qt.DockWidgetArea.RightDockWidgetArea
@@ -131,11 +163,38 @@ class DeclarativeViewController(QtCore.QObject):
             features |= QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetFloatable
         self.dock.setFeatures(features)
 
+    def _container(self) -> QtWidgets.QWidget | None:
+        """当前承载内容的容器（侧栏面板 / 导航页）。"""
+        if self.is_nav_page:
+            return self.page
+        return self.dock.widget() if self.dock is not None else None
+
     def _rebuild(self, descriptor: dict[str, Any]) -> None:
         # §8.4 #4（P1 长列表）：整面板重建不得丢长列表滚动位置。
         # 销毁旧面板前按组件 id 捕获各列表的滚动位置，新面板建好后恢复。
-        saved_scrolls = self._capture_list_scrolls(self.dock.widget())
+        saved_scrolls = self._capture_list_scrolls(self._container())
         self._descriptor = descriptor
+        if self.is_nav_page:
+            # 导航页占满中央区：尺寸约束由布局管理，descriptor 的宽高不适用。
+            assert self.page is not None
+            panel = QtWidgets.QWidget(self.page)
+            layout = QtWidgets.QVBoxLayout(panel)
+            for component in descriptor["components"]:
+                self._add_component(layout, component)
+            layout.addStretch(1)
+            old_layout = self.page.layout()
+            if old_layout is not None:
+                # 把旧布局挂到临时容器上：Qt 会在临时容器析构时一并销毁旧控件。
+                _scratch = QtWidgets.QWidget()
+                _scratch.setLayout(old_layout)
+            self.page.setLayout(QtWidgets.QVBoxLayout())
+            container_layout = self.page.layout()
+            assert container_layout is not None
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.addWidget(panel)
+            self._restore_list_scrolls(saved_scrolls)
+            return
+        assert self.dock is not None
         panel = QtWidgets.QWidget(self.dock)
         panel.setMinimumSize(descriptor["minimum_width"], descriptor["minimum_height"])
         panel.resize(descriptor["default_width"], descriptor["default_height"])
@@ -164,7 +223,7 @@ class DeclarativeViewController(QtCore.QObject):
     def _restore_list_scrolls(self, saved: dict[str, int]) -> None:
         if not saved:
             return
-        panel = self.dock.widget()
+        panel = self._container()
         if panel is None:
             return
         for listing in panel.findChildren(QtWidgets.QListWidget):
@@ -354,7 +413,7 @@ class DeclarativeViewController(QtCore.QObject):
 
     def _apply_progress(self, data: dict[str, Any]) -> None:
         """把一帧进度刷进面板；面板未挂载时静默丢弃（U6 生命周期要求）。"""
-        panel = self.dock.widget()
+        panel = self._container()
         if panel is None:
             return
         try:
@@ -421,8 +480,11 @@ class DeclarativeViewController(QtCore.QObject):
         # 界面上不再有插件的任何残留**——那是用户最先看到的。
         self._foreground.close()
         self._surface.close()
-        self._main_window.removeDockWidget(self.dock)
-        self.dock.deleteLater()
+        if self.is_nav_page:
+            unregister_nav_page(self._main_window, self._nav_key)
+        elif self.dock is not None:
+            self._main_window.removeDockWidget(self.dock)
+            self.dock.deleteLater()
 
 
 def install_declarative_view(
