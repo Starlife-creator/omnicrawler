@@ -14,7 +14,6 @@ from .._version import __version__
 from ..core.logging_utils import configure_logging
 from ..core.runtime_paths import configure_runtime_environment
 from ..core.utils import atomic_write_text, user_agent
-from ..services.benchmarking import BenchmarkHistory, BenchmarkRunner
 
 # Source installs discover project-local .runtime assets, while frozen builds
 # discover the browser/OCR runtime beside the companion executable.
@@ -850,6 +849,8 @@ def _run_benchmark(args: argparse.Namespace) -> None:
         profiles_to_run = ["low", "standard", "high"]
     else:
         profiles_to_run = [args.profile]
+
+    from ..services.benchmarking import BenchmarkHistory, BenchmarkRunner
 
     history_path = Path(args.history or args.output)
     history = BenchmarkHistory(history_path)

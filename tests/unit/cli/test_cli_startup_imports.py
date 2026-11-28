@@ -212,3 +212,68 @@ def test_templates_inspect_still_works() -> None:
         "print(r.returncode)"
     )
     assert out.strip() == "0"
+
+
+@pytest.mark.parametrize("module", ["omnicrawler.services.benchmarking"])
+def test_cli_main_does_not_eagerly_import_benchmarking(module: str) -> None:
+    """★ `cli._main` 不许 eager 导入 `services.benchmarking`（**66.4 ms**）。
+
+    它连带拉进 `core.config` / `resource_sampling` / `application_service`，
+    而后者又带 `psutil`、`sqlite3`、`yaml`、`platform`。这些只有 `benchmark`
+    子命令用得到，却让**每一条**命令（含 `--help`）都付账。
+
+    实测（子进程各 11 次取最小值）：
+
+    | 命令 | 惰性前 | 惰性后 |
+    |---|---|---|
+    | `--help` | 162.8 ms | 142.5 ms（**-12%**）|
+    | `status`（错误路径）| 373.6 ms | 368.2 ms |
+
+    ★ 判据同 `_handlers.py` 那条「按调用点数量决定」：本模块只有 `_run_benchmark`
+      一个调用点 ⇒ 放进去。`omnicrawler.state` 之类多数命令都要的**不**涂成惰性。
+    """
+    out = _run_probe(
+        "import sys; sys.argv=['omnicrawler','--help']; "
+        "import omnicrawler.cli._main; "
+        f"print({module!r} in sys.modules)"
+    )
+    assert out.strip() == "False", f"cli._main 又 eager 导入了 {module}"
+
+
+def test_benchmark_handler_works_when_called_directly() -> None:
+    """★ 反方向：惰性化不许把 `benchmark` 弄坏 —— 必须**直接调用**处理器。
+
+    为什么不能靠 `omnicrawler benchmark -c nope.yaml`：
+    那条命令在 argparse/配置校验阶段就失败了，根本走不到 `BenchmarkHistory`。
+    实测（去掉惰性导入后跑 CLI）仍然只是「配置文件不存在」——**假绿**。
+
+    这条测试直接调 `_run_benchmark(ns)`，绕过 CLI 前置校验，
+    因此缺了导入就会 `NameError: name BenchmarkHistory is not defined`。
+    反向断言已确认：删掉那行 import 立刻红。
+    """
+    probe = (
+        "import argparse, tempfile\n"
+        "from pathlib import Path\n"
+        "from omnicrawler.cli._main import _run_benchmark\n"
+        "ns = argparse.Namespace(profile='low', config='nope.yaml',\n"
+        "                        output=str(Path(tempfile.mkdtemp())/'h.json'),\n"
+        "                        history=None, regression_threshold=0.1)\n"
+        "try:\n"
+        "    _run_benchmark(ns)\n"
+        "except NameError as exc:\n"
+        "    print('NAMEERROR:', exc)\n"
+        # `_run_benchmark` 在全部 profile 失败时会 `raise SystemExit(1)`，
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    combined = ((result.stdout or "") + (result.stderr or "")).strip()
+    assert "NAMEERROR" not in combined, (
+        f"惰性导入缺了但无人发现：{combined[-400:]}"
+    )
+    # 走到这里就说明导入发生了 —— `NAMEERROR` 已经把它区分开了。
