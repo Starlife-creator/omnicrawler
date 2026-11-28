@@ -80,3 +80,53 @@ def test_core_whitelist_is_never_empty() -> None:
     from omnicrawler.plugins.plugin_sandbox import ALLOWED_PERMISSIONS
 
     assert len(ALLOWED_PERMISSIONS) >= 10
+
+# ── 能力名同样是跨仓漂移的一类 ────────────────────────────────────────
+
+
+_CAP_SAMPLE = """
+ALLOWED_CAPABILITIES = {
+    "system.info",
+    # 注释里的 "ghost.commented" 不该被计入
+    "view.richtext",
+    "view.progress",
+}
+"""
+
+
+def test_parses_the_market_capability_set() -> None:
+    from tools.gates.check_plugin_permission_parity import market_capabilities
+
+    assert market_capabilities(_CAP_SAMPLE) == {"system.info", "view.richtext", "view.progress"}
+
+
+def test_capability_comments_are_ignored() -> None:
+    from tools.gates.check_plugin_permission_parity import market_capabilities
+
+    parsed = market_capabilities(_CAP_SAMPLE)
+    assert "ghost.commented" not in parsed, f"注释被当成了能力：{sorted(parsed)}"
+
+
+def test_missing_capability_block_returns_empty() -> None:
+    from tools.gates.check_plugin_permission_parity import market_capabilities
+
+    assert market_capabilities("# 没有这个常量") == set()
+
+
+def test_capability_lists_are_equal_across_repos() -> None:
+    """★ 端到端：两侧能力白名单必须逐项相等（市场仓不可达时 skip）。"""
+    import pytest
+
+    from omnicrawler.plugins.plugin_broker_contracts import CAPABILITY_VERSIONS
+    from tools.gates.check_plugin_permission_parity import (
+        MARKET_VALIDATOR,
+        differences,
+        market_capabilities,
+    )
+
+    if not MARKET_VALIDATOR.is_file():
+        pytest.skip("没有市场 checkout")
+    market = market_capabilities(MARKET_VALIDATOR.read_text(encoding="utf-8"))
+    only_core, only_market = differences(set(CAPABILITY_VERSIONS), market)
+    assert only_core == [], f"只在主仓 ⇒ 声明它的插件投稿会被拒：{only_core}"
+    assert only_market == [], f"只在市场 ⇒ 过审后运行期被拒载：{only_market}"
