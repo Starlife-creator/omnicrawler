@@ -84,6 +84,12 @@ OmniCrawler-<version>-<Platform>-Portable-<Edition>.<ext>
 
 三个 spec 共享同一套 datas / hiddenimports / excludes 取舍（Standard 范围排除 paddle/torch 等重型可选包、显式收集 lxml 与 playwright driver）。改动跨平台行为时，**四个 spec 必须同步修改**。
 
+**构建两种 ≠ 发布两种**（2026-11-28 补充）：Full 照常编译并跑通冒烟（它是 PyInstaller
+冻结兼容性的试金石 —— paddle/cv2/lxml/PySide6/playwright 同处一个冻结环境时的 hooks 与
+命名空间包冲突，只有全量构建能第一时间暴露），但**不挂公开 Release**：对外只发 Standard，
+消除用户面对双版本的选择困惑。需要 OCR 能力时用 `omnicrawler components import` 加装组件。
+Full 产物留在该次 CI run 的 Actions artifacts 里，供维护者做冻结兼容性回归。
+
 ## 平台差异说明
 
 ### Linux（build_linux.sh）

@@ -152,14 +152,21 @@ jobs:
             echo
             echo "> 由 CI 自动构建（GitHub Actions 三平台 runner）。"
             echo
+            # ★ 2026-11-28：公开 Release **只发 Standard**（Full 停发不停建，见
+            #   下方挂载阶段的排除逻辑）。此前这里写「（Standard/Full）」——
+            #   而用户实际只能看到 Standard 资产，等于发布说明在承诺一个下载不到的包。
             echo "### 便携包"
-            echo "- **Windows**（Standard/Full）：GUI + Chromium +（Full 含）ChromeDriver/Tesseract/PaddleOCR"
+            echo "- **Windows**：GUI + Chromium（Standard）"
             echo "  - 安装：解压 ZIP → 双击 OmniCrawler-Launcher.bat"
-            echo "- **Linux**（Standard/Full）：GUI + Chromium +（Full 含）Tesseract/ChromeDriver/PaddleOCR（构建期打包，解压即用）"
+            echo "- **Linux**：GUI + Chromium（Standard，构建期打包，解压即用）"
             echo "  - 安装：tar -xJf 包名 && ./OmniCrawler/omnicrawler --help"
             echo "  - 可选（不需要 root）：./OmniCrawler/installer/install-user.sh 把应用装进应用菜单（含 hicolor 图标与 CLI 软链；卸载用同目录的 uninstall-user.sh）"
-            echo "- **macOS**（Standard/Full）：.app（ad-hoc 签名）+（Full 含）Tesseract/ChromeDriver（Paddle OCR 以 Transformers 后端替代）；首次打开请右键 → 打开"
+            echo "- **macOS**：.app（ad-hoc 签名）（Standard）；首次打开请右键 → 打开"
             echo "  - 安装：挂载 dmg → 进入 OmniCrawler 文件夹 → 将 OmniCrawler.app 拖入 Applications"
+            echo
+            echo "> 需要 Tesseract / PaddleOCR 等 OCR 能力时，用 `omnicrawler components import` 加装对应组件，"
+            echo "> 或从源码安装 full 依赖集。完整能力的冻结包（Full）只在 CI 构建用于兼容性回归，"
+            echo "> 不挂到公开 Release。"
             echo
             echo "### 安全"
             echo "- 各平台产物附带 SHA256SUMS-platform.txt 校验和（与 omnicrawler-provenance.json 对应）"
