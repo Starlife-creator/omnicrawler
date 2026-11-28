@@ -179,6 +179,8 @@ class CentralAreaBuilder(_BaseDelegate):
         stack_index_by_key: dict[str, int] = {}
 
         mw._workspace_widget = QWidget()
+        # ★ 2026-11-28：导航页需要无障碍名，否则读屏器念「未命名控件」。
+        mw._workspace_widget.setAccessibleName(_("任务工作台"))
         workspace_layout = QVBoxLayout(mw._workspace_widget)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
         mw._advanced_summary = QLabel("")
@@ -211,6 +213,7 @@ class CentralAreaBuilder(_BaseDelegate):
         stack_index_by_key[NavKey.YAML_EDITOR] = mw._stack.addWidget(mw._yaml_editor)
 
         monitor_widget = QWidget()
+        monitor_widget.setAccessibleName(_("运行与历史"))
         monitor_layout = QVBoxLayout(monitor_widget)
         monitor_layout.setContentsMargins(8, 8, 8, 8)
 
@@ -257,6 +260,7 @@ class CentralAreaBuilder(_BaseDelegate):
         stack_index_by_key[NavKey.MONITOR] = mw._stack.addWidget(monitor_widget)
 
         results_widget = QWidget()
+        results_widget.setAccessibleName(_("结果与复核"))
         results_layout = QVBoxLayout(results_widget)
         results_layout.setContentsMargins(8, 8, 8, 8)
         mw._result_table = ResultTable()
