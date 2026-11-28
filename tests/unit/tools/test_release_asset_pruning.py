@@ -157,6 +157,7 @@ def test_skipped_manifests_never_enter_the_checksum_manifest(tmp_path: Path) -> 
     import subprocess
     import sys
 
+    from tools.child_env import utf8_env
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
@@ -172,7 +173,7 @@ def test_skipped_manifests_never_enter_the_checksum_manifest(tmp_path: Path) -> 
     script = PROJECT_ROOT / "tools" / "releasing" / "generate_checksums.py"
     result = subprocess.run(
         [sys.executable, str(script), str(artifacts), "--output", "SHA256SUMS.txt"],
-        capture_output=True, text=True, encoding="utf-8",
+        capture_output=True, text=True, encoding="utf-8", env=utf8_env(),
     )
     assert result.returncode == 0, result.stderr
     manifest = (artifacts / "SHA256SUMS.txt").read_text(encoding="utf-8")
