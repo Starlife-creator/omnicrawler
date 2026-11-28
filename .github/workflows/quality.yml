@@ -315,6 +315,8 @@ jobs:
       - run: python tools/gates/check_lifecycle_prefixes.py
       # 组件 provides 的域前缀必须与组件职责一致（ocr.* 是保留前缀）
       - run: python tools/gates/check_component_capability_domains.py
+      # 能力表 ⇄ 代码 双向一致（插件作者只会看文档）
+      - run: python tools/gates/check_capability_docs.py
       # CLI 选项 help 覆盖率（agent 只能靠 --help 认识命令）
       - run: python tools/gates/check_agent_surface_help.py
       # 本地开发工具版本必须与 constraints 一致（防「本地绿、CI 红」）

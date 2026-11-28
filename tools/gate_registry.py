@@ -533,6 +533,18 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_capability_docs",
+        args=("tools/gates/check_capability_docs.py",),
+        sets=_STATIC,
+        description="能力表 ⇄ 代码 双向一致（含声明式能力的显式登记）",
+        script="tools/gates/check_capability_docs.py",
+        ci_note=(
+            "零网络、纯导入+正则。修前实测：代码里有 17 条能力文档没写 ——"
+            "插件作者只能按残缺的清单写插件；而这类漂移**不报错也不红测试**。"
+            "反方向同样要查：文档里点名但代码里不存在的能力，作者按文档声明会被当场拒载。"
+        ),
+    ),
+    Gate(
         name="check_component_capability_domains",
         args=("tools/gates/check_component_capability_domains.py",),
         sets=_STATIC,

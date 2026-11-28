@@ -104,6 +104,11 @@ QWidget、绘制器或播放器回调。确实需要自定义 QWidget 时才使�
   其余键忽略（`plugin_broker_host.py` 的 `_PROGRESS_FIELDS`）。
 需要该组件的插件在 `required_capabilities` 声明 `"view.richtext": ">=1"`（宿主版本不足时
 在启动插件代码前拒载）。
+
+★ **`view.richtext` 是能力声明，不是可调用操作**：它回答「宿主这一版会不会渲染
+`rich_text` 组件」，因此出现在 `CAPABILITY_VERSIONS` 而**不在**能力表里、
+也没有 `_cap_view_richtext` 处理器。插件去 `call("view.richtext", …)` 会得到
+`E_CONTRACT: 未知能力操作` —— **那是正确行为**，不是缺陷。
 目录选择返回插件会话专属的不透明句柄。媒体背景由 `surface.background.*` 控制，不暴露 QWidget；
 v2 背景表面是语义化底层槽位：插件可以选择 `application/workspace/canvas` 范围、适配方式、
 宿主预设、背景可见度、前景面板不透明度、遮罩和有界静态模糊，但不能控制 Qt 层级。宿主强制
@@ -201,6 +206,8 @@ PLUGIN_METADATA = {
 | `surface.background.set/configure/clear` | `surfaces:background` | 控制宿主语义底层背景；仅接受已授权媒体或宿主渲染结果，v2 配置范围/预设/透明前景/遮罩/静态模糊 |
 | `surface.background.capabilities` | `surfaces:background` | 查询宿主允许的范围、预设、数值边界和输入穿透保证 |
 | `secrets.get` | `secrets:read` | 明文密钥访问的显式例外：需要 manifest 白名单并记录审计；优先用 auth 注入 |
+| `component.ocr.recognize` | `component:ocr` | **请宿主代为调用已验签的 OCR 组件**。插件只交出 PNG 与引擎名，宿主完成验签、租赁与子进程调用，回传文本与置信度。插件看不到组件路径、信任根与注册表 |
+| `view.progress` | 内置 | 运行期进度推送（插件 → 宿主 GUI，单向、可丢弃）。宿主合并限速后刷新对应插件面板；面板缺席时静默丢弃 |
 | `theme.apply` | `theme:apply` | 运行期切到**宿主已注册**的插件主题。只接受 `theme_id`，不接受色值；未注册的 id ⇒ `E_RESOURCE`。★ 刻意**不**复用 `ui:theme`：那条对本地插件是自动批准的（加载期声明），运行期也自动批准等于「无审批即可随时改整个界面配色」 |
 
 - **网络密钥默认零暴露**：`network.fetch` 可用 `auth: {secret_ref, header}`，宿主代理侧
