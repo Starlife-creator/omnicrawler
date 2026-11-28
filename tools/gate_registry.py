@@ -533,6 +533,19 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_plugin_permission_parity",
+        args=("tools/gates/check_plugin_permission_parity.py",),
+        sets=_STATIC,
+        description="插件权限白名单：主仓与市场仓必须同集合（防单向死锁）",
+        script="tools/gates/check_plugin_permission_parity.py",
+        ci_note=(
+            "零网络、纯正则。实测漏项 component:ocr：主仓 2026-11-17 就认，"
+            "市场侧漏了三个月 ⇒ 任何用组件式 OCR 代理的插件都发不出去，"
+            "而作者只会看到 `unknown permissions`，根本想不到是白名单漏同步。"
+            "反方向更糟：市场有、主仓无 ⇒ 审核放行了一个跑不起来的插件。"
+        ),
+    ),
+    Gate(
         name="check_capability_docs",
         args=("tools/gates/check_capability_docs.py",),
         sets=_STATIC,
