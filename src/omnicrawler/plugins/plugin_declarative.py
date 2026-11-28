@@ -14,6 +14,31 @@ MAX_RICH_TEXT_SEGMENTS = 64
 MAX_RICH_TEXT_TOTAL_CHARS = 4096
 RICH_TEXT_SEGMENT_TYPES = frozenset({"heading", "paragraph", "bullet", "link"})
 VIEW_ZONES = frozenset({"left", "right", "bottom"})
+
+#: **浮层的 z 档位**（W6-B / W5-B 共用同一套模型）。
+#:
+#: ★ 2026-11-28：这张表原先只存在于 `gui/foreground_surface.py` —— 那个模块
+#:   `import PySide6`，于是**契约校验层（本模块，纯数据、无 Qt）无法引用它**，
+#:   想校验「插件声明的 z 档位合法吗」就只能在 GUI 侧做，或抄一份。
+#:
+#:   词表是**协议事实**，不是渲染细节 ⇒ 它属于这里。GUI 侧改为 import 本表。
+#:
+#: 三档的语义（都是**相对中央区**，与菜单/停靠面板/对话框无关）：
+#:
+#: - `underlay`：压在中央区内容**下面**（但仍在背景层之上）；
+#: - `overlay`：压在中央区内容**上面**（默认）；
+#: - `modal`：同上但带半透明遮罩，用于「正在处理」这类状态。
+#:
+#: **只有三个**，不是任意整数 —— 任意整数会让「谁在上」变成插件之间的暗战，
+#: 而用户无法理解为什么某块面板忽然不见了。
+FOREGROUND_Z_LEVELS: tuple[str, ...] = ("underlay", "overlay", "modal")
+
+#: 浮层盖住哪一块（与 `surface.background.*` 的 scope 同词汇）。
+FOREGROUND_SCOPES: tuple[str, ...] = ("application", "workspace", "canvas")
+
+#: 浮层内容的形态白名单。**不接受任意色值/QSS/HTML** —— 只接受已渲染 PNG 帧
+#: 或纯色 + 不透明度，与背景层同一条边界。
+FOREGROUND_CONTENT_KINDS: tuple[str, ...] = ("rendered", "solid")
 COMPONENT_TYPES = frozenset(
     {
         "label", "button", "directory_picker", "slider", "select", "resource_list",
@@ -40,6 +65,15 @@ def validate_view_descriptor(raw: Any) -> dict[str, Any]:
     allowed_top = {
         "view_id", "title", "preferred_zone", "movable", "resizable", "floatable",
         "default_width", "default_height", "minimum_width", "minimum_height", "components",
+        # ★ 2026-11-28（W6-B）：**在同一份描述符里**声明浮层，而不是另开一条能力。
+        #
+        #   为什么放在描述符里：浮层与面板是**同一个视图**的两部分（面板里的
+        #   提示条/角标），分两次描述会让「浮层属于哪个视图」变得不可推断，
+        #   卸载时也容易漏掉一半。
+        #
+        #   能力侧的 `surface.foreground.*` 仍然保留 —— 它服务于「运行期动态
+        #   改浮层内容」（例如处理进度），而描述符里的这份是**初始声明**。
+        "foreground",
     }
     unknown = set(raw) - allowed_top
     if unknown:
@@ -85,6 +119,11 @@ def validate_view_descriptor(raw: Any) -> dict[str, Any]:
         "minimum_height": _bounded_int(raw.get("minimum_height", 160), 120, 480, "minimum_height"),
         "components": normalized_components,
     }
+    # ★ W6-B：可选的浮层声明。未声明 ⇒ 不带该键（而不是 `None`），
+    #   这样消费方 `if "foreground" in descriptor` 就够了。
+    declared_foreground = _validate_foreground_declaration(raw.get("foreground"))
+    if declared_foreground is not None:
+        result["foreground"] = declared_foreground
     # 没有这条，Qt 会在 `setMinimumSize` 时把 `resize(default_*)` 静默抬到
     # `minimum_*` —— 插件声明的 `default` 就成了摆设，而作者无从得知。
     if result["minimum_width"] > result["default_width"]:
@@ -96,6 +135,66 @@ def validate_view_descriptor(raw: Any) -> dict[str, Any]:
         raise ValueError(
             f"声明式视图 minimum_height（{result['minimum_height']}）"
             f"不能大于 default_height（{result['default_height']}）"
+        )
+    return result
+
+
+#: 描述符里 `foreground` 允许的字段。**比 `surface.foreground.configure` 更窄**：
+#: 描述符是**声明**（静态、随视图一起装载），只允许「初始状态」；
+#: 运行期改动走能力，那里有更完整的词汇。
+_FOREGROUND_DECLARATION_FIELDS = frozenset({"z", "scope", "color", "opacity", "render_handle"})
+
+
+def _validate_foreground_declaration(raw: Any) -> dict[str, Any] | None:
+    """校验描述符里的 `foreground` 段（W6-B）。
+
+    **未声明就返回 None**（不是空字典）：调用方要能区分「没声明」与
+    「声明了一个空浮层」—— 后者应判错（空浮层没有任何意义）。
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("声明式视图 foreground 必须是对象")
+    unknown = set(raw) - _FOREGROUND_DECLARATION_FIELDS
+    if unknown:
+        raise ValueError(f"声明式视图 foreground 包含未知字段: {sorted(unknown)}")
+    if not raw:
+        raise ValueError("声明式视图 foreground 不能是空对象（省略或给出至少一个字段）")
+    result: dict[str, Any] = {}
+    if "z" in raw:
+        z = _text(raw.get("z"), "foreground.z").casefold()
+        if z not in FOREGROUND_Z_LEVELS:
+            allowed = "/".join(FOREGROUND_Z_LEVELS)
+            raise ValueError(f"声明式视图 foreground.z 必须是 {allowed} 之一，收到 {z!r}")
+        result["z"] = z
+    if "scope" in raw:
+        scope = _text(raw.get("scope"), "foreground.scope").casefold()
+        if scope not in FOREGROUND_SCOPES:
+            allowed = "/".join(FOREGROUND_SCOPES)
+            raise ValueError(
+                f"声明式视图 foreground.scope 必须是 {allowed} 之一，收到 {scope!r}"
+            )
+        result["scope"] = scope
+    if "render_handle" in raw:
+        result["render_handle"] = _text(
+            raw.get("render_handle"), "foreground.render_handle", required=True
+        )
+    if "color" in raw:
+        color = _text(raw.get("color"), "foreground.color", required=True)
+        # 只做形态粗校验；真正的颜色合法性由 GUI 侧 QColor 判定（唯一权威）。
+        # 这里只拒绝明显不是颜色的东西，避免把 HTML/QSS 注入放进来。
+        if "<" in color or ";" in color:
+            raise ValueError("声明式视图 foreground.color 不是颜色（不接受 HTML/QSS）")
+        result["color"] = color
+    if "opacity" in raw:
+        result["opacity"] = _bounded_int(
+            raw.get("opacity", 100), 0, 100, "foreground.opacity"
+        )
+    if "render_handle" in result and "color" in result:
+        raise ValueError("声明式视图 foreground 不能同时给 render_handle 与 color")
+    if "render_handle" not in result and "color" not in result:
+        raise ValueError(
+            "声明式视图 foreground 必须给出 render_handle 或 color（否则浮层没有内容）"
         )
     return result
 

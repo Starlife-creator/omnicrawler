@@ -92,6 +92,23 @@ QWidget、绘制器或播放器回调。确实需要自定义 QWidget 时才使�
 面板可在宿主允许的左、右、底部区域移动、浮动和调整尺寸；插件不能覆盖核心菜单、
 中央工作区或安全提示。
 
+**可选 `foreground` 段**（2026-11-28，W6-B）：在**同一份描述符**里声明浮层初始状态。
+
+```yaml
+foreground:
+  z: overlay          # underlay / overlay / modal（只有三档）
+  scope: workspace    # application / workspace / canvas
+  color: "#112233"    # 与 render_handle 二选一
+  opacity: 40         # 0-100
+```
+
+为什么不只靠 `surface.foreground.*` 能力：浮层与面板是**同一个视图**的两部分，
+分两次描述会让「这个浮层属于哪个视图」不可推断，卸载时也容易漏掉一半。
+描述符负责**初始声明**（字段更窄），能力负责**运行期改动**（完整词汇）。
+
+浮层初始化失败**不阻断面板**（附加展示做坏不该让插件装不上），失败原因进
+`_foreground_error` 并由 `plugin_error_lines` 带出。
+
 **尺寸上限**（2026-11-28 收紧）：`minimum_width` / `minimum_height` ≤ **480**，
 且必须 ≤ 对应的 `default_*`。
 

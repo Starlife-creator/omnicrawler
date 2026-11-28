@@ -41,6 +41,15 @@ from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from ..plugins.plugin_declarative import (
+    FOREGROUND_CONTENT_KINDS as _DECLARATIVE_CONTENT_KINDS,
+)
+from ..plugins.plugin_declarative import (
+    FOREGROUND_SCOPES as _DECLARATIVE_SCOPES,
+)
+from ..plugins.plugin_declarative import (
+    FOREGROUND_Z_LEVELS as _DECLARATIVE_Z_LEVELS,
+)
 from .i18n import _
 
 LOGGER = logging.getLogger(__name__)
@@ -51,22 +60,14 @@ LOGGER = logging.getLogger(__name__)
 #: 模块级常量确实更符合"这是协议事实"的语义。
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
-#: 允许的 z 档位。**只有三个**，不是任意整数 —— 任意整数会让"谁在上"
-#: 变成插件之间的暗战，而用户无法理解为什么某块面板忽然不见了。
+#: 词表的**唯一真源**在 `plugins/plugin_declarative.py`（纯数据、无 Qt），
+#: 因为它是**协议事实**而不是渲染细节 —— 契约校验层必须能引用它。
 #:
-#: - `underlay`：压在中央区内容**下面**（但仍在背景层之上）；
-#: - `overlay`：压在中央区内容**上面**（默认）；
-#: - `modal`：同上但带半透明遮罩，用于「正在处理」这类状态。
-#:
-#: 三者都是**相对中央区**的，与菜单/停靠面板/对话框无关（见模块 docstring）。
-FOREGROUND_Z_LEVELS: tuple[str, ...] = ("underlay", "overlay", "modal")
-
-#: 允许的 scope：浮层盖住哪一块。
-FOREGROUND_SCOPES: tuple[str, ...] = ("application", "workspace", "canvas")
-
-#: 内容形态白名单。**不接受任意色值/QSS/HTML** —— 只接受已渲染好的 PNG 帧
-#: 或纯色 + 不透明度，与背景层同一条边界。
-FOREGROUND_CONTENT_KINDS: tuple[str, ...] = ("rendered", "solid")
+#: 这里只做 re-export，方便 GUI 侧照旧 `from .foreground_surface import ...`；
+#: **不要再在本文件里写一份字面量**（两份迟早不一致，而这类漂移不报错）。
+FOREGROUND_Z_LEVELS = _DECLARATIVE_Z_LEVELS
+FOREGROUND_SCOPES = _DECLARATIVE_SCOPES
+FOREGROUND_CONTENT_KINDS = _DECLARATIVE_CONTENT_KINDS
 
 
 @dataclass(frozen=True, slots=True)

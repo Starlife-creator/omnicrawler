@@ -53,6 +53,12 @@ class DeclarativeViewController(QtCore.QObject):
         bind_foreground = getattr(adapter, "bind_foreground_surface", None)
         if callable(bind_foreground):
             bind_foreground(self._foreground)
+        # ★ W6-B：描述符里的 `foreground` 是**初始声明** —— 挂载时应用一次。
+        #
+        #   失败**不阻断面板**：浮层是附加展示，把它做坏不该让整个插件面板装不上。
+        #   失败原因进 `_foreground_error`，`plugin_error_lines` 会带出来。
+        self._foreground_error = ""
+        self._apply_declared_foreground()
         # U6（2026-09-24）：绑定运行进度投递桥。限速合并：突发上报只保留最新一帧，
         # 每 300ms 至多刷一次（≤2s 验收间隔的裕量）；面板缺席/已关闭时静默丢弃。
         self._closed = False
@@ -81,6 +87,36 @@ class DeclarativeViewController(QtCore.QObject):
     @property
     def surface(self) -> MediaSurfaceService:
         return self._surface
+
+    def _apply_declared_foreground(self) -> None:
+        """应用描述符里的浮层初始声明（W6-B）。**失败不阻断面板**。"""
+        declared = self._descriptor.get("foreground")
+        if not declared:
+            return
+        try:
+            if declared.get("render_handle"):
+                self._foreground.show_rendered(
+                    self._adapter._require_render_broker()
+                    if hasattr(self._adapter, "_require_render_broker")
+                    else None,
+                    declared["render_handle"],
+                )
+            else:
+                self._foreground.show_solid(
+                    declared["color"], int(declared.get("opacity", 100))
+                )
+            self._foreground.configure(
+                {
+                    "z": declared.get("z", "overlay"),
+                    "scope": declared.get("scope", "workspace"),
+                }
+            )
+        except (ValueError, KeyError, RuntimeError, TypeError) as exc:
+            self._foreground_error = str(exc)
+            LOGGER.warning(
+                _("声明式视图 %s 的浮层初始化失败：%s"),
+                self._descriptor.get("view_id", ""), exc,
+            )
 
     def _apply_dock_policy(self) -> None:
         self.dock.setAllowedAreas(
