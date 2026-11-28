@@ -8,9 +8,18 @@ from urllib.parse import urlsplit
 from ..core.config import AppConfig
 from ..core.errors import SessionExpiredError
 from ..core.models import CrawlRequest, FetchResult
-from ..extraction.extractors import decode_body
-from ..extraction.html_tools import parse_html, select_nodes
 from .session_state import context_key_for_request
+
+# ★ 2026-11-28：`extraction.*` 改为**调用点导入**。
+#
+#   `extraction.extractors` 与 `extraction.html_tools`（连带 **bs4**，约 74 ms）
+#   只在 `auth_check.selector` 存在时才用得到 —— 那是**少数**配置。
+#
+#   而本模块被 `runtime/recovery` 与 `gui/views/login_session` 拉进 GUI 启动路径，
+#   于是「没配 auth_check 的用户」也在启动时付 bs4 的钱。
+#
+#   实测：`gui.views.login_session` 109.2 ms（含本模块 83.7 ms），
+#   其中约 77 ms 是 `extraction.html_tools` 连带 bs4。
 
 
 def session_scope(config: AppConfig, request: CrawlRequest) -> str:
@@ -31,6 +40,10 @@ def check_authentication(config: AppConfig, result: FetchResult) -> None:
     if "selector" in check:
         if result.content_type not in {"", "text/html", "application/xhtml+xml"}:
             return
+        # 只有真的要看 DOM 时才拉起抽取引擎（连带 bs4）。
+        from ..extraction.extractors import decode_body
+        from ..extraction.html_tools import parse_html, select_nodes
+
         if not select_nodes(parse_html(decode_body(result)), check["selector"]):
             return
     raise SessionExpiredError(session_scope(config, result.request))
