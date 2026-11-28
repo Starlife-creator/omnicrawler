@@ -30,23 +30,21 @@ from ..extraction.extractors import decode_body, json_path
 from ..extraction.html_tools import discover_links, parse_html_shared
 from ..fetching.http_client import encode_request_payload
 
+# B02-027：source.kind 单一真源。定义在 `sources/kinds.py`（**叶子模块**，无重依赖），
+# 这里 re-export 供既有调用方使用。
+#
+# ★ 2026-11-28：定义从本文件移到叶子模块，因为 `gui/core/validator.py` 只需要
+#   那 22 个字符串，却因此把本模块的 `defusedxml` / bs4 / http_client 全拖进
+#   GUI 启动路径（实测 245.8 ms -> 101.9 ms）。
+from .kinds import (  # noqa: F401 - re-export
+    GENERIC_SOURCE_KINDS,
+    SITE_ADAPTER_KINDS,
+    SUPPORTED_SOURCE_KINDS,
+)
+
 LOGGER = logging.getLogger(__name__)
 
-# B02-027：source.kind 单一真源——GUI 白名单、内核注册共用，不再允许手抄副本漂移。
-# GENERIC_SOURCE_KINDS 由 sources.register 注册；SITE_ADAPTER_KINDS 由 site_adapters.register
-# 注册（专用类，重名冲突）。SUPPORTED_SOURCE_KINDS 是**校验用全量白名单**。
-GENERIC_SOURCE_KINDS: tuple[str, ...] = (
-    "static_html", "crawl", "focused", "incremental", "url_list", "rest",
-    "graphql", "form", "sitemap", "feed", "browser", "file", "media",
-    "websocket", "sse", "long_poll", "redis", "scrapy",
-)
-
-# 内置站点适配器（site_adapters.py 注册专用类）
-SITE_ADAPTER_KINDS: tuple[str, ...] = (
-    "site_wordpress", "site_drupal", "site_mediawiki", "site_discourse",
-)
-
-SUPPORTED_SOURCE_KINDS: tuple[str, ...] = GENERIC_SOURCE_KINDS + SITE_ADAPTER_KINDS
+# B02-027：source.kind 单一真源（定义在 `sources/kinds.py`，本模块 re-export）。
 
 
 class GenericSource:

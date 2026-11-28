@@ -13,7 +13,15 @@ from ...core.field_value_source import (
     POSITION_CHILD,
     POSITION_ELEMENT_ATTR,
 )
-from ...sources.sources import SUPPORTED_SOURCE_KINDS as VALID_SOURCE_KINDS
+
+# ★ 2026-11-28：从**叶子模块**导入，不再经 `sources.sources`。
+#
+#   `sources.sources` 会拉 `defusedxml` / `extraction.extractors` /
+#   `extraction.html_tools`（连带 bs4，约 74 ms）/ `fetching.http_client`，
+#   而本文件只需要那 22 个字符串。
+#
+#   单一真源不变：两边读的是**同一个**元组对象。
+from ...sources.kinds import SUPPORTED_SOURCE_KINDS as VALID_SOURCE_KINDS
 from ..i18n import _
 from .config_model import CrawlConfig, FieldDef
 
