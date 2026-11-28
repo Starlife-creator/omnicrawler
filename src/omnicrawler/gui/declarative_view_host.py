@@ -94,6 +94,15 @@ class DeclarativeViewController(QtCore.QObject):
             self.page.setObjectName(
                 f"declarativePluginPage_{plugin_id}_{self._descriptor['view_id']}"
             )
+            # ★ 2026-11-28：无障碍名必须给。
+            #
+            #   实测：不设时 `accessibleName()` 返回空串 —— 读屏器会把整页念成
+            #   「未命名控件」。内置页面（首页 / YAML 编辑器 / 图表…）都在自己的
+            #   `__init__` 里设了，插件页此前是唯一漏掉的。
+            #
+            #   用描述符里的 `title`（插件作者已经给了），而不是拼 plugin_id ——
+            #   用户看到的就是这个词。
+            self.page.setAccessibleName(self._descriptor["title"])
             self._rebuild(self._descriptor)
             register_nav_page(
                 main_window, self._nav_key, self._descriptor["title"], self.page,
