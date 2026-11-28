@@ -43,6 +43,44 @@ jobs:
           version: "0.13.9"
           enable-cache: false
 
+      # ── 发布集收敛 + 合并校验清单 ─────────────────────────────────
+      # ★ 2026-11-28：此前每个平台各发一份 `SHA256SUMS-<platform>.txt`，
+      #   外加 3 份 `artifact-size-report-*.json` 与 3 份 `portable-smoke-*.json`
+      #   —— 20 个资产里有 9 个是**同一件事的分平台残片**。用户下载时看到的是
+      #   「三个校验和文件 + 六个看不懂的 json」，不知道该用哪个、也不知道
+      #   后六个对他没有意义。
+      #
+      #   现在：
+      #   ① 三份校验和合并成**一份** `SHA256SUMS.txt`，覆盖全部待发布资产；
+      #   ② size-report / smoke manifest 是 **CI 证据**，不是用户交付物 ——
+      #      移出发布集，仍保留在本次 run 的 Actions artifacts 里供维护者取用。
+      #
+      #   顺序不能变：必须在**生成 provenance 之前**收敛，否则 provenance 会把
+      #   已经不发布的文件也记进清单（那是"证明了一个没发出去的东西"）。
+      - name: 收敛发布集（移出 CI 证据与非交付文件）
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACTS="$RUNNER_TEMP/artifacts"
+          CI_ONLY="$RUNNER_TEMP/ci-only"
+          mkdir -p "$CI_ONLY"
+          shopt -s nullglob
+          moved=0
+          # ★ 刻意**不**移 `SKIPPED-*.txt`：它是「哪些包因超限没发出去」的记账，
+          #   后面「组装发布说明」与「缺席汇总告警」两步都要读它。移走会让那两步
+          #   找不到任何清单，从而在**真有缺席时**报「全部资产已挂载」——
+          #   把一条真实的坏消息变成假的好消息。
+          for f in "$ARTIFACTS"/SHA256SUMS-*.txt \
+                   "$ARTIFACTS"/artifact-size-report-*.json \
+                   "$ARTIFACTS"/portable-smoke-*.json; do
+            [ -e "$f" ] || continue
+            mv "$f" "$CI_ONLY/"
+            echo "移出发布集（保留在 Actions artifacts）: $(basename "$f")"
+            moved=$((moved + 1))
+          done
+          echo "共移出 $moved 个非交付文件"
+          # 注意：这里**只做移出，不生成清单**。清单必须等 provenance 生成之后再出，
+          # 否则它覆盖不到 provenance —— 而 provenance 是每个平台都该被校验的产物。
       - name: 生成 provenance
         shell: bash
         run: |
@@ -51,6 +89,22 @@ jobs:
           "$RUNNER_TEMP/finalize-venv/bin/python" tools/releasing/generate_provenance.py --artifact-dir "$RUNNER_TEMP/artifacts" \
             --output "$RUNNER_TEMP/artifacts/omnicrawler-provenance.json"
 
+      # ── 合并校验清单（必须在 provenance 之后）──────────────────────
+      # ★ 2026-11-28：三份 `SHA256SUMS-<platform>.txt` 合并成一份 `SHA256SUMS.txt`，
+      #   覆盖**全部**待发布资产（含 provenance / SBOM / 更新清单 / 三个便携包）。
+      #
+      #   位置在 provenance 之后是**判据要求**：provenance 本身也是发布资产，
+      #   提前生成清单会让它落在覆盖范围之外 —— 校验清单漏掉一个真实存在的文件，
+      #   是那种"看起来全绿、但证明链缺一环"的静默缺陷。
+      - name: 生成合并校验清单（覆盖全部发布资产）
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACTS="$RUNNER_TEMP/artifacts"
+          python tools/releasing/generate_checksums.py "$ARTIFACTS" \
+            --output SHA256SUMS.txt --verify
+          python tools/releasing/generate_checksums.py "$ARTIFACTS" \
+            --output SHA256SUMS.txt --check
       # B14-💭-3：供应链完整性检查固化为 release 必跑步骤（任一失败 → 发布中止）。
       # SBOM ⊆ pip freeze 门禁的前提是"同一环境"：本聚合 job（ubuntu-22.04 +
       # 3.12 + .[html,pdf,browser,async-http]）与 Linux 构建 job 的 SBOM 生成
@@ -98,7 +152,10 @@ jobs:
             else
               gpg --batch --yes --import gpg-import.key 2>/dev/null
             fi
-            for checksum in "$ARTIFACTS"/SHA256SUMS-*.txt; do
+            # ★ 2026-11-28：分平台校验和已合并为单份 `SHA256SUMS.txt`，
+            #   所以这里从 `SHA256SUMS-*.txt` 改成 `SHA256SUMS*.txt`。
+            #   用 glob 而不是写死名字，是为了「合并」与「分平台」两种形态都能签。
+            for checksum in "$ARTIFACTS"/SHA256SUMS*.txt; do
               [ -e "$checksum" ] || continue
               if [ -n "${GPG_PASSPHRASE:-}" ]; then
                 printf '%s\n' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
@@ -168,14 +225,28 @@ jobs:
             echo "> 或从源码安装 full 依赖集。完整能力的冻结包（Full）只在 CI 构建用于兼容性回归，"
             echo "> 不挂到公开 Release。"
             echo
-            echo "### 安全"
-            echo "- 各平台产物附带 SHA256SUMS-platform.txt 校验和（与 omnicrawler-provenance.json 对应）"
-            echo "- omnicrawler-sbom-platform.cdx.json：各平台依赖物料清单（CycloneDX）"
-            echo "- 可用 gh attestation verify 包名 --owner Starlife-creator 验证标准 SLSA 构建来源证明（无需导入任何密钥）"
             # C-#28：签名状态从 SIGNING-STATUS.json 读，按真实状态写发布说明，不再硬编码"未签名"。
+            #
+            # ★ 2026-11-28：这段必须在**用到 SIG_SIGNED 之前**求值。此前它在
+            #   「安全」小节末尾，而下面第一个 `if [ "$SIG_SIGNED" = "yes" ]` 出现在
+            #   小节开头 —— `set -euo pipefail` 下引用未定义变量直接
+            #   `unbound variable` 退出，发布说明根本生成不出来。
             SIG_SIGNED="$(python3 -c 'import json,sys; print("yes" if json.load(open(sys.argv[1]))["linux_gpg"]["signed"] else "no")' "$DIR/SIGNING-STATUS.json")"
+            echo "### 安全"
+            # ★ 2026-11-28：分平台校验和已合并为单份 `SHA256SUMS.txt`（另有 `.sig`）。
+            #   此前三份 `SHA256SUMS-<platform>.txt` + 三份 size-report + 三份
+            #   smoke manifest 一共 9 个资产，用户不知道该看哪个。
+            echo "- **SHA256SUMS.txt**：全部发布资产的 SHA-256 校验和（覆盖清单里每一行；`Get-FileHash` 核对）"
+            if [ "${SIG_SIGNED}" = "yes" ]; then
+              echo "- **SHA256SUMS.txt.sig**：上面那份清单的 GPG detached 签名，可用发布公钥验证来源"
+            fi
+            echo "- **omnicrawler-sbom-<platform>.cdx.json**：各平台依赖物料清单（CycloneDX）"
+            echo "- **omnicrawler-provenance.json**：构建来源证明（SLSA provenance）"
+            echo "- **SIGNING-STATUS.json**：三平台签名状态（如实标注，不做任何伪称）"
+            echo "- **update-<platform>-standard.unsigned.json**：自更新清单（客户端自动更新用）"
+            echo "- 可用 gh attestation verify 包名 --owner Starlife-creator 验证标准 SLSA 构建来源证明（无需导入任何密钥）"
             if [ "$SIG_SIGNED" = "yes" ]; then
-              echo "- SHA256SUMS 已附 GPG detached 签名（.sig）；Windows Authenticode / macOS Developer ID 状态详见随附 SIGNING-STATUS.json"
+              echo "- Windows Authenticode / macOS Developer ID 状态详见随附 SIGNING-STATUS.json"
             else
               echo "- **本版本 SHA256SUMS 未做 GPG 签名；Windows 未做 Authenticode 代码签名；macOS 仅 ad-hoc 签名**"
               echo "- 各平台签名状态以随附 SIGNING-STATUS.json 为准；完整性请以 SHA-256 校验和与 SLSA 来源证明核验"

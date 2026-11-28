@@ -69,13 +69,21 @@ def _check_coverage(files: list[Path]) -> list[str]:
     filenames = " ".join(path.name for path in files).casefold()
     missing: list[str] = []
 
-    # 平台产物：本目录含某个平台标识，则要求该平台的双 edition 产物都在
+    # 平台产物：本目录含某个平台标识，则要求该平台的双 edition 产物都在。
+    #
+    # ★ 2026-11-28：这里原本有 `break` —— 命中**第一个**平台就不再查后面的。
+    #   单平台目录（各平台构建 job）行为不变；但聚合后的发布目录同时含三平台，
+    #   `break` 会让 Windows 的存在掩盖 Linux/macOS 的缺失 —— 一个静默假通过。
+    #   现在逐个检查所有命中的平台。
+    matched = 0
     for platform_marker, required in _PLATFORM_REQUIRED.items():
         if platform_marker.casefold() in filenames:
+            matched += 1
             for pattern in required:
                 if pattern.casefold() not in filenames:
                     missing.append(pattern)
-            break
+    if matched == 0:
+        missing.append("Portable-<Platform>-Standard.<ext>")
 
     # 通用元数据：SBOM 按前缀匹配（平台 job 产出带平台名的 SBOM，如
     # omnicrawler-sbom-macos.cdx.json）。provenance 由聚合 release job 单独
@@ -122,6 +130,21 @@ def verify_manifest(directory: Path, manifest: Path) -> list[str]:
     return errors
 
 
+def _example_artifact_name(files: list[Path], version: str) -> str:
+    """挑一个**真实存在于本目录**的便携包名，作为核对示例（2026-11-28）。
+
+    修前这里写死 `OmniCrawler-{version}-Windows-Portable-Standard.zip`，
+    于是 `SHA256SUMS-linux.txt` 教 Linux 用户去哈希一个 Windows 包 ——
+    照抄必然「文件不存在」。
+
+    宁可退化成通用占位（`<你的包文件名>`），也不给一个必然失败的示例。
+    """
+    for path in files:
+        name = path.name
+        if "Portable" in name and name.lower().endswith((".zip", ".tar.xz", ".dmg")):
+            return name
+    return "<你的包文件名>"
+
 def main() -> int:
     version = _project_version()
     parser = argparse.ArgumentParser(
@@ -153,6 +176,10 @@ def main() -> int:
             if path.is_file()
             and path.resolve() != output.resolve()
             and not path.name.upper().startswith("SHA256SUMS")
+            # ★ 2026-11-28：`SKIPPED-<platform>.txt` 是「哪些包因超限没发出去」的
+            #   记账，不是可下载资产 —— 把它写进校验清单，用户会照着哈希一个
+            #   自己都不该下、也下不到的文件。
+            and not path.name.upper().startswith("SKIPPED-")
         ),
         key=lambda path: path.name.casefold(),
     )
@@ -162,13 +189,19 @@ def main() -> int:
         return 1
 
     # 生成清单
+    #
+    # ★ 2026-11-28：核对示例此前**写死了 Windows zip 的文件名**，于是
+    #   `SHA256SUMS-linux.txt` 里教用户去 Get-FileHash 一个 Windows 包 ——
+    #   照抄必然「文件不存在」。现在按本目录里**真实存在**的那个便携包取值；
+    #   目录里没有便携包（如仅做 CI 校验的临时目录）时退回通用写法。
+    example = _example_artifact_name(files, version)
     header = [
         f"# OmniCrawler {version} SHA-256 校验清单",
         "# 生成时间：自动生成",
         f"# 覆盖文件：{len(files)} 个",
         "#",
         "# 核对方法（PowerShell）:",
-        f"#   Get-FileHash .\\OmniCrawler-{version}-Windows-Portable-Standard.zip -Algorithm SHA256",
+        f"#   Get-FileHash .\\{example} -Algorithm SHA256",
         "#   将结果与此文件对照",
         "",
     ]

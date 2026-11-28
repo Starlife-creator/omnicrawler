@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -56,23 +57,65 @@ def _workflow_files() -> list[Path]:
     return sorted(_WORKFLOWS.glob("*.yml"))
 
 
+def corruption_signature(raw: bytes) -> tuple[int, int]:
+    """返回 `(孤立\\r 个数, \\r\\r\\n 个数)` —— 行尾被拆开的两个字节指纹。
+
+    单独抽成函数是为了**能被正面验证**：只有「正常文件返回 (0,0)」而没有
+    「损坏文件返回非零」的证据，等于没验证过判据（空集合恒真）。
+    """
+    return len(re.findall(rb"\r(?!\n)", raw)), raw.count(b"\r\r\n")
+
+
+def test_corruption_signature_actually_detects_damage() -> None:
+    """★ 反向验证判据本身：损坏的输入必须被认出来。
+
+    只测「真实 workflow 干净」是不够的 —— 如果 `corruption_signature` 永远
+    返回 (0, 0)，上面那条测试照样全绿，而它什么也没守住。
+    """
+    good = b"key: value\r\nnext: 1\r\n"
+    assert corruption_signature(good) == (0, 0), "正常 CRLF 被判成损坏"
+
+    # ① \r 被当成独立换行：\r\r\n
+    doubled = b"key: value\r\r\nnext: 1\r\n"
+    lone, dup = corruption_signature(doubled)
+    assert dup == 1 and lone == 1, f"没认出 \\r\\r\\n：{(lone, dup)}"
+
+    # ② 孤立 \r（后面没有 \n）：行被拆成两半
+    lone_cr = b"key: value\rnext: 1\r\n"
+    lone, dup = corruption_signature(lone_cr)
+    assert lone == 1, f"没认出孤立 \\r：{(lone, dup)}"
+
+
 def test_workflows_have_no_split_lines() -> None:
-    """工作区行数归一后必须与 blob 一致——行尾被拆成两行会在这里暴露。
+    """★ 直接检「行尾被拆开」的字节签名，不拿工作区去比 HEAD。
 
     这是"用文本工具改 CRLF 文件"最典型的后果：292 行变 571 行。
+
+    **判据变更（2026-11-29）**：原实现比较「工作区归一后的行数」与「`HEAD` blob
+    的行数」。那个判据只在文件**没被改过**时成立 —— 任何一次合法编辑（增加
+    步骤、删掉注释）都会让它变红，于是它惩罚的是「正在改文件」而不是「文件坏了」。
+    实测：本文件加了两步后 340 行 vs HEAD 269 行直接报错，而文件本身
+    CRLF=340 / LF=340 / 孤立 CR=0 / `\\r\\r\\n`=0，**一个坏字节都没有**。
+
+    真正的损坏签名是确定的，可以直接查：
+
+    - **孤立 `\\r`**（后面不跟 `\\n`）：`\\r` 被当成换行符，拆出了半行；
+    - **`\\r\\r\\n`**：`\\r` 先被当换行写了一次、原 `\\r\\n` 又写了一次。
+
+    两者都是**编辑事故的指纹**，且与"文件这次改了多少行"无关。
     """
     checked = 0
     for path in _workflow_files():
-        rel = path.relative_to(_REPO).as_posix()
-        blob = _blob_lines(rel)
-        if blob is None:
-            continue
-        work = path.read_bytes().replace(b"\r\n", b"\n").decode("utf-8").splitlines()
+        raw = path.read_bytes()
         checked += 1
-        assert len(work) == len(blob), (
-            f"{rel} 工作区 {len(work)} 行、git blob {len(blob)} 行 —— "
-            f"差 {abs(len(work) - len(blob))} 行。"
-            "典型原因：编辑时把 \\r 当成了独立换行，每行后多一个空行。"
+        lone, doubled = corruption_signature(raw)
+        assert doubled == 0, (
+            f"{path.name} 含 {doubled} 处 `\\r\\r\\n` —— 行尾被拆开，"
+            "每行后多一个空行"
+        )
+        assert lone == 0, (
+            f"{path.name} 含 {lone} 个孤立 `\\r`（后面不跟 `\\n`）—— "
+            "这是 `\\r` 被当成独立换行留下的指纹"
         )
 
     assert checked > 0, "没有检查到任何 workflow —— 路径推算可能失效"
