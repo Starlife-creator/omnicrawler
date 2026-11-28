@@ -67,10 +67,36 @@ def validate_view_descriptor(raw: Any) -> dict[str, Any]:
         "floatable": bool(raw.get("floatable", True)),
         "default_width": _bounded_int(raw.get("default_width", 380), 240, 1200, "default_width"),
         "default_height": _bounded_int(raw.get("default_height", 640), 160, 1200, "default_height"),
-        "minimum_width": _bounded_int(raw.get("minimum_width", 240), 160, 1000, "minimum_width"),
-        "minimum_height": _bounded_int(raw.get("minimum_height", 160), 120, 1000, "minimum_height"),
+        # ★ 2026-11-28：`minimum_*` 的上限从 1000 收紧到 480，并**额外要求**
+        #   `minimum_* <= default_*`。
+        #
+        #   实测（offscreen，1366×768 笔记本尺寸）：每个 `QDockWidget` 的
+        #   `minimumWidth` 都会**把主窗口撑宽**，因为侧栏 dock 与中央区共享同一条
+        #   水平轴。两个插件面板各声明 `minimum_width=1000` ⇒ 窗口被强制拉到
+        #   **2332px**，远超屏幕；用户既看不全也拖不动。
+        #
+        #   而 1000 这个上限本身没有依据 —— 一个侧栏面板占 1000px 已经是
+        #   1920 屏幕的一半。480 是「仍有实际用途」与「不会撑爆窗口」的交点：
+        #   两个 480 面板 + 最小中央区在 1366 宽下仍放得下。
+        #
+        #   `minimum <= default` 是 Qt 的硬约束（否则 `setMinimumSize` 会反过来
+        #   把 `resize()` 的值抬上去），显式拒绝比让 Qt 静默纠正更诚实。
+        "minimum_width": _bounded_int(raw.get("minimum_width", 240), 160, 480, "minimum_width"),
+        "minimum_height": _bounded_int(raw.get("minimum_height", 160), 120, 480, "minimum_height"),
         "components": normalized_components,
     }
+    # 没有这条，Qt 会在 `setMinimumSize` 时把 `resize(default_*)` 静默抬到
+    # `minimum_*` —— 插件声明的 `default` 就成了摆设，而作者无从得知。
+    if result["minimum_width"] > result["default_width"]:
+        raise ValueError(
+            f"声明式视图 minimum_width（{result['minimum_width']}）"
+            f"不能大于 default_width（{result['default_width']}）"
+        )
+    if result["minimum_height"] > result["default_height"]:
+        raise ValueError(
+            f"声明式视图 minimum_height（{result['minimum_height']}）"
+            f"不能大于 default_height（{result['default_height']}）"
+        )
     return result
 
 

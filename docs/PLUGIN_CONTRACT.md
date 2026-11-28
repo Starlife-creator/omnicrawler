@@ -89,8 +89,19 @@ QWidget、绘制器或播放器回调。确实需要自定义 QWidget 时才使�
 （清单的唯一真源是 `plugins/plugin_declarative.py` 的 `COMPONENT_TYPES`；
 门禁 `tools/gates/check_view_component_docs.py` 断言本文与代码一致，漏写任一组件即判红。）
 
-面板可在
-宿主允许的左、右、底部区域移动、浮动和调整尺寸；插件不能覆盖核心菜单、中央工作区或安全提示。
+面板可在宿主允许的左、右、底部区域移动、浮动和调整尺寸；插件不能覆盖核心菜单、
+中央工作区或安全提示。
+
+**尺寸上限**（2026-11-28 收紧）：`minimum_width` / `minimum_height` ≤ **480**，
+且必须 ≤ 对应的 `default_*`。
+
+为什么：`QDockWidget` 的 `minimumWidth` **会撑宽主窗口**（侧栏与中央区共享同一条
+水平轴）。实测 1366×768 下，两个声明 `minimum_width=1000` 的面板把窗口强行拉到
+**2332px** —— 远超屏幕，用户既看不全也拖不动，而这**由插件声明触发**。
+480 是「仍有实际用途」与「两个面板 + 中央区在 1366 下放得下」的交点。
+
+`minimum_* <= default_*` 也是硬要求：否则 Qt 会在 `setMinimumSize` 时把
+`resize(default_*)` **静默抬到** `minimum_*`，插件声明的 `default` 成了摆设。
 
 - `rich_text`（P2.1，2026-09-24）是**受限长文本**组件：内容为结构化文本段
   （heading / paragraph / bullet / link），宿主纯文本渲染、绝不解释 HTML；单组件段数 ≤64、
