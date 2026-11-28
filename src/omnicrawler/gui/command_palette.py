@@ -209,6 +209,36 @@ def _make_nav_callback(window: Any, nav_key: str) -> Callable[[], None]:
     return lambda: _navigate_to(window, nav_key)
 
 
+def _plugin_nav_entries(window: Any) -> list[tuple[str, str]]:
+    """从侧栏读出插件页的 `(key, 标签)`（W6-A）。
+
+    判据是「**侧栏里真的有这一行**」，不是「注册表里登记过」：
+    侧栏是用户看到的唯一真源，注册表可能领先于（或落后于）它。
+
+    分组标题（`plugin:__group__`）跳过 —— 它不可选中，列进命令面板
+    只会得到一个点了没反应的条目。
+    """
+    nav = getattr(window, "_nav", None)
+    if nav is None:
+        return []
+    try:
+        count = int(nav.count())
+    except (AttributeError, TypeError):  # pragma: no cover - 非 QListWidget
+        return []
+    entries: list[tuple[str, str]] = []
+    for row in range(count):
+        item = nav.item(row)
+        if item is None:  # pragma: no cover
+            continue
+        key = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(key, str) or not key.startswith("plugin:"):
+            continue
+        if key == "plugin:__group__":
+            continue
+        entries.append((key, item.text()))
+    return entries
+
+
 def build_palette_commands(
     window: Any,
     *,
@@ -236,6 +266,28 @@ def build_palette_commands(
                 title=label,
                 category=current_group,
                 keywords=_NAV_KEYWORDS.get(key, ()) + (key,),
+                shortcut="",
+                nav_key=key,
+                callback=_make_nav_callback(window, key),
+            )
+        )
+
+    # ★ 2026-11-28（W6-A 补口）：**插件页也要能被 Ctrl+K 找到**。
+    #
+    #   `visible_entries()` 只覆盖内置 `NAV_LAYOUT` —— 插件页是运行期加进
+    #   侧栏的，不在那张静态表里。于是「侧栏有、命令面板搜不到」，
+    #   而这恰好是重度用户最常用的入口（Ctrl+K 比点侧栏快）。
+    #
+    #   从**实际侧栏**读而不是从注册表读：侧栏是唯一真源，读它永远不会与
+    #   用户看到的侧栏不一致（包括插件已被卸载、分组已收回的情况）。
+    plugin_group = f"{nav_prefix} · " + _("插件页面")
+    for key, title in _plugin_nav_entries(window):
+        commands.append(
+            PaletteCommand(
+                command_id=f"nav:{key}",
+                title=title,
+                category=plugin_group,
+                keywords=(key, key.rsplit(":", 1)[-1]),
                 shortcut="",
                 nav_key=key,
                 callback=_make_nav_callback(window, key),
