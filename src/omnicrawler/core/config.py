@@ -711,6 +711,20 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
     follow_xpath = config.section("source").get("follow_xpath", "")
     if not isinstance(follow_xpath, str):
         errors.append("source.follow_xpath必须是XPath字符串")
+    elif follow_xpath.strip():
+        # ★ 2026-11-28：语法错误在这里报，不要留到链接发现阶段。
+        #
+        #   但 `core` 必须**import-safe**（`check_architecture` 门禁）：不能依赖
+        #   lxml（它是可选依赖）。所以真正编译 XPath 的能力由 html 层
+        #   **注册**进来 —— `core` 只留一个钩子，没注册就跳过。
+        # ★ 2026-11-28：语法错误在**配置校验**阶段报，不要留到链接发现阶段。
+        #
+        #   判定放在 `sources/xpath_syntax.py`（叶子模块）：需要 lxml，而 `core`
+        #   不能 import 可选依赖（`check_architecture` 判红），也不能 import
+        #   `sources/sources.py`（会成环）。叶子模块两个问题都避开。
+        from ..sources.xpath_syntax import xpath_syntax_errors
+
+        errors.extend(xpath_syntax_errors(follow_xpath, "source.follow_xpath"))
     if not isinstance(config.section("auth").get("options", {}), dict):
         errors.append("auth.options必须是YAML对象")
     if not isinstance(config.raw.get("transformers", []), list):
