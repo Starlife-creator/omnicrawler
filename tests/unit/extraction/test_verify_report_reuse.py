@@ -55,11 +55,37 @@ def test_report_is_not_reused_for_a_different_html() -> None:
     assert verified_report(config, other) is None, "换了 HTML 却复用了旧报告"
 
 
-def test_report_is_not_reused_for_a_new_config_object() -> None:
-    """id 不同（另一份配置）当然不能复用。"""
+def test_content_identical_clone_may_reuse() -> None:
+    """★ 内容相同的克隆**可以**复用 —— 那是正确的，不是缺陷。
+
+    2026-11-28 改：这里原先是 `assert verified_report(clone, SPA_HTML) is None`，
+    理由是「id 不同（另一份配置）当然不能复用」。**那个理由不成立**：
+
+    `verify_config(config, html)` 只读 `config["extract"]` 与 `html`，
+    **与配置是哪个实例无关**。两个 `extract` 完全相同的配置，验证结果必然相同。
+
+    更重要的是：原先用 `id(config)` 做缓存键，而 `id()` 在对象回收后会被
+    下一个 dict 复用 —— 当两份 HTML 恰好相同时，「再比一次 html 哈希」兜不住，
+    于是返回上一份配置的报告。**这条测试自己就是那个偶发失败的来源**
+    （单跑必过、整目录跑偶尔红）。改成内容键后那一整类问题消失。
+
+    真正该守的是「**`extract` 不同**就不许复用」—— 见下一条。
+    """
     config = analyze_to_config(SPA_HTML, "https://example.org/shop")
     clone = dict(config)
-    assert verified_report(clone, SPA_HTML) is None
+    reused = verified_report(clone, SPA_HTML)
+    assert reused is not None, "内容相同的克隆应当命中（同一次计算）"
+    assert reused == verified_report(config, SPA_HTML)
+
+
+def test_report_is_not_reused_when_the_extract_section_differs() -> None:
+    """★ 真正的判据：`extract` 段不同就必须重算。
+
+    `verify_config` 只读 `extract` 与 html，所以「不同」的定义也只在 `extract` 上。
+    """
+    config = analyze_to_config(SPA_HTML, "https://example.org/shop")
+    other = {**config, "extract": {**config["extract"], "fields": {}}}
+    assert verified_report(other, SPA_HTML) is None, "换了 extract 却复用了旧报告"
 
 
 def test_remember_report_is_callable_standalone() -> None:

@@ -532,18 +532,26 @@ def _json_configs(
 
 #: 把 `analyze_to_config` 已经做过的验证结果留给调用方复用。
 #:
-#: 键是 `id(config)`，值是 `(html 哈希, 配置签名, 验证报告)`。
+#: 键是 `(html 哈希, 配置签名)`，值是验证报告。**不再用 `id(config)`**。
 #:
-#: ★ 必须带 html 哈希：同一个 `id` 在对象被回收后可能被**另一个** dict 复用，
-#:   只按 id 查会拿到另一份 HTML 的报告 —— 那是"张冠李戴"的静默错误。
+#: ★ 2026-11-28：`id(config)` 做键有两个问题，其中一个是**真的偶发失败**。
 #:
-#: ★ 也**必须带配置签名**（2026-11-27 实测到的真缺陷）：`apply_task_goal` 会**原地改**
+#:   1. `id()` 在对象被回收后会被下一个 dict 复用。此前靠「再比一次 html 哈希」
+#:      兜底，但当两份 HTML **恰好相同**时兜不住 —— 于是返回上一份配置的报告。
+#:      实测表现：`test_report_is_not_reused_for_a_new_config_object` 偶发失败
+#:      （单跑必过、整目录跑偶尔红），正是这个机制。
+#:   2. 语义上也不对：验证结果只取决于 `extract` 段与 HTML（`verify_config` 只读
+#:      这两个），**与配置对象是哪一个实例无关**。两个内容相同的配置理应命中。
+#:
+#: ★ 仍然必须带配置签名（2026-11-27 实测到的真缺陷）：`apply_task_goal` 会**原地改**
 #:   `config["extract"]["fields"]`（按用户需求收窄）。配置对象身份没变、HTML 也没变，
 #:   但验证结果早就过期了 —— 复用它会让 `--request` 后的自检报告显示**旧的字段集**
 #:   （实测：需求要 2 个字段，报告仍说 4 个）。
 #:
+#: 换键之后「id 复用」这一整类缺陷消失，且克隆配置能正确命中（那本就是同一次计算）。
+#:
 #: 上限 32 条：一次 CLI 调用最多几个候选配置（静态 / 渲染），留足余量且不会长跑泄漏。
-_REMEMBERED_REPORTS: dict[int, tuple[int, int, dict[str, Any]]] = {}
+_REMEMBERED_REPORTS: dict[tuple[int, int], dict[str, Any]] = {}
 _REMEMBERED_LIMIT = 32
 
 
@@ -572,22 +580,22 @@ def verified_report(config: dict[str, Any], html: str) -> dict[str, Any] | None:
     ★ 复用条件**三个都比**：`id(config)` 相同、html 哈希相同、配置签名相同。
       少任何一个都会返回过期结论。
     """
-    entry = _REMEMBERED_REPORTS.get(id(config))
-    if entry is None:
+    signature = _config_signature(config)
+    if signature == 0:
+        # 不可序列化的配置：签名恒 0，无法区分两条不同配置 ⇒ 拒绝复用（fail-closed）。
         return None
-    digest, signature, report = entry
-    if digest != hash(html):
-        return None
-    if signature != _config_signature(config):
-        return None
-    return report
+    return _REMEMBERED_REPORTS.get((hash(html), signature))
 
 
 def remember_report(config: dict[str, Any], html: str, report: dict[str, Any]) -> None:
     """登记一份验证报告（供 `verified_report` 复用）。"""
+    signature = _config_signature(config)
+    if signature == 0:
+        # 同 `verified_report`：签名不可靠时不登记，避免张冠李戴。
+        return
     if len(_REMEMBERED_REPORTS) >= _REMEMBERED_LIMIT:
         _REMEMBERED_REPORTS.clear()
-    _REMEMBERED_REPORTS[id(config)] = (hash(html), _config_signature(config), report)
+    _REMEMBERED_REPORTS[(hash(html), signature)] = report
 
 
 class AutoConfigUnverifiedError(RuntimeError):
