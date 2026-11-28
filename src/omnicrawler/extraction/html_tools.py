@@ -203,7 +203,25 @@ def _compiled_selector(selector: str) -> Any:
     return compiled
 
 
+def selector_is_valid(selector: str) -> bool:
+    """CSS 选择器语法是否合法（复用引擎自己的解析器，不另写一套）。
+
+    为什么需要这个：`config.py` 要在**配置校验阶段**回答「这个 selector 能编译吗」，
+    自己写正则猜语法会造出「校验说行、运行说不行」的第二套判据。
+
+    实现只做一件事：走 `_compiled_selector` 的同一条路径，把「不可编译」
+    翻译成布尔。缓存由 `_compiled_selector` 负责，重复调用不重复编译。
+
+    不用 lxml/cssselect 的异常类型做判据：那会把「没装某个后端」误报成
+    「选择器非法」。`soupsieve` 是解析 DOM 的既有依赖，它的编译失败就是语法失败。
+    """
+    if not selector or not selector.strip():
+        return False
+    return _compiled_selector(selector) is not False
+
+
 def select_nodes(context: Any, selector: str) -> list[Any]:
+    """按 CSS 选择器取节点。编译失败时退回原路径，让调用方看到真实异常。"""
     if not selector:
         return [context]
     if BeautifulSoup is not None and hasattr(context, "select"):

@@ -268,6 +268,42 @@ def _validate_json_field_paths(fields: dict[str, Any]) -> list[str]:
                 problems.append(f"extract.fields.{name}: {exc}")
     return problems
 
+def _validate_css_field_selectors(fields: dict[str, Any]) -> list[str]:
+    """校验 HTML 模式下每个字段的 CSS 选择器语法（2026-11-28）。
+
+    为什么放在**配置校验**而不是留到采集时：
+
+    `selector: div[[[[broken` 此前能通过 `validate`，直到真正跑采集才抛
+    `SelectorSyntaxError` —— 报错位置在解析器里，看不出是「配置写错了」。
+
+    判据复用**引擎自己的解析器**（`cssselect`，经 `html_tools` 暴露），
+    不自己写正则猜语法：那会造出「校验说行、运行说不行」的第二套判据。
+    """
+    from ..extraction.html_tools import selector_is_valid
+
+    problems: list[str] = []
+    for name, rule in fields.items():
+        selectors: list[str] = []
+        if isinstance(rule, str):
+            selectors = [rule]
+        elif isinstance(rule, dict):
+            kind = str(rule.get("type", "css")).strip().lower()
+            if kind not in {"", "css"}:
+                continue
+            candidates = rule.get("selectors")
+            if isinstance(candidates, list) and candidates:
+                selectors = [str(item) for item in candidates if isinstance(item, str)]
+            elif "selector" in rule:
+                selectors = [str(rule.get("selector"))]
+        for selector in selectors:
+            if not selector.strip():
+                continue
+            if not selector_is_valid(selector):
+                problems.append(
+                    f"extract.fields.{name}: CSS 选择器语法错误 {selector!r}"
+                )
+    return problems
+
 def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[str], list[str]]:
     """校验配置。
 
@@ -634,6 +670,10 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         # ★ 2026-11-28：JSON 模式的字段路径**在这里**校验，不要留到采集时。
         # 此前 `path: $..title` 能通过 validate，直到跑采集才抛 ValueError。
         errors.extend(_validate_json_field_paths(fields))
+    elif isinstance(fields, dict) and str(config.section("extract").get("mode", "")) == "html":
+        # ★ 2026-11-28：CSS 选择器语法同样在**配置校验**阶段检查。
+        # 此前 `div[[[[broken` 能通过 validate，直到采集才抛 SelectorSyntaxError。
+        errors.extend(_validate_css_field_selectors(fields))
     deduplicate_by = config.section("extract").get("deduplicate_by", [])
     if not isinstance(deduplicate_by, list) or not all(isinstance(name, str) and name.strip() for name in deduplicate_by):
         errors.append("extract.deduplicate_by必须是非空字段名的数组")
