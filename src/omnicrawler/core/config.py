@@ -304,6 +304,31 @@ def _validate_css_field_selectors(fields: dict[str, Any]) -> list[str]:
                 )
     return problems
 
+def _validate_field_regexes(fields: dict[str, Any]) -> list[str]:
+    """校验每个字段 `regex` 能否编译（2026-11-28）。
+
+    为什么放在**配置校验**：`safe_regex_search` 编译失败时只记一条 `LOGGER.warning`
+    并返回 `None` —— 那个 warning 用户在 GUI 里看不到、在 CLI 里被日志淹没。
+    症状是「字段一直是空的」，而根因是「正则写错了」，两者离得很远。
+
+    判据就是 `re.compile` 本身：不做启发式、不管 ReDoS（那是运行期防护的事，
+    见 `safe_regex_search` 的 `_unsafe_regex`）。这里只回答「这串能编译吗」。
+    """
+    import re
+
+    problems: list[str] = []
+    for name, rule in fields.items():
+        if not isinstance(rule, dict):
+            continue
+        raw = rule.get("regex")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        try:
+            re.compile(raw)
+        except re.error as exc:
+            problems.append(f"extract.fields.{name}: 正则语法错误 {raw!r}（{exc}）")
+    return problems
+
 def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[str], list[str]]:
     """校验配置。
 
@@ -674,6 +699,10 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         # ★ 2026-11-28：CSS 选择器语法同样在**配置校验**阶段检查。
         # 此前 `div[[[[broken` 能通过 validate，直到采集才抛 SelectorSyntaxError。
         errors.extend(_validate_css_field_selectors(fields))
+    if isinstance(fields, dict):
+        # ★ 2026-11-28：正则语法与 mode 无关（HTML 的 selector 也能配 regex），
+        # 所以单独校验，不放进上面那两个 mode 分支。
+        errors.extend(_validate_field_regexes(fields))
     deduplicate_by = config.section("extract").get("deduplicate_by", [])
     if not isinstance(deduplicate_by, list) or not all(isinstance(name, str) and name.strip() for name in deduplicate_by):
         errors.append("extract.deduplicate_by必须是非空字段名的数组")
