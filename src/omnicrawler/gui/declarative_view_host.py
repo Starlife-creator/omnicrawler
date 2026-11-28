@@ -163,11 +163,30 @@ class DeclarativeViewController(QtCore.QObject):
             features |= QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetFloatable
         self.dock.setFeatures(features)
 
+    def _dialog_parent(self) -> QtWidgets.QWidget | None:
+        """确认框 / 选择框的父窗口。
+
+        ★ 导航页模式没有 dock，`self.dock` 是 `None`。直接把它传给
+          `QMessageBox.question(...)` **不会崩**（Qt 接受 None 父窗口），
+          但对话框会变成**独立顶层窗口**：不居中于主窗口、主窗口关闭时
+          可能残留。用户看到的是「提示框跑到屏幕角落去了」。
+
+        所以回退到导航页本身，再回退到主窗口 —— 始终锚在用户正在看的窗口上。
+        """
+        if self.dock is not None:
+            return self.dock
+        if self.page is not None:
+            return self.page
+        window = self._main_window
+        return window if isinstance(window, QtWidgets.QWidget) else None
+
     def _container(self) -> QtWidgets.QWidget | None:
         """当前承载内容的容器（侧栏面板 / 导航页）。"""
         if self.is_nav_page:
             return self.page
-        return self.dock.widget() if self.dock is not None else None
+        if self.dock is None:  # pragma: no cover - 装配异常
+            return None
+        return self.dock.widget()
 
     def _rebuild(self, descriptor: dict[str, Any]) -> None:
         # §8.4 #4（P1 长列表）：整面板重建不得丢长列表滚动位置。
@@ -365,7 +384,7 @@ class DeclarativeViewController(QtCore.QObject):
             "要在系统浏览器中打开以下链接吗？\n\n{label}\n{url}\n\n链接来自插件内容，请确认可信。"
         ).format(label=label, url=url)
         choice = QtWidgets.QMessageBox.question(
-            self.dock,
+            self._dialog_parent(),
             _("打开外部链接"),
             message,
             QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
@@ -382,7 +401,8 @@ class DeclarativeViewController(QtCore.QObject):
                 )
             else:
                 selected = QtWidgets.QFileDialog.getExistingDirectory(
-                    self.dock, item.get("directory_label", _("选择资源目录"))
+                    self._dialog_parent(),
+                    item.get("directory_label", _("选择资源目录")),
                 )
                 if not selected:
                     return

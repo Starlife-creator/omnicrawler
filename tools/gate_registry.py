@@ -522,6 +522,18 @@ GATES: tuple[Gate, ...] = (
         ),
     ),
     Gate(
+        name="check_declarative_side_effects",
+        args=("tools/gates/check_declarative_side_effects.py", "--check"),
+        sets=_STATIC,
+        description="声明式视图的副作用通道：文档承诺与代码双向一致",
+        script="tools/gates/check_declarative_side_effects.py",
+        ci_note=(
+            "零网络、纯 AST + 正则。文档写着「副作用只有四条」，那是给插件作者的"
+            "安全承诺；有人在渲染代码里加第五条而不改文档时，这句话就变成假的，"
+            "且没有任何东西会红。"
+        ),
+    ),
+    Gate(
         name="check_walk_pruning",
         args=("tools/gates/check_walk_pruning.py",),
         sets=_STATIC,

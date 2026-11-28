@@ -317,6 +317,8 @@ jobs:
       - run: python tools/gates/check_component_capability_domains.py
       # 能力表 ⇄ 代码 双向一致（插件作者只会看文档）
       - run: python tools/gates/check_capability_docs.py
+      # 声明式视图副作用通道：「只有四条」是安全承诺，代码加第五条必须同步文档
+      - run: python tools/gates/check_declarative_side_effects.py --check
       # 插件权限白名单：主仓与市场仓必须同集合（防单向死锁）
       - run: python tools/gates/check_plugin_permission_parity.py
       # CLI 选项 help 覆盖率（agent 只能靠 --help 认识命令）
