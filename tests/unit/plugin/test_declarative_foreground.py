@@ -60,8 +60,14 @@ def test_vocabulary_importable_without_qt() -> None:
         "from omnicrawler.plugins.plugin_declarative import FOREGROUND_Z_LEVELS; "
         "print('PySide6' in sys.modules)"
     )
+    from tools.child_env import utf8_env
+
     result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, encoding="utf-8"
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=utf8_env(),
     )
     assert result.returncode == 0, result.stderr[-300:]
     assert result.stdout.strip() == "False", "词表模块把 PySide6 拖进来了"
