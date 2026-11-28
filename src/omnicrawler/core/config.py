@@ -40,6 +40,11 @@ from .config_loader import (
 )
 from .credentials import resolve_secret_refs
 from .errors import ConfigParseError
+
+# 叶子模块（无 bs4 / lxml 依赖）：配置校验只需 JSONPath 语法判定。
+from .json_path_syntax import (
+    reject_unsupported_json_path as _reject_unsupported_json_path,
+)
 from .migrations import migrate_config
 from .pagination import body_location_payload_error, validate_pagination
 from .utils import deep_merge, expand_env_checked
@@ -232,6 +237,36 @@ def load_config(path: str | Path) -> AppConfig:
     config.warnings = tuple(warnings)
     return config
 
+
+def _validate_json_field_paths(fields: dict[str, Any]) -> list[str]:
+    """校验 JSON 模式下每个字段的路径语法（2026-11-28）。
+
+    为什么放在**配置校验**而不是留到采集时：
+
+    `path: $..title` 此前能通过 `validate`，直到真正跑采集才抛 ValueError ——
+    那时用户已经在等结果，而报错位置在抽取器里，看不出是「配置写错了」。
+
+    判据复用 `extraction.extractors` 的同一个函数，避免「校验说行、运行说不行」。
+    """
+    problems: list[str] = []
+    for name, rule in fields.items():
+        paths: list[str] = []
+        if isinstance(rule, str):
+            paths = [rule]
+        elif isinstance(rule, dict):
+            candidates = rule.get("paths")
+            if isinstance(candidates, list) and candidates:
+                paths = [str(item) for item in candidates]
+            elif "path" in rule:
+                paths = [str(rule.get("path"))]
+            elif "selector" in rule:
+                paths = [str(rule.get("selector"))]
+        for path in paths:
+            try:
+                _reject_unsupported_json_path(path)
+            except ValueError as exc:
+                problems.append(f"extract.fields.{name}: {exc}")
+    return problems
 
 def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[str], list[str]]:
     """校验配置。
@@ -595,6 +630,10 @@ def validate_config(config: AppConfig, *, strict: bool = False) -> tuple[list[st
         errors.append("extract.review_policy必须是recall或contract")
     if fields and not isinstance(fields, dict):
         errors.append("extract.fields必须是字段名到规则的映射")
+    elif isinstance(fields, dict) and str(config.section("extract").get("mode", "")) == "json":
+        # ★ 2026-11-28：JSON 模式的字段路径**在这里**校验，不要留到采集时。
+        # 此前 `path: $..title` 能通过 validate，直到跑采集才抛 ValueError。
+        errors.extend(_validate_json_field_paths(fields))
     deduplicate_by = config.section("extract").get("deduplicate_by", [])
     if not isinstance(deduplicate_by, list) or not all(isinstance(name, str) and name.strip() for name in deduplicate_by):
         errors.append("extract.deduplicate_by必须是非空字段名的数组")

@@ -5,6 +5,19 @@ import re
 from typing import Any
 
 from ..core.config import AppConfig
+
+#: 引擎**不支持**的 JSONPath 语法 —— 登记表与判定函数都在叶子模块里。
+#:
+#: ★ 2026-11-28：移到 `core/json_path_syntax.py`，因为**配置校验**
+#:   （`core/config.py`）也要用同一份判定，而它不该为此拉进 bs4 / lxml。
+#:   这里 re-export，既有引用（`_reject_unsupported_json_path`）不变 ——
+#:   两个消费者读的是同一份登记表，不会「校验说行、运行时说不行」。
+from ..core.json_path_syntax import (
+    UNSUPPORTED_JSON_PATH_SYNTAX as _UNSUPPORTED_JSON_PATH_SYNTAX,  # noqa: F401 - re-export（配置校验读同一份）
+)
+from ..core.json_path_syntax import (
+    reject_unsupported_json_path as _reject_unsupported_json_path,
+)
 from ..core.models import ExtractedRecord, FetchResult, ProcessResult
 from ..core.safe_data import safe_json_loads, safe_regex_search
 from ..core.utils import absolutize_resource_url
@@ -721,35 +734,6 @@ class HTMLProcessor:
 
 
 _PATH_TOKEN = re.compile(r"([^.[\]]+)|\[(\*|\d+)\]")
-
-#: 引擎**不支持**的 JSONPath 语法（静默当成 `.` 处理会得出**错误结果**）。
-#:
-#: ★ 2026-11-28 修：`$..author` 此前被分词成 `["author"]`（`..` 与 `.` 同样被跳过），
-#:   于是它只命中**顶层** author，而不是递归命中所有层。用户看到非空结果，
-#:   会以为递归搜索生效了 —— 这是**假阳性**，比返回空更糟。
-#:
-#:   而 `core/jsonpath.py` 的 `compile_path()` 早就明确拒绝这两种语法，
-#:   两边行为不一致：校验器说「不支持」，引擎却给出错的结果。
-#:
-#:   这里改为**显式拒绝**，让「用了不支持的语法」变成一眼可见的错误，
-#:   而不是一个看起来正常但内容缺失的结果。
-_UNSUPPORTED_JSON_PATH_SYNTAX: tuple[tuple[str, str], ...] = (
-    ("..", "递归搜索 '..' 不受支持，请用 '.' 逐层导航（例如 $.data.items[*].title）"),
-    ("[?(", "过滤条件 '[?(...)]' 不受支持，请改用字段提取后再筛选"),
-)
-
-
-def _reject_unsupported_json_path(path: str) -> None:
-    """对**引擎不支持**的 JSONPath 语法抛 ValueError（带修复提示）。
-
-    为什么不静默降级：`$..author` 被当成 `$.author` 时返回的是**顶层那一个**，
-    而非空。用户看到有结果就不会怀疑，于是整份数据少了几层 —— 这类缺陷
-    在导出后才被发现，而那时已经重跑过。
-    """
-    for token, message in _UNSUPPORTED_JSON_PATH_SYNTAX:
-        if token in path:
-            raise ValueError(f"JSONPath {path!r} 使用了不支持的语法：{message}")
-
 
 def json_path(value: Any, path: str) -> list[Any]:
     if path in {"", "$", "."}:
