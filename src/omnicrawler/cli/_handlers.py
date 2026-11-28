@@ -309,7 +309,25 @@ def _run_plugins(args: argparse.Namespace) -> None:
         if not results:
             _json({"ok": False, "error": f"未在 {local} 找到插件（需含 plugin.py 的目录）"})
             raise SystemExit(2)
-        payload = {"ok": all(r.ok for r in results), "audited": [r.to_dict() for r in results]}
+        # ★ 2026-11-28：`probe_sandbox_backend()` 此前**零调用方**。
+        #
+        #   它做的是「真的 spawn 一次子进程跑 system.info 往返」—— 比
+        #   `probe_os_sandbox()`（只查平台能力）更接近用户实际会遇到的事：
+        #   OS 层看起来支持、但宿主 exe 缺失或往返失败时，插件**一个都装不起来**。
+        #   `plugins audit` 是用户排查「为什么插件跑不了」的第一入口，
+        #   它应该连这条也验一遍。
+        #
+        #   作为 **warning** 而不是 error：沙箱不可用不表示插件本身有问题
+        #   （可能是便携包缺件），把它判 error 会让 `audit` 对着一堆好插件报红。
+        from ..plugins.plugin_audit import probe_sandbox_backend
+
+        sandbox = probe_sandbox_backend()
+        sandbox_ok = bool(sandbox.get("ok"))
+        payload = {
+            "ok": all(r.ok for r in results) and sandbox_ok,
+            "audited": [r.to_dict() for r in results],
+            "sandbox": sandbox,
+        }
         _json(payload)
         raise SystemExit(0 if payload["ok"] else 1)
     from ..pipeline import build_registry  # 惰性：见文件头说明
