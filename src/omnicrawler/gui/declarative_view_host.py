@@ -7,6 +7,11 @@ from typing import Any
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from .foreground_surface import (
+    ForegroundController,
+    ForegroundRegistration,
+    ForegroundSurfaceService,
+)
 from .i18n import _
 from .media_surface import MediaSurfaceService
 from .widgets.toast import ToastManager
@@ -36,6 +41,18 @@ class DeclarativeViewController(QtCore.QObject):
         self._descriptor = adapter.describe()
         self._surface = MediaSurfaceService(main_window, plugin_id, self._descriptor["title"])
         adapter.bind_surface(self._surface)
+        # ★ 2026-11-28：前景层（`surface.foreground.*`）。
+        #
+        #   每个声明式插件一个，生命周期与本控制器一致（`close()` 里一并回收）。
+        #   它的 parent 是 centralWidget ⇒ 结构上盖不住菜单/停靠面板/对话框，
+        #   而本控制器自己那个 dock 正是停靠面板之一 —— 所以「插件盖住自己的面板」
+        #   这件事在这里也是不可能的，不是靠纪律。
+        self._foreground = ForegroundSurfaceService(
+            ForegroundController(main_window, ForegroundRegistration(plugin_id, self._descriptor["title"]))
+        )
+        bind_foreground = getattr(adapter, "bind_foreground_surface", None)
+        if callable(bind_foreground):
+            bind_foreground(self._foreground)
         # U6（2026-09-24）：绑定运行进度投递桥。限速合并：突发上报只保留最新一帧，
         # 每 300ms 至多刷一次（≤2s 验收间隔的裕量）；面板缺席/已关闭时静默丢弃。
         self._closed = False
@@ -363,6 +380,10 @@ class DeclarativeViewController(QtCore.QObject):
         self._closed = True
         self._progress_timer.stop()
         self._pending_progress = None
+        # 前景层必须先收：它挂在 centralWidget 上，而 dock 是本控制器的；
+        # 顺序在这里其实无所谓（两者不同父级），但先收前景能保证**卸载后
+        # 界面上不再有插件的任何残留**——那是用户最先看到的。
+        self._foreground.close()
         self._surface.close()
         self._main_window.removeDockWidget(self.dock)
         self.dock.deleteLater()

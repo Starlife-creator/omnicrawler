@@ -132,6 +132,8 @@ class CapabilityBroker(
         render_broker: Any | None = None,
         surface_service: Any | None = None,
         progress_relay: Any | None = None,
+        # ★ 2026-11-28：前景层（surface.foreground.*）。None ⇒ 该能力报 E_INTERNAL。
+        foreground_service: Any | None = None,
     ) -> None:
         self._permissions = {p.casefold() for p in permissions}
         self._system_info = dict(system_info)
@@ -169,6 +171,7 @@ class CapabilityBroker(
         self._resource_broker = resource_broker
         self._render_broker = render_broker
         self._surface_service = surface_service
+        self._foreground_service = foreground_service
         # U6（2026-09-24）：运行进度投递桥（线程安全的一次投递，可为 None）
         self._progress_relay = progress_relay
         # 调用轨迹降采样（C3 第 41 轮）：操作类型计数 + 会话首尾时间

@@ -205,10 +205,25 @@ PLUGIN_METADATA = {
 | `render.html.live.start/stop` | `render:scripted` | 断网脚本页转为有界 PNG 帧流；单插件单流，停止/卸载时回收 Chromium |
 | `surface.background.set/configure/clear` | `surfaces:background` | 控制宿主语义底层背景；仅接受已授权媒体或宿主渲染结果，v2 配置范围/预设/透明前景/遮罩/静态模糊 |
 | `surface.background.capabilities` | `surfaces:background` | 查询宿主允许的范围、预设、数值边界和输入穿透保证 |
+| `surface.foreground.set/configure/clear` | `surfaces:foreground` | 插件**浮层**（提示条、角标、"正在处理"遮罩）。与背景层对称的两层：背景在中央区**下面**，前景在**上面**。只接受宿主渲染帧或纯色+不透明度，**不接受用户媒体文件**（浮层盖在内容之上，一张媒体图会让界面完全不可读）。z 档位只有 `underlay`/`overlay`/`modal` 三个 |
+| `surface.foreground.capabilities` | `surfaces:foreground` | 查询前景层的 z 档位、scope、内容形态，以及**它盖不住什么**（菜单/停靠面板/对话框/状态栏）|
 | `secrets.get` | `secrets:read` | 明文密钥访问的显式例外：需要 manifest 白名单并记录审计；优先用 auth 注入 |
 | `component.ocr.recognize` | `component:ocr` | **请宿主代为调用已验签的 OCR 组件**。插件只交出 PNG 与引擎名，宿主完成验签、租赁与子进程调用，回传文本与置信度。插件看不到组件路径、信任根与注册表 |
 | `view.progress` | 内置 | 运行期进度推送（插件 → 宿主 GUI，单向、可丢弃）。宿主合并限速后刷新对应插件面板；面板缺席时静默丢弃 |
 | `theme.apply` | `theme:apply` | 运行期切到**宿主已注册**的插件主题。只接受 `theme_id`，不接受色值；未注册的 id ⇒ `E_RESOURCE`。★ 刻意**不**复用 `ui:theme`：那条对本地插件是自动批准的（加载期声明），运行期也自动批准等于「无审批即可随时改整个界面配色」 |
+
+### 前景层的四条硬规则（不是约定，是代码保证）
+
+| 规则 | 为什么 |
+|---|---|
+| **结构上盖不住菜单 / 停靠面板 / 对话框 / 状态栏** | 浮层的 parent 是 `centralWidget`，而上述控件都不在 `centralWidget` 里 ⇒ `raise_()` 只在中央区的兄弟层级内排序，物理上越不过去 |
+| **同一时刻只有一个活跃前景层** | 切换时上一个被 `hide()`，不叠层。叠层会让「谁在响应点击」不可推断 |
+| **`reduced_motion` / 高对比下只暂停动画，不隐藏内容** | 把浮层一起藏掉等于「开了减少动画 = 功能消失」，那是缺陷不是无障碍 |
+| **卸载必须 `hide()` + 脱离父级** | 只 `hide()` 会让插件重载时叠出第二个浮层 —— 用户看到「关不掉的幽灵」|
+
+★ **没有 `hotspots`**（可点矩形）：坐标要从 overlay 反算回宿主语义，窗口缩放 /
+DPI 变化时换算必然出错；而且可点区域无法 Tab 遍历，键盘用户完全够不到。
+浮层只做**展示**，交互请用声明式组件（`view.action`）。
 
 - **网络密钥默认零暴露**：`network.fetch` 可用 `auth: {secret_ref, header}`，宿主代理侧
   从密钥库解析注入请求头，插件进程永远看不到明文；注入头值不进审计/日志（仅记**头名**与

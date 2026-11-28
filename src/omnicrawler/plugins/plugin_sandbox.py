@@ -37,6 +37,9 @@ ALLOWED_PERMISSIONS = {
     # 用户在宿主界面明确选择的目录，仅通过不透明句柄做有界访问；
     # background surface 始终由宿主渲染，插件不能注入 QWidget/网页脚本。
     "resources:read", "surfaces:background",
+    # ★ 2026-11-28：前景层（浮层）。刻意与 `surfaces:background` **分开** ——
+    #   前景比背景更接近「遮住我的界面」，用户应能只给其一。
+    "surfaces:foreground",
     "render:local", "render:scripted",
     # Phase 2a：files:read（manifest input_files 白名单，Phase 2b 正式化）；
     # secrets:read（O 例外路径，方案 O2-B；默认走代理密钥零暴露）

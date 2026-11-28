@@ -162,6 +162,10 @@ class BrokerSurfacesMixin:
     _resource_broker: Any
     _render_broker: Any
     _surface_service: Any
+    # 前景层服务（`surface.foreground.*`）。与 `_surface_service` 并列而非合并 ——
+    # 两者语义相反（下沉 vs 上浮），合成一个对象每个方法都要分叉。
+    _foreground_service: Any
+
     def _cap_surface_background_set(self, payload: dict[str, Any]) -> dict[str, Any]:
         surface = self._require_surface_service()
         try:
@@ -233,6 +237,53 @@ class BrokerSurfacesMixin:
             return dict(surface.capabilities())
         except (TypeError, ValueError) as exc:
             raise CapabilityError(E_CONTRACT, str(exc)) from exc
+
+    # ---- surface.foreground.*（2026-11-28）----
+    #
+    # ★ 与 background 的**关键差别**：前景层没有 `render_handle` 之外的输入面。
+    #   背景可以接受「媒体句柄」或「渲染帧」两种来源；前景**只接受渲染帧与纯色**，
+    #   因为浮层盖在内容之上，一张用户媒体图会让界面完全不可读。
+
+    def _cap_surface_foreground_set(self, payload: dict[str, Any]) -> dict[str, Any]:
+        service = self._require_foreground_service()
+        try:
+            render_handle = str(payload.get("render_handle", "")).strip()
+            if render_handle:
+                return dict(
+                    service.show_rendered(self._require_render_broker(), render_handle)
+                )
+            color = str(payload.get("color", "")).strip()
+            if not color:
+                raise CapabilityError(
+                    E_CONTRACT,
+                    "surface.foreground.set 需要 render_handle 或 color（前景层不接受用户媒体文件）",
+                )
+            return dict(service.show_solid(color, int(payload.get("opacity", 100))))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+
+    def _cap_surface_foreground_configure(self, payload: dict[str, Any]) -> dict[str, Any]:
+        service = self._require_foreground_service()
+        try:
+            return dict(service.configure(dict(payload)))
+        except (TypeError, ValueError) as exc:
+            raise CapabilityError(E_CONTRACT, str(exc)) from exc
+
+    def _cap_surface_foreground_clear(self, payload: dict[str, Any]) -> dict[str, Any]:
+        del payload
+        return dict(self._require_foreground_service().clear())
+
+    def _cap_surface_foreground_capabilities(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        del payload
+        return dict(self._require_foreground_service().capabilities())
+
+    def _require_foreground_service(self) -> Any:
+        service = getattr(self, "_foreground_service", None)
+        if service is None:
+            raise CapabilityError(E_INTERNAL, "当前入口未绑定前景层服务（surface.foreground 不可用）")
+        return service
 
     def _require_resource_broker(self) -> Any:
         if self._resource_broker is None:

@@ -76,6 +76,22 @@ CAPABILITY_VERSIONS: dict[str, int] = {
     # 载荷：{"theme_id": str}；返回 {"applied": bool, "theme_id": str}。
     # 未注册的 theme_id ⇒ E_RESOURCE（不是静默忽略，否则插件作者无从调试）。
     "theme.apply": 1,
+    # ★ 2026-11-28：**前景层**（浮层）。与 surface.background.* 对称的两层：
+    #   背景在中央区**下面**，前景在中央区**上面**。
+    #
+    #   用途：提示条、角标、"正在处理"遮罩这类**展示**需求。
+    #   **不做交互** —— 交互走 `view.action`（声明式组件）。
+    #
+    #   硬约束（由宿主代码结构保证，不是约定）：
+    #   · 从结构上盖不住菜单/停靠面板/对话框（overlay 的 parent 是 centralWidget，
+    #     而这些控件都不在 centralWidget 里）；
+    #   · 同一时刻只有一个活跃前景层（切换时上一个被 hide，不叠层）；
+    #   · `reduced_motion` / 高对比下动画暂停（内容保留）；
+    #   · 卸载必须 hide + 脱离父级（否则重载会叠出幽灵浮层）。
+    "surface.foreground.set": 1,
+    "surface.foreground.configure": 1,
+    "surface.foreground.clear": 1,
+    "surface.foreground.capabilities": 1,
 }
 
 _CAPABILITY_REQUIREMENT = re.compile(r"^(?:>=)?([1-9][0-9]*)$")
@@ -151,6 +167,13 @@ _CAPABILITY_PERMISSIONS: dict[str, str | None] = {
     # 刻意**不复用** `ui:theme` —— 那条对本地插件是自动批准的（加载期声明），
     # 若运行期也自动批准，等于「无审批即可随时改整个界面配色」。
     "theme.apply": "theme:apply",
+    # ★ 2026-11-28：前景层。复用 `surfaces:background` 同族的独立权限名
+    #   `surfaces:foreground` —— 让用户能「允许改背景但拒绝盖前景」：
+    #   前景层比背景更接近"遮住我的界面"，风险不同级。
+    "surface.foreground.set": "surfaces:foreground",
+    "surface.foreground.configure": "surfaces:foreground",
+    "surface.foreground.clear": "surfaces:foreground",
+    "surface.foreground.capabilities": "surfaces:foreground",
 }
 
 E_CONTRACT = "E_CONTRACT"

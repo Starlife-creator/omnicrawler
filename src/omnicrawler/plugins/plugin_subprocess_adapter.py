@@ -119,6 +119,7 @@ def _build_broker(
     render_broker: RenderBroker | None = None,
     surface_service: Any | None = None,
     progress_relay: Any | None = None,
+    foreground_service: Any | None = None,
 ) -> CapabilityBroker:
     workspace = getattr(config, "workspace", None)
     project_root = getattr(config, "root", None)
@@ -154,6 +155,7 @@ def _build_broker(
         render_broker=render_broker,
         surface_service=surface_service,
         progress_relay=progress_relay,
+        foreground_service=foreground_service,
     )
 
 
@@ -207,6 +209,7 @@ class _SubprocessSessionHost:
         self._resource_broker = ResourceGrantBroker()
         self._render_broker = RenderBroker()
         self._surface_service: Any | None = None
+        self._foreground_service: Any | None = None
         # U6（2026-09-24）：运行进度投递桥——由 GUI 侧声明式视图控制器绑定
         # （线程安全的一次投递，通常是 Qt 信号的 emit）；None 表示面板缺席。
         self._progress_relay: Any | None = None
@@ -259,6 +262,7 @@ class _SubprocessSessionHost:
                 resource_broker=self._resource_broker,
                 render_broker=self._render_broker,
                 surface_service=self._surface_service,
+                foreground_service=self._foreground_service,
                 progress_relay=self._progress_relay,
             )
         assert self._broker is not None
@@ -312,6 +316,15 @@ class _SubprocessSessionHost:
 
     def bind_surface(self, service: Any | None) -> None:
         self._surface_service = service
+        self.invalidate_broker()
+
+    def bind_foreground_surface(self, service: Any | None) -> None:
+        """绑定前景层服务（`surface.foreground.*`）。解绑传 None。
+
+        与 `bind_surface` 分开而不是加参数：两者生命周期独立，
+        一个插件可以有背景没前景（或相反），合成一个方法会让解绑语义含糊。
+        """
+        self._foreground_service = service
         self.invalidate_broker()
 
     def bind_progress_relay(self, relay: Any | None) -> None:
