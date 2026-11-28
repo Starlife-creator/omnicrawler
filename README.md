@@ -224,7 +224,7 @@ docker compose up
 
 ---
 
-## 模板库（45 套）
+## 模板库（46 套）
 
 ```powershell
 omnicrawler templates list              # 按类别列出
