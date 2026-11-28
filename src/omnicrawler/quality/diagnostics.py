@@ -273,12 +273,29 @@ def diagnose_batch(errors: list[str], context: dict[str, Any] | None = None) -> 
 
 
 def diagnose_from_state(run_id: str, state_store: Any) -> list[DiagnoseReport]:
-    """从 StateStore 读取错误并批量诊断。"""
+    """从 StateStore 读取错误并批量诊断。
+
+    ★ 2026-11-28 修：这里原来调 `state_store.error_summary(run_id)` ——
+      **StateStore 从来没有这个方法**（它只有 `add_error` / `stats` / …）。
+      调用被 `except Exception` 包着，于是**永远走 except 分支、永远返回 `[]`**：
+
+      ```
+      >>> diagnose_from_state("run-1", StateStore(...))
+      []          # 不是「没有错误」，是「方法不存在」
+      ```
+
+      「读不出」与「没有错误」长得一模一样 —— 正是本项目反复禁止的静默失败。
+      而它同时也是**零调用方**，所以两层问题叠在一起：坏了也没人发现。
+
+    `except` 保留（诊断不可用确实不该让调用方崩），但**改成显式警告**并把
+    真实原因带出来 —— 现在只有在 StateStore 真的读不了库时才会走到。
+    """
     try:
-        raw_errors = state_store.error_summary(run_id)
-    except Exception as exc:  # noqa: BLE001 - 诊断不可用不该让调用方崩
-        # 静默返回 [] 会让「没错误」与「读不出错误」长得一样。
-        LOGGER.warning(_("读取运行错误摘要失败（%s）：%s"), run_id, exc)
+        raw_errors = state_store.error_messages(run_id)
+    except (AttributeError, OSError) as exc:
+        # `AttributeError` 说明传进来的对象不提供 `error_messages`（接口不符），
+        # 那是**编程错误**，不该被吞掉 —— 用 warning 点名，便于定位。
+        LOGGER.warning(_("读取运行错误失败（%s）：%s"), run_id, exc)
         return []
     return diagnose_batch(raw_errors, {"run_id": run_id})
 

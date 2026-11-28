@@ -17,7 +17,47 @@ def execute(config: str, *, output_format: str = "json") -> dict[str, Any]:
         result = {"crawl": {"status": "not_started", "database": str(database)}}
     else:
         with StateStore(database) as state:
-            result = {"crawl": {"latest_run": state.latest_run(), "totals": state.stats()}}
+            latest = state.latest_run()
+            result = {"crawl": {"latest_run": latest, "totals": state.stats()}}
+            # ★ 2026-11-28：失败的运行要给出**可操作的诊断**，而不只是状态字符串。
+            #
+            #   此前「为什么失败」只能靠用户自己翻日志 —— 而
+            #   `quality.diagnostics.diagnose_from_state()` 明明写好了分类规则
+            #   （网络瞬断 / 限流 / 选择器失效 / 登录失效 / 浏览器不可用…），
+            #   却**零调用方**，而且内部调了一个不存在的方法（见该函数注释），
+            #   修好后这里才有意义。
+            #
+            #   只在**确实有失败**时才做：成功运行的诊断结果是空列表，
+            #   平白多一次查库不值得。
+            run_id = str((latest or {}).get("run_id") or "").strip()
+            totals = result["crawl"].get("totals") or {}
+            # ★ 判据用**真实存在的键**：`stats()` 给的是
+            #   `frontier{status:count}` / `responses` / `records` / `errors` / …
+            #   —— 没有 `failed` 这个平铺键。我第一版按 `totals["failed"]` 判断，
+            #   条件恒为假（`.get` 返回 None），诊断段永远不会出现。
+            #
+            #   失败有两种来源，都要算：
+            #   · `errors` 表有记录（`add_error` 写入的异常明细）；
+            #   · `frontier` 里有 `failed` 状态（请求级失败）。
+            frontier = totals.get("frontier") or {}
+            failed_count = int(frontier.get("failed") or 0)
+            error_count = int(totals.get("errors") or 0)
+            if run_id and (failed_count > 0 or error_count > 0):
+                from ..quality.diagnostics import diagnose_from_state
+
+                reports = diagnose_from_state(run_id, state)
+                if reports:
+                    result["diagnostics"] = [
+                        {
+                            "category": item.category.value,
+                            "cause": item.cause,
+                            "action": item.action,
+                            "data_impact": item.data_impact,
+                            "retryable": item.retryable,
+                            "help_id": item.help_id,
+                        }
+                        for item in reports
+                    ]
     # E3：配置路径由 execute 显式携带，避免 _print_text 永远打印空路径
     result["config_path"] = str(Path(config).expanduser().resolve())
     pdf_settings = loaded.section("processors").get("pdf", {})

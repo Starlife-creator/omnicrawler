@@ -202,6 +202,35 @@ class QualityMixin:
                 ),
             )
 
+    def error_messages(
+        self, run_id: str | None = None, *, limit: int = 200
+    ) -> list[str]:
+        """本次运行登记过的错误文本（最近的在前），供 `diagnostics` 分类。
+
+        ★ 2026-11-28：加这个方法是因为 `quality.diagnostics.diagnose_from_state()`
+          调的是 `state_store.error_summary(run_id)` —— **StateStore 从来没有这个方法**。
+          它被 try/except 包着，于是永远走 except 分支、永远返回 `[]`：
+
+          ```
+          >>> diagnose_from_state("run-1", StateStore(...))
+          []          # 不是「没有错误」，是「方法不存在」
+          ```
+
+          「读不出」与「没有错误」长得一模一样 —— 正是本项目反复禁止的那类静默失败。
+
+        返回的是**给诊断器吃的文本**：`"{stage}: {error_type}: {message}"`。
+        把 stage 与 type 带上，`diagnose()` 的正则才有足够线索分类
+        （例如只有 `TimeoutError` 而没有 `fetch:` 前缀时，规则可能匹配不到）。
+        """
+        bounded = max(1, min(int(limit), 1000))
+        where, params = ("WHERE run_id=?", (run_id,)) if run_id else ("", ())
+        rows = self.rows(
+            "SELECT stage, error_type, message FROM errors "
+            f"{where} ORDER BY id DESC LIMIT ?",
+            (*params, bounded),
+        )
+        return [f"{row['stage']}: {row['error_type']}: {row['message']}" for row in rows]
+
     def stats(self, run_id: str | None = None) -> dict[str, Any]:
         with self._lock:
             frontier = {row["status"]: row["n"] for row in self.conn.execute("SELECT status, COUNT(*) AS n FROM frontier GROUP BY status")}
