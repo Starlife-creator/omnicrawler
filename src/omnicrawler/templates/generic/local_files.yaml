@@ -1,0 +1,43 @@
+template_version: 1
+
+template:
+
+  id: generic/local-files
+
+  name: 本地文件导入
+
+  category: generic
+
+  description: 读取本地目录中明确列出的文件并抽取字段，全程离线、不出网
+
+  version: 1.0.0
+
+  tags: [本地, 离线, 导入]
+
+  capabilities: [file-import, offline, auto-extraction]
+
+  placeholders:
+
+    input_dir: {label: 本地输入目录（绝对路径）, required: true}
+
+    file_name: {label: 目录内文件名（如 report.html）}
+
+  verified_at: '2026-11-28'
+
+project: {name: local_files, workspace: work/local_files}
+
+source:
+
+  kind: file
+
+  local_root: '{{input_dir}}'
+
+  local_files:
+
+    - '{{file_name}}'
+
+crawl: {max_pages: 50, max_depth: 0, concurrency: 1}
+
+extract: {mode: auto, fields: {}, quality_threshold: 0.75, review_low_confidence: true}
+
+outputs: {jsonl: true, csv: true}

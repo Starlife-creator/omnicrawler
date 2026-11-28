@@ -98,8 +98,23 @@ def validate_template(record: Any) -> TemplateHealth:
     source = record.config.get("source", {})
     if not isinstance(source, dict) or not source.get("kind"):
         errors.append("source.kind is required")
-    if not isinstance(source, dict) or not isinstance(source.get("seeds"), list) or not source.get("seeds"):
-        errors.append("source.seeds must contain at least one entry")
+    # ★ 2026-11-28：`kind: file` 的入口是 `source.local_files` 而不是 `seeds`
+    #   —— `sources/local_files.py` 的 `seed()` 明确支持「seeds 为空 ⇒ 回退到
+    #   全部 local_files」。这里若仍强制 seeds，就**永远写不出 file 类模板**
+    #   （实测：一个完全合法的 file 模板被判 "source.seeds must contain at least one entry"）。
+    #
+    #   与 `core/config.py` 的 `_source_has_local_files` 同一判据：只看**形状**，
+    #   不碰文件系统 —— 模板描述的是「要填什么」，不是「本机有没有这个文件」。
+    seedless_kind = str(source.get("kind", "")) in {"redis", "scrapy"} if isinstance(source, dict) else False
+    has_local_files = isinstance(source, dict) and isinstance(source.get("local_files"), list) and any(
+        isinstance(item, str) and item.strip() for item in source.get("local_files") or []
+    )
+    seeds_ok = isinstance(source, dict) and isinstance(source.get("seeds"), list) and bool(source.get("seeds"))
+    if not (seeds_ok or has_local_files or seedless_kind):
+        if isinstance(source, dict) and source.get("kind") == "file":
+            errors.append("source.local_files must list at least one entry (kind: file)")
+        else:
+            errors.append("source.seeds must contain at least one entry")
     # B1：JSON 模式键契约。section 级 `item_selector` 已废弃（加载期迁移会掩盖它，
     # 但模板必须直接写对契约键）；字段契约是 `path`/`paths` ——
     # `extractors.json_field_values` 从不读 `selector`，写 selector = 确定性取空
